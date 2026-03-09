@@ -1350,6 +1350,10 @@ button.sidebar-item {
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
 }
 
+.landing-hero-media--principal img {
+  object-position: center 12%;
+}
+
 .landing-hero-highlights {
   position: relative;
   z-index: 1;
@@ -1640,6 +1644,10 @@ button.sidebar-item {
 
   .landing-hero-media img {
     height: min(300px, 46vh);
+  }
+
+  .landing-hero-media--principal img {
+    object-position: center 8%;
   }
 
   .landing-hero--compact .landing-hero-grid {

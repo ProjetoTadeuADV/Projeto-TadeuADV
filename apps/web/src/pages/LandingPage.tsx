@@ -44,7 +44,7 @@ export function LandingPage() {
             </div>
           </div>
 
-          <div className="landing-hero-media">
+          <div className="landing-hero-media landing-hero-media--principal">
             <img
               src="/images/hero-principal.jpg"
               alt="Advogado em posição profissional representando confiança"
