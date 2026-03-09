@@ -9,7 +9,7 @@ export function LandingPage() {
       <header className="landing-header">
         <div className="landing-brand">
           <div className="brand-dot" />
-          <span>Plataforma JEC</span>
+          <span>Doutor<span className="brand-eu">Eu</span></span>
         </div>
 
         <nav className="landing-nav">
@@ -39,10 +39,12 @@ export function LandingPage() {
       <main className="landing-main">
         <section className="hero-panel">
           <p className="hero-kicker">MVP beta para Juizados Especiais Civeis</p>
-          <h1>Abertura e acompanhamento de casos juridicos em um fluxo simples.</h1>
+          <h1>
+            O Doutor da sua causa e <span className="hero-highlight">voce</span>.
+          </h1>
           <p>
-            Plataforma web para pessoas fisicas criarem conta, abrirem um caso com vara + CPF
-            + resumo e acompanharem o status com clareza.
+            Assistente juridico para pessoas fisicas abrirem e acompanharem casos com clareza,
+            seguranca e linguagem acessivel.
           </p>
 
           <div className="hero-cta">
@@ -69,11 +71,11 @@ export function LandingPage() {
             </li>
             <li>
               <strong>Fluxo objetivo</strong>
-              <span>Vara, CPF, resumo e acompanhamento em dashboard</span>
+              <span>Vara, CPF, resumo e acompanhamento no dashboard</span>
             </li>
             <li>
-              <strong>Base para escalar</strong>
-              <span>Arquitetura pronta para API real de consulta CPF</span>
+              <strong>Empoderamento do usuario</strong>
+              <span>Voce entende cada etapa e controla o andamento do caso</span>
             </li>
           </ul>
         </section>
@@ -108,7 +110,7 @@ export function LandingPage() {
             </div>
             <div>
               <h3>Seguranca e privacidade</h3>
-              <p>Autenticacao centralizada no Firebase e base pronta para boas praticas LGPD.</p>
+              <p>Autenticacao com Firebase e base preparada para boas praticas de dados.</p>
             </div>
             <div>
               <h3>MVP orientado ao real</h3>
@@ -130,4 +132,3 @@ export function LandingPage() {
     </div>
   );
 }
-

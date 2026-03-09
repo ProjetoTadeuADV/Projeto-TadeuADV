@@ -7,7 +7,7 @@ export function AppLayout() {
 
   async function handleLogout() {
     await logout();
-    navigate("/login");
+    navigate("/");
   }
 
   return (
@@ -15,7 +15,7 @@ export function AppLayout() {
       <header className="topbar">
         <div className="brand">
           <div className="brand-dot" />
-          <span>Plataforma JEC</span>
+          <span>Doutor<span className="brand-eu">Eu</span></span>
         </div>
 
         <nav className="topbar-nav">
@@ -37,4 +37,3 @@ export function AppLayout() {
     </div>
   );
 }
-

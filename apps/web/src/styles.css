@@ -1,16 +1,21 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@700;800&family=Playfair+Display:wght@700&display=swap");
+
 :root {
-  --bg: #f4f6f8;
+  --bg: #f7f9fc;
   --surface: #ffffff;
-  --surface-soft: #f0f4f8;
-  --ink: #14212c;
-  --muted: #536574;
-  --primary: #1f6feb;
-  --primary-strong: #0b56ca;
+  --surface-soft: #f4f7fb;
+  --ink: #1f2b36;
+  --muted: #666666;
+  --primary: #003366;
+  --primary-strong: #00264d;
+  --accent-gold: #d4af37;
+  --accent-blue: #4a90e2;
+  --success: #27ae60;
   --danger: #b12626;
-  --border: #d5dee7;
-  --shadow: 0 14px 40px rgba(20, 33, 44, 0.08);
+  --border: #d9e1eb;
+  --shadow: 0 12px 32px rgba(0, 39, 77, 0.1);
   --radius: 14px;
-  font-family: "Segoe UI", "SF Pro Text", "Helvetica Neue", sans-serif;
+  font-family: "Inter", "Segoe UI", sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color: var(--ink);
@@ -29,8 +34,8 @@ body,
 
 body {
   background:
-    radial-gradient(circle at 14% 14%, #dce8ff 0%, transparent 35%),
-    radial-gradient(circle at 84% 0%, #d5f4ef 0%, transparent 35%),
+    radial-gradient(circle at 12% 10%, rgba(74, 144, 226, 0.15) 0%, transparent 38%),
+    radial-gradient(circle at 88% 0%, rgba(212, 175, 55, 0.12) 0%, transparent 36%),
     var(--bg);
 }
 
@@ -52,7 +57,16 @@ button {
   cursor: pointer;
   background: var(--primary);
   color: #fff;
-  font-weight: 600;
+  font-family: "Montserrat", "Inter", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+button:hover {
+  background: var(--primary-strong);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(0, 39, 77, 0.22);
 }
 
 button:disabled {
@@ -68,6 +82,13 @@ select {
   border-radius: 10px;
   padding: 0.7rem 0.8rem;
   background: #fff;
+}
+
+h1,
+h2,
+h3 {
+  font-family: "Montserrat", "Inter", sans-serif;
+  color: var(--primary);
 }
 
 textarea {
@@ -98,7 +119,7 @@ textarea {
 
 .auth-card h1 {
   margin: 0;
-  font-size: 1.7rem;
+  font-size: 1.8rem;
 }
 
 .auth-card p {
@@ -123,7 +144,7 @@ textarea {
 }
 
 .helper-text a {
-  color: var(--primary-strong);
+  color: var(--accent-blue);
   text-decoration: none;
 }
 
@@ -140,8 +161,8 @@ textarea {
   align-items: center;
   justify-content: space-between;
   padding: 0.95rem 1.2rem;
-  background: rgba(255, 255, 255, 0.95);
-  border-bottom: 1px solid var(--border);
+  background: rgba(0, 51, 102, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
   backdrop-filter: blur(8px);
 }
 
@@ -149,14 +170,20 @@ textarea {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  font-weight: 700;
+  font-family: "Montserrat", "Inter", sans-serif;
+  font-weight: 800;
+  color: #fff;
 }
 
 .brand-dot {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: linear-gradient(120deg, #37b982, #1f6feb);
+  background: linear-gradient(120deg, var(--accent-gold), #fff7d4);
+}
+
+.brand-eu {
+  color: var(--accent-gold);
 }
 
 .topbar-nav {
@@ -167,11 +194,11 @@ textarea {
 .topbar-nav a {
   text-decoration: none;
   font-weight: 600;
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .topbar-nav a:hover {
-  color: var(--primary-strong);
+  color: #fff;
 }
 
 .topbar-user {
@@ -182,8 +209,8 @@ textarea {
 
 .ghost-button {
   background: transparent;
-  border: 1px solid var(--border);
-  color: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #fff;
 }
 
 .main-content {
@@ -218,7 +245,8 @@ textarea {
   border-radius: 10px;
   background: var(--primary);
   color: #fff;
-  font-weight: 600;
+  font-family: "Montserrat", "Inter", sans-serif;
+  font-weight: 700;
   padding: 0.7rem 1rem;
 }
 
@@ -258,8 +286,8 @@ textarea {
 }
 
 .secondary-button {
-  background: #eff4fb;
-  color: var(--ink);
+  background: #eef4fc;
+  color: var(--primary);
   border: 1px solid var(--border);
 }
 
@@ -329,7 +357,7 @@ textarea {
   padding: 0.9rem 1rem;
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(0, 51, 102, 0.94);
   backdrop-filter: blur(6px);
   box-shadow: var(--shadow);
 }
@@ -338,7 +366,9 @@ textarea {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  font-weight: 700;
+  font-family: "Montserrat", "Inter", sans-serif;
+  font-weight: 800;
+  color: #fff;
   white-space: nowrap;
 }
 
@@ -349,13 +379,13 @@ textarea {
 }
 
 .landing-nav a {
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.84);
   text-decoration: none;
   font-weight: 600;
 }
 
 .landing-nav a:hover {
-  color: var(--primary-strong);
+  color: #fff;
 }
 
 .landing-actions {
@@ -373,7 +403,7 @@ textarea {
 
 .hero-panel {
   background:
-    linear-gradient(120deg, rgba(31, 111, 235, 0.08), rgba(55, 185, 130, 0.08)),
+    linear-gradient(120deg, rgba(0, 51, 102, 0.05), rgba(212, 175, 55, 0.07)),
     #fff;
   border: 1px solid var(--border);
   border-radius: 20px;
@@ -385,7 +415,7 @@ textarea {
 
 .hero-kicker {
   margin: 0;
-  color: var(--primary-strong);
+  color: var(--accent-blue);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -397,6 +427,12 @@ textarea {
   font-size: clamp(1.6rem, 2.5vw, 2.6rem);
   max-width: 840px;
   line-height: 1.2;
+}
+
+.hero-highlight {
+  font-family: "Playfair Display", Georgia, serif;
+  color: var(--accent-gold);
+  font-weight: 700;
 }
 
 .hero-panel > p {
@@ -426,7 +462,7 @@ textarea {
 
 .hero-secondary {
   background: #fff;
-  color: var(--ink);
+  color: var(--primary);
   border: 1px solid var(--border);
 }
 
@@ -499,8 +535,8 @@ textarea {
   width: fit-content;
   font-size: 0.74rem;
   font-weight: 700;
-  color: var(--primary-strong);
-  background: #e6effe;
+  color: #8b6b00;
+  background: #f7edc9;
   border-radius: 999px;
   padding: 0.25rem 0.6rem;
 }
@@ -512,7 +548,7 @@ textarea {
 }
 
 .value-list div {
-  border-left: 3px solid #9cbaf5;
+  border-left: 3px solid var(--accent-blue);
   padding-left: 0.8rem;
 }
 
