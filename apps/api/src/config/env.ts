@@ -1,0 +1,41 @@
+import { config as loadDotenv } from "dotenv";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const currentDir = dirname(fileURLToPath(import.meta.url));
+loadDotenv({ path: resolve(currentDir, "../../.env") });
+
+function parsePort(value: string | undefined, fallback: number): number {
+  const port = Number(value);
+  return Number.isFinite(port) && port > 0 ? port : fallback;
+}
+
+export const env = {
+  NODE_ENV: process.env.NODE_ENV ?? "development",
+  PORT: parsePort(process.env.PORT, 8080),
+  CORS_ORIGIN: process.env.CORS_ORIGIN ?? "http://localhost:5173",
+  FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID ?? "",
+  FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL ?? "",
+  FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY ?? "",
+  MOCK_CPF_DEFAULT_NAME: process.env.MOCK_CPF_DEFAULT_NAME ?? "Cliente Consultado"
+};
+
+function hasPlaceholder(value: string): boolean {
+  return (
+    value.includes("seu-projeto-firebase") ||
+    value.includes("firebase-adminsdk-xxx") ||
+    value.includes("-----BEGIN PRIVATE KEY-----\\n...") ||
+    value.includes("...")
+  );
+}
+
+export function hasFirebaseCredentials(): boolean {
+  return (
+    Boolean(env.FIREBASE_PROJECT_ID) &&
+    Boolean(env.FIREBASE_CLIENT_EMAIL) &&
+    Boolean(env.FIREBASE_PRIVATE_KEY) &&
+    !hasPlaceholder(env.FIREBASE_PROJECT_ID) &&
+    !hasPlaceholder(env.FIREBASE_CLIENT_EMAIL) &&
+    !hasPlaceholder(env.FIREBASE_PRIVATE_KEY)
+  );
+}
