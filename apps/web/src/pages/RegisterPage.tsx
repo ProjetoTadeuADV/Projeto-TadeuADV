@@ -54,7 +54,7 @@ export function RegisterPage() {
   return (
     <section className="auth-page">
       <div className="auth-card">
-        <h1>Criar Conta</h1>
+        <h1>Criar conta</h1>
         <p>Cadastro rápido para começar a abrir seus casos.</p>
 
         <form onSubmit={handleSubmit} className="form-grid">

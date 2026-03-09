@@ -36,45 +36,106 @@ export function DashboardPage() {
   }, [getToken]);
 
   const hasCases = useMemo(() => cases.length > 0, [cases]);
+  const totalCases = cases.length;
+  const recebidos = useMemo(() => cases.filter((item) => item.status === "recebido").length, [cases]);
+  const emAnalise = useMemo(
+    () => cases.filter((item) => item.status === "em_analise").length,
+    [cases]
+  );
+  const encerrados = useMemo(() => cases.filter((item) => item.status === "encerrado").length, [cases]);
 
   return (
     <section className="page-stack">
-      <header className="page-header">
-        <div>
-          <h1>Meus Casos</h1>
-          <p>Acompanhe status, data de abertura e detalhes do atendimento.</p>
+      <section className="workspace-hero">
+        <div className="workspace-hero-grid">
+          <div>
+            <p className="hero-kicker">Área do cliente</p>
+            <h1>Meus casos</h1>
+            <p>Acompanhe status, data de abertura e detalhes do atendimento em um único painel.</p>
+            <div className="workspace-chip-row">
+              <span>Atualização centralizada</span>
+              <span>Visão por status</span>
+              <span>Histórico completo</span>
+            </div>
+          </div>
+          <div className="workspace-hero-media">
+            <img
+              src="https://images.unsplash.com/photo-1450101499163-c8848c66ca85?auto=format&fit=crop&w=1200&q=80"
+              alt="Profissional analisando relatórios de atendimento jurídico"
+              loading="lazy"
+            />
+          </div>
         </div>
-        <Link to="/cases/new" className="primary-link">
-          Abrir novo caso
-        </Link>
-      </header>
 
-      {loading && <p>Carregando casos...</p>}
-      {error && <p className="error-text">{error}</p>}
+        <ul className="workspace-kpis">
+          <li>
+            <strong>{totalCases}</strong>
+            <span>Total de casos</span>
+          </li>
+          <li>
+            <strong>{recebidos}</strong>
+            <span>Recebidos</span>
+          </li>
+          <li>
+            <strong>{emAnalise}</strong>
+            <span>Em análise</span>
+          </li>
+          <li>
+            <strong>{encerrados}</strong>
+            <span>Encerrados</span>
+          </li>
+        </ul>
+      </section>
 
-      {!loading && !hasCases && (
-        <div className="empty-state">
-          <h2>Nenhum caso cadastrado</h2>
-          <p>Crie seu primeiro caso para iniciar o acompanhamento.</p>
+      <section className="workspace-panel">
+        <header className="page-header">
+          <div>
+            <h2>Lista de casos</h2>
+            <p>Entre em cada item para visualizar detalhes, consulta de CPF e resumo do caso.</p>
+          </div>
           <Link to="/cases/new" className="primary-link">
-            Criar caso
+            Abrir novo caso
           </Link>
-        </div>
-      )}
+        </header>
 
-      {hasCases && (
-        <div className="card-grid">
-          {cases.map((item) => (
-            <Link key={item.id} to={`/cases/${item.id}`} className="case-card">
-              <strong>{item.varaNome}</strong>
-              <span>CPF: {item.cpf}</span>
-              <span>Status: {STATUS_LABEL[item.status]}</span>
-              <span>Abertura: {new Date(item.createdAt).toLocaleString("pt-BR")}</span>
+        {loading && <p>Carregando casos...</p>}
+        {error && <p className="error-text">{error}</p>}
+
+        {!loading && !hasCases && (
+          <div className="empty-state">
+            <h2>Nenhum caso cadastrado</h2>
+            <p>Crie seu primeiro caso para iniciar o acompanhamento.</p>
+            <Link to="/cases/new" className="primary-link">
+              Criar caso
             </Link>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
+
+        {hasCases && (
+          <div className="card-grid">
+            {cases.map((item) => (
+              <Link key={item.id} to={`/cases/${item.id}`} className="case-card">
+                <div className="case-card-top">
+                  <strong>{item.varaNome}</strong>
+                  <span className={`status-badge status-badge--${item.status}`}>
+                    {STATUS_LABEL[item.status]}
+                  </span>
+                </div>
+                <div className="case-card-meta">
+                  <span>
+                    <small>CPF</small>
+                    {item.cpf}
+                  </span>
+                  <span>
+                    <small>Abertura</small>
+                    {new Date(item.createdAt).toLocaleString("pt-BR")}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
     </section>
   );
 }
-

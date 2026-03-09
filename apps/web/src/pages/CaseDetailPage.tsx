@@ -43,16 +43,24 @@ export function CaseDetailPage() {
   }, [getToken, id]);
 
   if (loading) {
-    return <p>Carregando caso...</p>;
+    return (
+      <section className="page-stack">
+        <section className="workspace-panel">
+          <p>Carregando caso...</p>
+        </section>
+      </section>
+    );
   }
 
   if (error) {
     return (
       <section className="page-stack">
-        <p className="error-text">{error}</p>
-        <Link to="/dashboard" className="primary-link">
-          Voltar para dashboard
-        </Link>
+        <section className="workspace-panel">
+          <p className="error-text">{error}</p>
+          <Link to="/dashboard" className="primary-link">
+            Voltar para dashboard
+          </Link>
+        </section>
       </section>
     );
   }
@@ -63,47 +71,78 @@ export function CaseDetailPage() {
 
   return (
     <section className="page-stack">
-      <header className="page-header">
-        <div>
-          <h1>Detalhes do Caso</h1>
-          <p>ID: {caseItem.id}</p>
-        </div>
-        <Link to="/dashboard" className="primary-link">
-          Voltar
-        </Link>
-      </header>
-
-      <div className="detail-card">
-        <h2>{caseItem.varaNome}</h2>
-        <p>
-          <strong>Status:</strong> {STATUS_LABEL[caseItem.status]}
-        </p>
-        <p>
-          <strong>CPF:</strong> {caseItem.cpf}
-        </p>
-        <p>
-          <strong>Abertura:</strong> {new Date(caseItem.createdAt).toLocaleString("pt-BR")}
-        </p>
-        <p>
-          <strong>Última atualização:</strong>{" "}
-          {new Date(caseItem.updatedAt).toLocaleString("pt-BR")}
-        </p>
-
-        {caseItem.cpfConsulta && (
-          <div className="info-box">
-            <strong>Consulta CPF</strong>
-            <span>Nome: {caseItem.cpfConsulta.nome}</span>
-            <span>Situação: {caseItem.cpfConsulta.situacao}</span>
-            <span>Fonte: {caseItem.cpfConsulta.source}</span>
+      <section className="workspace-hero workspace-hero--compact">
+        <div className="workspace-hero-grid">
+          <div>
+            <p className="hero-kicker">Detalhe do caso</p>
+            <h1>{caseItem.varaNome}</h1>
+            <p>ID do caso: {caseItem.id}</p>
+            <div className="hero-cta">
+              <span className={`status-badge status-badge--${caseItem.status}`}>
+                {STATUS_LABEL[caseItem.status]}
+              </span>
+              <Link to="/dashboard" className="hero-secondary">
+                Voltar ao painel
+              </Link>
+            </div>
           </div>
-        )}
-
-        <div className="resumo-box">
-          <strong>Resumo</strong>
-          <p>{caseItem.resumo}</p>
+          <div className="workspace-hero-media">
+            <img
+              src="https://images.unsplash.com/photo-1528747045269-390fe33c19d3?auto=format&fit=crop&w=1200&q=80"
+              alt="Profissional revisando detalhes de processo em notebook"
+              loading="lazy"
+            />
+          </div>
         </div>
+      </section>
+
+      <div className="detail-grid">
+        <article className="detail-card">
+          <h2>Informações principais</h2>
+          <div className="detail-list">
+            <div className="detail-item">
+              <span>Status</span>
+              <strong>{STATUS_LABEL[caseItem.status]}</strong>
+            </div>
+            <div className="detail-item">
+              <span>CPF</span>
+              <strong>{caseItem.cpf}</strong>
+            </div>
+            <div className="detail-item">
+              <span>Abertura</span>
+              <strong>{new Date(caseItem.createdAt).toLocaleString("pt-BR")}</strong>
+            </div>
+            <div className="detail-item">
+              <span>Última atualização</span>
+              <strong>{new Date(caseItem.updatedAt).toLocaleString("pt-BR")}</strong>
+            </div>
+          </div>
+
+          {caseItem.cpfConsulta && (
+            <div className="info-box">
+              <strong>Consulta CPF</strong>
+              <span>Nome: {caseItem.cpfConsulta.nome}</span>
+              <span>Situação: {caseItem.cpfConsulta.situacao}</span>
+              <span>Fonte: {caseItem.cpfConsulta.source}</span>
+            </div>
+          )}
+
+          <div className="resumo-box">
+            <strong>Resumo</strong>
+            <p>{caseItem.resumo}</p>
+          </div>
+        </article>
+
+        <aside className="detail-card">
+          <h2>Sugestões de acompanhamento</h2>
+          <ul className="timeline-list">
+            <li>Registrar toda nova interação do cliente no histórico do caso.</li>
+            <li>Revisar situação de CPF antes de qualquer alteração relevante.</li>
+            <li>Atualizar status interno assim que houver mudança operacional.</li>
+            <li>Validar próximo passo e prazo esperado com o cliente.</li>
+          </ul>
+        </aside>
       </div>
     </section>
   );
 }
-

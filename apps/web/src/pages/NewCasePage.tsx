@@ -102,78 +102,120 @@ export function NewCasePage() {
 
   return (
     <section className="page-stack">
-      <header className="page-header">
-        <div>
-          <h1>Novo Caso</h1>
-          <p>Informe a vara, o CPF e um resumo do problema para iniciar.</p>
+      <section className="workspace-hero workspace-hero--compact">
+        <div className="workspace-hero-grid">
+          <div>
+            <p className="hero-kicker">Abertura de atendimento</p>
+            <h1>Novo caso</h1>
+            <p>Informe a vara, o CPF e um resumo do problema para iniciar o registro.</p>
+            <div className="workspace-chip-row">
+              <span>Formulário guiado</span>
+              <span>Consulta CPF mock</span>
+              <span>Status inicial recebido</span>
+            </div>
+          </div>
+          <div className="workspace-hero-media">
+            <img
+              src="https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=1200&q=80"
+              alt="Profissional preenchendo formulário de atendimento"
+              loading="lazy"
+            />
+          </div>
         </div>
-      </header>
+      </section>
 
       {loadingVaras ? (
-        <p>Carregando formulário...</p>
+        <section className="workspace-panel">
+          <p>Carregando formulário...</p>
+        </section>
       ) : (
-        <form className="form-grid case-form" onSubmit={handleSubmit}>
-          <label>
-            Vara
-            <select value={varaId} onChange={(event) => setVaraId(event.target.value)} required>
-              {varas.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.nome}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div className="case-layout">
+          <form className="form-grid case-form" onSubmit={handleSubmit}>
+            <label>
+              Vara
+              <select value={varaId} onChange={(event) => setVaraId(event.target.value)} required>
+                {varas.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.nome}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label>
-            CPF do cliente
-            <div className="inline-input">
-              <input
-                type="text"
-                value={cpf}
-                onChange={(event) => setCpf(formatCpf(event.target.value))}
-                placeholder="000.000.000-00"
-                inputMode="numeric"
+            <label>
+              CPF do cliente
+              <div className="inline-input">
+                <input
+                  type="text"
+                  value={cpf}
+                  onChange={(event) => setCpf(formatCpf(event.target.value))}
+                  placeholder="000.000.000-00"
+                  inputMode="numeric"
+                  required
+                />
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleCpfLookup}
+                  disabled={consultingCpf}
+                >
+                  {consultingCpf ? "Consultando..." : "Consultar CPF"}
+                </button>
+              </div>
+            </label>
+
+            {cpfData && (
+              <div className="info-box">
+                <strong>Consulta CPF (mock)</strong>
+                <span>Nome: {cpfData.nome}</span>
+                <span>Situação: {cpfData.situacao}</span>
+                <span>Atualizado em: {new Date(cpfData.updatedAt).toLocaleString("pt-BR")}</span>
+              </div>
+            )}
+
+            <label>
+              Resumo do problema
+              <textarea
+                value={resumo}
+                onChange={(event) => setResumo(event.target.value)}
+                rows={6}
+                placeholder="Descreva o que aconteceu e o que você deseja resolver."
                 required
               />
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={handleCpfLookup}
-                disabled={consultingCpf}
-              >
-                {consultingCpf ? "Consultando..." : "Consultar CPF"}
-              </button>
+            </label>
+
+            {error && <p className="error-text">{error}</p>}
+
+            <button type="submit" disabled={submitting}>
+              {submitting ? "Salvando..." : "Abrir caso"}
+            </button>
+          </form>
+
+          <aside className="workspace-panel tips-card">
+            <h2>Sugestões de preenchimento</h2>
+            <div className="tips-list">
+              <div>
+                <strong>Escolha da vara</strong>
+                <p>Selecione a vara mais aderente ao local e natureza da demanda.</p>
+              </div>
+              <div>
+                <strong>Resumo objetivo</strong>
+                <p>Inclua contexto, data principal e resultado esperado pelo cliente.</p>
+              </div>
+              <div>
+                <strong>Qualidade de dados</strong>
+                <p>Use a consulta de CPF para validar consistência antes de enviar.</p>
+              </div>
             </div>
-          </label>
-
-          {cpfData && (
-            <div className="info-box">
-              <strong>Consulta CPF (mock)</strong>
-              <span>Nome: {cpfData.nome}</span>
-              <span>Situação: {cpfData.situacao}</span>
-              <span>Atualizado em: {new Date(cpfData.updatedAt).toLocaleString("pt-BR")}</span>
+            <div className="tips-footer">
+              <p>
+                Exemplo: "Compra não entregue no prazo acordado. Cliente pede cumprimento da oferta
+                ou devolução integral."
+              </p>
             </div>
-          )}
-
-          <label>
-            Resumo do problema
-            <textarea
-              value={resumo}
-              onChange={(event) => setResumo(event.target.value)}
-              rows={6}
-              placeholder="Descreva o que aconteceu e o que você deseja resolver."
-              required
-            />
-          </label>
-
-          {error && <p className="error-text">{error}</p>}
-
-          <button type="submit" disabled={submitting}>
-            {submitting ? "Salvando..." : "Abrir caso"}
-          </button>
-        </form>
+          </aside>
+        </div>
       )}
     </section>
   );
 }
-
