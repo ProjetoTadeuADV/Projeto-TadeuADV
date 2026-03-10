@@ -14,12 +14,18 @@ export class MemoryCaseRepository implements CaseRepository {
     }
 
     this.users.set(user.id, {
-        ...existing,
-        email: user.email,
-        name: user.name,
-        cpf: existing.cpf ?? user.cpf ?? null,
-        lastSeenAt: user.lastSeenAt
-      });
+      ...existing,
+      email: user.email,
+      name: user.name,
+      cpf: existing.cpf ?? user.cpf ?? null,
+      emailVerified: user.emailVerified,
+      isMaster: user.isMaster,
+      lastSeenAt: user.lastSeenAt
+    });
+  }
+
+  async getUserById(userId: string): Promise<UserRecord | null> {
+    return this.users.get(userId) ?? null;
   }
 
   async updateUserProfile(
@@ -34,6 +40,8 @@ export class MemoryCaseRepository implements CaseRepository {
         email: null,
         name: profile.name ?? null,
         cpf: profile.cpf,
+        emailVerified: false,
+        isMaster: false,
         createdAt: now,
         lastSeenAt: now
       };
@@ -46,6 +54,20 @@ export class MemoryCaseRepository implements CaseRepository {
       name: profile.name ?? existing.name,
       cpf: profile.cpf,
       lastSeenAt: now
+    };
+    this.users.set(userId, updated);
+    return updated;
+  }
+
+  async setUserMasterStatus(userId: string, isMaster: boolean): Promise<UserRecord | null> {
+    const existing = this.users.get(userId);
+    if (!existing) {
+      return null;
+    }
+
+    const updated: UserRecord = {
+      ...existing,
+      isMaster
     };
     this.users.set(userId, updated);
     return updated;
@@ -84,5 +106,13 @@ export class MemoryCaseRepository implements CaseRepository {
       return null;
     }
     return found;
+  }
+
+  async listUsers(): Promise<UserRecord[]> {
+    return Array.from(this.users.values()).sort((a, b) => (a.lastSeenAt < b.lastSeenAt ? 1 : -1));
+  }
+
+  async listAllCases(): Promise<CaseRecord[]> {
+    return Array.from(this.cases.values()).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   }
 }

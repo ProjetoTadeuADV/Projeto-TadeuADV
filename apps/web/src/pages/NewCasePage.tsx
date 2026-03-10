@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { apiRequest, ApiError } from "../lib/api";
+import { ApiError, apiRequest } from "../lib/api";
 import { formatCpf, isValidCpf, normalizeCpf } from "../lib/cpf";
 import type { CaseRecord, CpfConsultaResult, VaraOption } from "../types";
 
@@ -22,6 +22,7 @@ export function NewCasePage() {
   useEffect(() => {
     async function loadVaras() {
       setLoadingVaras(true);
+
       try {
         const data = await apiRequest<VaraOption[]>("/v1/varas");
         setVaras(data);
@@ -102,24 +103,12 @@ export function NewCasePage() {
 
   return (
     <section className="page-stack">
-      <section className="workspace-hero workspace-hero--compact">
+      <section className="workspace-hero workspace-hero--compact workspace-hero--simple">
         <div className="workspace-hero-grid">
           <div>
-            <p className="hero-kicker">Abertura de atendimento</p>
-            <h1>Novo caso</h1>
-            <p>Informe a vara, o CPF e um resumo do problema para iniciar o registro.</p>
-            <div className="workspace-chip-row">
-              <span>Formulário guiado</span>
-              <span>Consulta CPF mock</span>
-              <span>Status inicial recebido</span>
-            </div>
-          </div>
-          <div className="workspace-hero-media">
-            <img
-              src="https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=1200&q=80"
-              alt="Profissional preenchendo formulário de atendimento"
-              loading="lazy"
-            />
+            <p className="hero-kicker">Novo caso</p>
+            <h1>Abrir atendimento</h1>
+            <p>Preencha os dados abaixo para registrar o problema e iniciar o acompanhamento.</p>
           </div>
         </div>
       </section>
@@ -166,7 +155,7 @@ export function NewCasePage() {
 
             {cpfData && (
               <div className="info-box">
-                <strong>Consulta CPF (mock)</strong>
+                <strong>Consulta de CPF</strong>
                 <span>Nome: {cpfData.nome}</span>
                 <span>Situação: {cpfData.situacao}</span>
                 <span>Atualizado em: {new Date(cpfData.updatedAt).toLocaleString("pt-BR")}</span>
@@ -192,19 +181,19 @@ export function NewCasePage() {
           </form>
 
           <aside className="workspace-panel tips-card">
-            <h2>Sugestões de preenchimento</h2>
+            <h2>Como preencher</h2>
             <div className="tips-list">
               <div>
-                <strong>Escolha da vara</strong>
-                <p>Selecione a vara mais aderente ao local e natureza da demanda.</p>
+                <strong>Escolha a vara</strong>
+                <p>Selecione a opção que mais combina com o seu atendimento.</p>
               </div>
               <div>
-                <strong>Resumo objetivo</strong>
-                <p>Inclua contexto, data principal e resultado esperado pelo cliente.</p>
+                <strong>Confira o CPF</strong>
+                <p>Use a consulta antes de enviar para evitar dados incorretos.</p>
               </div>
               <div>
-                <strong>Qualidade de dados</strong>
-                <p>Use a consulta de CPF para validar consistência antes de enviar.</p>
+                <strong>Explique com clareza</strong>
+                <p>Escreva o problema e o resultado que você espera alcançar.</p>
               </div>
             </div>
             <div className="tips-footer">

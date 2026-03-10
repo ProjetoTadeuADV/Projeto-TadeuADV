@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { apiRequest, ApiError } from "../lib/api";
+import { ApiError, apiRequest } from "../lib/api";
 import type { CaseRecord } from "../types";
 
 const STATUS_LABEL: Record<CaseRecord["status"], string> = {
@@ -58,7 +58,7 @@ export function CaseDetailPage() {
         <section className="workspace-panel">
           <p className="error-text">{error}</p>
           <Link to="/dashboard" className="primary-link">
-            Voltar para dashboard
+            Voltar para o painel
           </Link>
         </section>
       </section>
@@ -71,12 +71,12 @@ export function CaseDetailPage() {
 
   return (
     <section className="page-stack">
-      <section className="workspace-hero workspace-hero--compact">
+      <section className="workspace-hero workspace-hero--compact workspace-hero--simple">
         <div className="workspace-hero-grid">
           <div>
             <p className="hero-kicker">Detalhe do caso</p>
             <h1>{caseItem.varaNome}</h1>
-            <p>ID do caso: {caseItem.id}</p>
+            <p>Consulte abaixo os dados principais, o resumo enviado e o status atual.</p>
             <div className="hero-cta">
               <span className={`status-badge status-badge--${caseItem.status}`}>
                 {STATUS_LABEL[caseItem.status]}
@@ -85,13 +85,6 @@ export function CaseDetailPage() {
                 Voltar ao painel
               </Link>
             </div>
-          </div>
-          <div className="workspace-hero-media">
-            <img
-              src="https://images.unsplash.com/photo-1528747045269-390fe33c19d3?auto=format&fit=crop&w=1200&q=80"
-              alt="Profissional revisando detalhes de processo em notebook"
-              loading="lazy"
-            />
           </div>
         </div>
       </section>
@@ -120,7 +113,7 @@ export function CaseDetailPage() {
 
           {caseItem.cpfConsulta && (
             <div className="info-box">
-              <strong>Consulta CPF</strong>
+              <strong>Consulta de CPF</strong>
               <span>Nome: {caseItem.cpfConsulta.nome}</span>
               <span>Situação: {caseItem.cpfConsulta.situacao}</span>
               <span>Fonte: {caseItem.cpfConsulta.source}</span>
@@ -134,12 +127,12 @@ export function CaseDetailPage() {
         </article>
 
         <aside className="detail-card">
-          <h2>Sugestões de acompanhamento</h2>
+          <h2>Próximos passos sugeridos</h2>
           <ul className="timeline-list">
-            <li>Registrar toda nova interação do cliente no histórico do caso.</li>
-            <li>Revisar situação de CPF antes de qualquer alteração relevante.</li>
-            <li>Atualizar status interno assim que houver mudança operacional.</li>
-            <li>Validar próximo passo e prazo esperado com o cliente.</li>
+            <li>Revise o resumo para confirmar se está claro e completo.</li>
+            <li>Confira a situação do CPF antes de qualquer ajuste importante.</li>
+            <li>Acompanhe mudanças de status para saber em que etapa o caso está.</li>
+            <li>Use este painel como referência para o próximo retorno ao cliente.</li>
           </ul>
         </aside>
       </div>

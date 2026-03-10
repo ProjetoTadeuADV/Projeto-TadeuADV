@@ -8,8 +8,6 @@ interface InternalShowcasePageProps {
   kicker: string;
   title: string;
   description: string;
-  imageUrl: string;
-  imageAlt: string;
   highlights: string[];
   cards: ShowcaseCard[];
 }
@@ -18,14 +16,12 @@ export function InternalShowcasePage({
   kicker,
   title,
   description,
-  imageUrl,
-  imageAlt,
   highlights,
   cards
 }: InternalShowcasePageProps) {
   return (
     <section className="page-stack">
-      <section className="workspace-hero workspace-hero--compact workspace-hero--module">
+      <section className="workspace-hero workspace-hero--compact workspace-hero--simple">
         <div className="workspace-hero-grid">
           <div>
             <p className="hero-kicker">{kicker}</p>
@@ -36,9 +32,6 @@ export function InternalShowcasePage({
                 <span key={item}>{item}</span>
               ))}
             </div>
-          </div>
-          <div className="workspace-hero-media">
-            <img src={imageUrl} alt={imageAlt} loading="lazy" />
           </div>
         </div>
       </section>

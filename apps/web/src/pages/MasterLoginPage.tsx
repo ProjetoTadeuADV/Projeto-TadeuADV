@@ -1,10 +1,10 @@
 import { FormEvent, useState } from "react";
-import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthBackLink } from "../components/AuthBackLink";
 import { useAuth } from "../context/AuthContext";
 
-export function LoginPage() {
-  const { login, user, refreshUser, refreshAccessProfile, isMasterUser } = useAuth();
+export function MasterLoginPage() {
+  const { login, user, refreshUser, refreshAccessProfile, logout, isMasterUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState("");
@@ -12,8 +12,12 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  if (user?.emailVerified && isMasterUser) {
+    return <Navigate to="/master/dashboard" replace />;
+  }
+
   if (user?.emailVerified) {
-    return <Navigate to={isMasterUser ? "/master/dashboard" : "/dashboard"} replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (user && !user.emailVerified) {
@@ -41,10 +45,16 @@ export function LoginPage() {
       }
 
       const access = await refreshAccessProfile();
-      const target = location.state?.from?.pathname ?? (access?.isMaster ? "/master/dashboard" : "/dashboard");
+      if (!access?.isMaster) {
+        await logout();
+        setError("Esta conta ainda não possui acesso master.");
+        return;
+      }
+
+      const target = location.state?.from?.pathname ?? "/master/dashboard";
       navigate(target, { replace: true });
     } catch {
-      setError("Falha no login. Verifique e-mail e senha.");
+      setError("Falha no login master. Verifique e-mail e senha.");
     } finally {
       setSubmitting(false);
     }
@@ -54,13 +64,13 @@ export function LoginPage() {
     <section className="auth-page">
       <AuthBackLink />
 
-      <div className="auth-card">
-        <h1>Entrar</h1>
-        <p>Acesse sua conta para abrir e acompanhar casos.</p>
+      <div className="auth-card auth-card--wide">
+        <h1>Entrar como master</h1>
+        <p>Use a conta administrativa para acompanhar usuários, cadastros e uso geral da plataforma.</p>
 
         <form onSubmit={handleSubmit} className="form-grid">
           <label>
-            E-mail
+            E-mail master
             <input
               type="email"
               value={email}
@@ -84,13 +94,11 @@ export function LoginPage() {
           {error && <p className="error-text">{error}</p>}
 
           <button type="submit" disabled={submitting}>
-            {submitting ? "Entrando..." : "Entrar"}
+            {submitting ? "Entrando..." : "Entrar como master"}
           </button>
         </form>
 
-        <p className="helper-text">
-          Não tem conta? <Link to="/register">Criar conta</Link>
-        </p>
+        <p className="helper-text">Uma conta master pode conceder o mesmo acesso a outras contas pelo painel.</p>
       </div>
     </section>
   );

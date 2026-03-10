@@ -37,3 +37,54 @@ export interface CaseRecord {
   updatedAt: string;
 }
 
+export interface AuthAccessProfile {
+  uid: string;
+  email: string | null;
+  name: string | null;
+  emailVerified: boolean;
+  isMaster: boolean;
+  isBootstrapMaster: boolean;
+}
+
+export interface MasterSummary {
+  totalUsers: number;
+  totalMasterUsers: number;
+  verifiedUsers: number;
+  activeUsersLast30Days: number;
+  newUsersLast7Days: number;
+  totalCases: number;
+  activeCases: number;
+  closedCases: number;
+}
+
+export interface MasterUserOverview {
+  id: string;
+  email: string | null;
+  name: string | null;
+  cpf: string | null;
+  emailVerified: boolean;
+  isMaster: boolean;
+  isBootstrapMaster: boolean;
+  createdAt: string;
+  lastSeenAt: string;
+  totalCases: number;
+  activeCases: number;
+  lastCaseAt: string | null;
+}
+
+export interface MasterRecentCase {
+  id: string;
+  userId: string;
+  userName: string | null;
+  userEmail: string | null;
+  varaNome: string;
+  status: CaseStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MasterOverview {
+  summary: MasterSummary;
+  users: MasterUserOverview[];
+  recentCases: MasterRecentCase[];
+}

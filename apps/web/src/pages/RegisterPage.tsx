@@ -1,8 +1,9 @@
 import { FormEvent, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
+import { AuthBackLink } from "../components/AuthBackLink";
 import { useAuth } from "../context/AuthContext";
+import { ApiError, apiRequest } from "../lib/api";
 import { formatCpf, isValidCpf } from "../lib/cpf";
-import { apiRequest, ApiError } from "../lib/api";
 
 export function RegisterPage() {
   const { register, user, getToken } = useAuth();
@@ -14,8 +15,12 @@ export function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  if (user) {
+  if (user?.emailVerified) {
     return <Navigate to="/dashboard" replace />;
+  }
+
+  if (user && !user.emailVerified) {
+    return <Navigate to="/verify-email" replace state={{ email: user.email }} />;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -39,7 +44,13 @@ export function RegisterPage() {
           name
         }
       });
-      navigate("/dashboard", { replace: true });
+
+      navigate("/verify-email", {
+        replace: true,
+        state: {
+          email
+        }
+      });
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -53,6 +64,8 @@ export function RegisterPage() {
 
   return (
     <section className="auth-page">
+      <AuthBackLink />
+
       <div className="auth-card">
         <h1>Criar conta</h1>
         <p>Cadastro rápido para começar a abrir seus casos.</p>

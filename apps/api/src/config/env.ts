@@ -10,6 +10,17 @@ function parsePort(value: string | undefined, fallback: number): number {
   return Number.isFinite(port) && port > 0 ? port : fallback;
 }
 
+function parseEmailList(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 export const env = {
   NODE_ENV: process.env.NODE_ENV ?? "development",
   PORT: parsePort(process.env.PORT, 8080),
@@ -17,7 +28,8 @@ export const env = {
   FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID ?? "",
   FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL ?? "",
   FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY ?? "",
-  MOCK_CPF_DEFAULT_NAME: process.env.MOCK_CPF_DEFAULT_NAME ?? "Cliente Consultado"
+  MOCK_CPF_DEFAULT_NAME: process.env.MOCK_CPF_DEFAULT_NAME ?? "Cliente Consultado",
+  MASTER_EMAILS: parseEmailList(process.env.MASTER_EMAILS)
 };
 
 function hasPlaceholder(value: string): boolean {
@@ -38,4 +50,12 @@ export function hasFirebaseCredentials(): boolean {
     !hasPlaceholder(env.FIREBASE_CLIENT_EMAIL) &&
     !hasPlaceholder(env.FIREBASE_PRIVATE_KEY)
   );
+}
+
+export function isMasterEmail(email: string | null | undefined): boolean {
+  if (!email) {
+    return false;
+  }
+
+  return env.MASTER_EMAILS.includes(email.trim().toLowerCase());
 }

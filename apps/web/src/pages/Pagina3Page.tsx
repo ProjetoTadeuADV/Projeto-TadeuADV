@@ -6,8 +6,6 @@ export function Pagina3Page() {
       kicker="Página 3"
       title="Estrutura para recursos avançados"
       description="Espaço para futuras funcionalidades estratégicas, com visual alinhado ao padrão profissional da plataforma."
-      imageUrl="https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1200&q=80"
-      imageAlt="Reunião estratégica com equipe de produto e operação"
       highlights={["Roadmap", "Governança", "Expansão"]}
       cards={[
         {

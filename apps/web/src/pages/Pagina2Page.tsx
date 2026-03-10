@@ -6,8 +6,6 @@ export function Pagina2Page() {
       kicker="Página 2"
       title="Controle de acompanhamento"
       description="Estruture aqui painéis de progresso, prazos e desempenho operacional por etapa da jornada."
-      imageUrl="https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80"
-      imageAlt="Painel de gráficos com indicadores de desempenho"
       highlights={["Prazos", "Status", "Próximas ações"]}
       cards={[
         {

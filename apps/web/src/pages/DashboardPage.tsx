@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { apiRequest, ApiError } from "../lib/api";
+import { ApiError, apiRequest } from "../lib/api";
 import type { CaseRecord } from "../types";
 
 const STATUS_LABEL: Record<CaseRecord["status"], string> = {
@@ -20,6 +20,7 @@ export function DashboardPage() {
     async function loadCases() {
       setLoading(true);
       setError(null);
+
       try {
         const token = await getToken();
         const data = await apiRequest<CaseRecord[]>("/v1/cases", { token });
@@ -46,24 +47,17 @@ export function DashboardPage() {
 
   return (
     <section className="page-stack">
-      <section className="workspace-hero">
+      <section className="workspace-hero workspace-hero--simple">
         <div className="workspace-hero-grid">
           <div>
             <p className="hero-kicker">Área do cliente</p>
             <h1>Meus casos</h1>
-            <p>Acompanhe status, data de abertura e detalhes do atendimento em um único painel.</p>
-            <div className="workspace-chip-row">
-              <span>Atualização centralizada</span>
-              <span>Visão por status</span>
-              <span>Histórico completo</span>
+            <p>Veja seus atendimentos, acompanhe o andamento e abra um novo caso quando precisar.</p>
+            <div className="hero-cta">
+              <Link to="/cases/new" className="hero-primary">
+                Abrir novo caso
+              </Link>
             </div>
-          </div>
-          <div className="workspace-hero-media">
-            <img
-              src="https://images.unsplash.com/photo-1450101499163-c8848c66ca85?auto=format&fit=crop&w=1200&q=80"
-              alt="Profissional analisando relatórios de atendimento jurídico"
-              loading="lazy"
-            />
           </div>
         </div>
 
@@ -91,7 +85,7 @@ export function DashboardPage() {
         <header className="page-header">
           <div>
             <h2>Lista de casos</h2>
-            <p>Entre em cada item para visualizar detalhes, consulta de CPF e resumo do caso.</p>
+            <p>Entre em cada item para ver os detalhes, o CPF consultado e o resumo informado.</p>
           </div>
           <Link to="/cases/new" className="primary-link">
             Abrir novo caso

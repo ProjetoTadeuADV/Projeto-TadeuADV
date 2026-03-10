@@ -81,3 +81,17 @@ export function validateUserProfilePayload(payload: unknown): { cpf: string; nam
     name: parsed.data.name
   };
 }
+
+export function validateMasterAccessPayload(payload: unknown): { isMaster: boolean } {
+  const parsed = z
+    .object({
+      isMaster: z.boolean()
+    })
+    .safeParse(payload);
+
+  if (!parsed.success) {
+    throw new HttpError(400, "Payload inválido para atualização de acesso master.", parsed.error.flatten());
+  }
+
+  return parsed.data;
+}

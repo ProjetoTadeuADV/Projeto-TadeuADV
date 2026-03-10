@@ -1,11 +1,13 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { SidebarProvider } from "../context/SidebarContext";
+import { BrandWordmark } from "../components/BrandWordmark";
 import { Sidebar } from "../components/Sidebar";
 import { useAuth } from "../context/AuthContext";
+import { SidebarProvider } from "../context/SidebarContext";
 
 export function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, isMasterUser } = useAuth();
   const navigate = useNavigate();
+  const homePath = isMasterUser ? "/master/dashboard" : "/dashboard";
 
   async function handleLogout() {
     await logout();
@@ -20,19 +22,17 @@ export function Layout() {
         <div className="private-layout-content">
           <header className="private-header">
             <div className="private-header-inner">
-              <NavLink to="/dashboard" className="brand brand-link">
-                <span className="logo-emblem" aria-hidden="true">
-                  {"\u2696"}
-                </span>
-                <span className="brand-stack">
-                  <span className="brand-name">
-                    Doutor<span className="brand-eu">Eu</span>
-                  </span>
-                  <span className="brand-tagline">O Doutor da Sua Causa é Você.</span>
-                </span>
+              <NavLink to={homePath} className="brand-link" aria-label="DoutorEu">
+                <BrandWordmark className="brand-wordmark--public" />
               </NavLink>
 
               <div className="topbar-user">
+                {isMasterUser && <span className="topbar-badge">Master</span>}
+                {isMasterUser && (
+                  <NavLink to="/administrador" className="topbar-admin-link">
+                    ADMINISTRADOR
+                  </NavLink>
+                )}
                 <span title={user?.email ?? ""}>{user?.displayName || user?.email}</span>
                 <button type="button" className="ghost-button" onClick={handleLogout}>
                   Sair
@@ -40,13 +40,6 @@ export function Layout() {
               </div>
             </div>
           </header>
-
-          <section className="private-identity-strip" aria-label="Atributos da marca">
-            <span>Confiança</span>
-            <span>Empoderamento</span>
-            <span>Inovação</span>
-            <span>Acessibilidade</span>
-          </section>
 
           <main className="private-main">
             <Outlet />

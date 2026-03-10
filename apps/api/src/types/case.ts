@@ -47,6 +47,8 @@ export interface UserRecord {
   email: string | null;
   name: string | null;
   cpf?: string | null;
+  emailVerified: boolean;
+  isMaster: boolean;
   createdAt: string;
   lastSeenAt: string;
 }

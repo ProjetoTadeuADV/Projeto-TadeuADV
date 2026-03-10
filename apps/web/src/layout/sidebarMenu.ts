@@ -12,7 +12,7 @@ export interface SidebarMenuItem {
   children?: SidebarMenuChild[];
 }
 
-export const sidebarMenu: SidebarMenuItem[] = [
+const baseSidebarMenu: SidebarMenuItem[] = [
   {
     id: "dashboard",
     path: "/dashboard",
@@ -56,3 +56,14 @@ export const sidebarMenu: SidebarMenuItem[] = [
     icon: "DB"
   }
 ];
+
+const masterSidebarItem: SidebarMenuItem = {
+  id: "master-dashboard",
+  path: "/master/dashboard",
+  label: "Visão Master",
+  icon: "M"
+};
+
+export function getSidebarMenu(isMasterUser: boolean): SidebarMenuItem[] {
+  return isMasterUser ? [masterSidebarItem, ...baseSidebarMenu] : baseSidebarMenu;
+}

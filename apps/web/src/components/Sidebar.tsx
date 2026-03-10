@@ -1,22 +1,25 @@
-﻿import { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { useSidebar } from "../context/SidebarContext";
-import { sidebarMenu } from "../layout/sidebarMenu";
+import { getSidebarMenu } from "../layout/sidebarMenu";
 
 function pathIsActive(currentPath: string, itemPath: string): boolean {
   return currentPath === itemPath || currentPath.startsWith(`${itemPath}/`);
 }
 
 export function Sidebar() {
+  const { isMasterUser } = useAuth();
   const { isExpanded, handleMouseEnter, handleMouseLeave } = useSidebar();
   const location = useLocation();
   const [hoveredParentId, setHoveredParentId] = useState<string | null>(null);
   const [openedParentId, setOpenedParentId] = useState<string | null>(null);
+  const menuItems = useMemo(() => getSidebarMenu(isMasterUser), [isMasterUser]);
 
   const expandedClass = isExpanded ? "sidebar sidebar--expanded" : "sidebar";
 
   const activeParentId = useMemo(() => {
-    for (const item of sidebarMenu) {
+    for (const item of menuItems) {
       if (!item.children) {
         continue;
       }
@@ -30,7 +33,7 @@ export function Sidebar() {
     }
 
     return null;
-  }, [location.pathname]);
+  }, [location.pathname, menuItems]);
 
   return (
     <aside
@@ -50,7 +53,7 @@ export function Sidebar() {
       </div>
 
       <nav className="sidebar-nav">
-        {sidebarMenu.map((item) => {
+        {menuItems.map((item) => {
           const hasChildren = Boolean(item.children && item.children.length > 0);
 
           if (!hasChildren && item.path) {

@@ -1,0 +1,42 @@
+<svg width="1120" height="270" viewBox="0 0 1120 270" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="wordmark-blue" x1="148" y1="34" x2="778" y2="140" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#03427D"/>
+      <stop offset="1" stop-color="#012F5B"/>
+    </linearGradient>
+    <linearGradient id="wordmark-gold" x1="770" y1="30" x2="1028" y2="130" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E2C15C"/>
+      <stop offset="1" stop-color="#C99A1E"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(10 18)">
+    <circle cx="61" cy="67" r="31" fill="url(#wordmark-blue)"/>
+    <path
+      d="M35 114C35 96.3269 49.3269 82 67 82H173.5C188.136 82 200 93.8645 200 108.5C200 123.136 188.136 135 173.5 135H107V220C107 237.673 92.6731 252 75 252C57.3269 252 43 237.673 43 220V172H35V114Z"
+      fill="url(#wordmark-blue)"
+    />
+    <rect x="53" y="157" width="13" height="64" rx="6.5" fill="white" opacity="0.92"/>
+    <path
+      d="M146 108C146 99.7157 152.716 93 161 93C169.284 93 176 99.7157 176 108V169H146V108Z"
+      fill="url(#wordmark-gold)"
+    />
+    <rect x="117" y="116" width="88" height="9" rx="4.5" fill="url(#wordmark-gold)"/>
+    <path d="M129 125L110 163H148L129 125Z" fill="none" stroke="url(#wordmark-gold)" stroke-width="7" stroke-linejoin="round"/>
+    <path d="M193 125L174 163H212L193 125Z" fill="none" stroke="url(#wordmark-gold)" stroke-width="7" stroke-linejoin="round"/>
+    <path d="M100 180H221" stroke="url(#wordmark-gold)" stroke-width="10" stroke-linecap="round"/>
+    <path d="M127 180C131.077 161.309 146.311 148 160.5 148C174.689 148 189.923 161.309 194 180H127Z" fill="url(#wordmark-gold)"/>
+    <g fill="url(#wordmark-gold)">
+      <ellipse cx="42" cy="25" rx="8" ry="18" transform="rotate(-42 42 25)"/>
+      <ellipse cx="61" cy="16" rx="8" ry="18" transform="rotate(-18 61 16)"/>
+      <ellipse cx="82" cy="15" rx="8" ry="18" transform="rotate(10 82 15)"/>
+      <ellipse cx="21" cy="47" rx="8" ry="18" transform="rotate(-67 21 47)"/>
+      <ellipse cx="100" cy="28" rx="8" ry="18" transform="rotate(34 100 28)"/>
+      <ellipse cx="111" cy="49" rx="8" ry="18" transform="rotate(53 111 49)"/>
+      <ellipse cx="87" cy="5" rx="8" ry="18" transform="rotate(34 87 5)"/>
+      <ellipse cx="131" cy="25" rx="8" ry="18" transform="rotate(54 131 25)"/>
+    </g>
+  </g>
+  <text x="270" y="146" font-family="Montserrat, Arial, sans-serif" font-size="150" font-weight="800" fill="url(#wordmark-blue)">Doutor</text>
+  <text x="792" y="146" font-family="Montserrat, Arial, sans-serif" font-size="150" font-weight="800" fill="url(#wordmark-gold)">Eu</text>
+  <text x="275" y="228" font-family="Inter, Arial, sans-serif" font-size="72" font-weight="400" fill="#9FA4AD">O Doutor da Sua Causa &#233; Voc&#234;.</text>
+</svg>

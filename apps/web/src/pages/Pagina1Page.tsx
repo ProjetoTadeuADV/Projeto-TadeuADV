@@ -6,8 +6,6 @@ export function Pagina1Page() {
       kicker="Página 1"
       title="Painel de operações comerciais"
       description="Área para consolidar visão de atendimento, distribuição inicial de demandas e indicadores de entrada."
-      imageUrl="https://images.unsplash.com/photo-1551434678-e076c223a692?auto=format&fit=crop&w=1200&q=80"
-      imageAlt="Equipe acompanhando indicadores em telas de monitoramento"
       highlights={["Visão executiva", "Priorização rápida", "Escalável"]}
       cards={[
         {

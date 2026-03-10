@@ -5,12 +5,12 @@ export function LandingVantagensPage() {
   const { user } = useAuth();
 
   return (
-    <div className="landing-pro">
-      <section className="landing-hero landing-hero--compact">
+    <div className="landing-pro landing-pro--light">
+      <section className="landing-hero landing-hero--compact landing-hero--home-light">
         <div className="landing-hero-surface" />
         <div className="landing-container landing-hero-grid">
           <div className="landing-hero-copy">
-            <p className="hero-kicker">Vantagens</p>
+            <p className="hero-kicker">Sobre</p>
             <h1>Experiência profissional com clareza para o cliente final</h1>
             <p>
               A plataforma equilibra autoridade visual, praticidade operacional e segurança para
@@ -28,10 +28,10 @@ export function LandingVantagensPage() {
             </div>
           </div>
 
-          <div className="landing-hero-media">
+          <div className="landing-hero-media landing-hero-media--principal">
             <img
-              src="https://images.unsplash.com/photo-1520607162513-77705c0f0d4a?auto=format&fit=crop&w=1200&q=80"
-              alt="Profissional do direito revisando dados em ambiente corporativo"
+              src="/images/Langing.png"
+              alt="Ilustração institucional da plataforma DoutorEu"
               loading="lazy"
             />
           </div>

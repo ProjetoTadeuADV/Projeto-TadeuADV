@@ -5,8 +5,8 @@ export function LandingPage() {
   const { user } = useAuth();
 
   return (
-    <div className="landing-pro">
-      <section className="landing-hero">
+    <div className="landing-pro landing-pro--light">
+      <section className="landing-hero landing-hero--home-light">
         <div className="landing-hero-surface" />
         <div className="landing-container landing-hero-grid">
           <div className="landing-hero-copy">
@@ -46,27 +46,10 @@ export function LandingPage() {
 
           <div className="landing-hero-media landing-hero-media--principal">
             <img
-              src="/images/hero-principal.jpg"
-              alt="Advogado em posição profissional representando confiança"
+              src="/images/Langing.png"
+              alt="Ilustração principal da plataforma DoutorEu"
               loading="lazy"
             />
-          </div>
-        </div>
-
-        <div className="landing-hero-highlights">
-          <div className="landing-container highlight-grid">
-            <article>
-              <h3>Triagem inteligente</h3>
-              <p>Recebimento padronizado com vara, CPF e resumo objetivo do problema.</p>
-            </article>
-            <article>
-              <h3>Operação clara</h3>
-              <p>Painel do cliente com histórico, status e data de cada solicitação.</p>
-            </article>
-            <article>
-              <h3>Base pronta para crescer</h3>
-              <p>Arquitetura preparada para novos fluxos e integrações na próxima fase.</p>
-            </article>
           </div>
         </div>
       </section>

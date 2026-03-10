@@ -1,6 +1,25 @@
 import type { NextFunction, Request, Response } from "express";
-import type { AuthVerifier } from "../types/auth.js";
+import { env } from "../config/env.js";
 import type { CaseRepository } from "../repositories/caseRepository.js";
+import type { AuthVerifier } from "../types/auth.js";
+
+function extractErrorDetails(error: unknown): { code: string | null; message: string } {
+  if (error instanceof Error) {
+    const code =
+      typeof (error as Error & { code?: unknown }).code === "string"
+        ? ((error as Error & { code?: string }).code ?? null)
+        : null;
+    return {
+      code,
+      message: error.message
+    };
+  }
+
+  return {
+    code: null,
+    message: "Erro desconhecido na autenticação."
+  };
+}
 
 export function authMiddleware(authVerifier: AuthVerifier, repository: CaseRepository) {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -14,25 +33,50 @@ export function authMiddleware(authVerifier: AuthVerifier, repository: CaseRepos
       }
 
       const token = header.slice("Bearer ".length).trim();
-      const user = await authVerifier.verifyIdToken(token);
+      const verifiedUser = await authVerifier.verifyIdToken(token);
+      const existingUser = await repository.getUserById(verifiedUser.uid);
+      const resolvedUser = {
+        ...verifiedUser,
+        isMaster: verifiedUser.isBootstrapMaster || existingUser?.isMaster === true
+      };
 
-      req.user = user;
+      req.user = resolvedUser;
       const now = new Date().toISOString();
       await repository.upsertUser({
-        id: user.uid,
-        email: user.email,
-        name: user.name,
+        id: resolvedUser.uid,
+        email: resolvedUser.email,
+        name: resolvedUser.name,
+        emailVerified: resolvedUser.emailVerified,
+        isMaster: resolvedUser.isMaster,
         createdAt: now,
         lastSeenAt: now
       });
 
       return next();
     } catch (error) {
-      return res.status(401).json({
+      const details = extractErrorDetails(error);
+      const message = details.message.toLowerCase();
+      const isTokenError =
+        details.code?.startsWith("auth/") === true ||
+        message.includes("id token") ||
+        message.includes("token");
+
+      if (isTokenError) {
+        return res.status(401).json({
+          status: "error",
+          message: "Token inválido."
+        });
+      }
+
+      return res.status(500).json({
         status: "error",
-        message: "Token inválido."
+        message: "Falha ao validar sessão no Firebase. Verifique Firestore e credenciais.",
+        ...(env.NODE_ENV !== "production"
+          ? {
+              details
+            }
+          : {})
       });
     }
   };
 }
-

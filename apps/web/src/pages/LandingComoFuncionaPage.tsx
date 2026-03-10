@@ -5,8 +5,8 @@ export function LandingComoFuncionaPage() {
   const { user } = useAuth();
 
   return (
-    <div className="landing-pro">
-      <section className="landing-hero landing-hero--compact">
+    <div className="landing-pro landing-pro--light">
+      <section className="landing-hero landing-hero--compact landing-hero--home-light">
         <div className="landing-hero-surface" />
         <div className="landing-container landing-hero-grid">
           <div className="landing-hero-copy">
@@ -28,10 +28,10 @@ export function LandingComoFuncionaPage() {
             </div>
           </div>
 
-          <div className="landing-hero-media">
+          <div className="landing-hero-media landing-hero-media--principal">
             <img
-              src="https://images.unsplash.com/photo-1521791136064-7986c2920216?auto=format&fit=crop&w=1200&q=80"
-              alt="Equipe analisando documentação para orientação jurídica"
+              src="/images/Langing.png"
+              alt="Ilustração da jornada de atendimento da plataforma"
               loading="lazy"
             />
           </div>
@@ -49,7 +49,7 @@ export function LandingComoFuncionaPage() {
             </article>
             <article>
               <h3>Controle no painel</h3>
-              <p>Usuário acompanha o caso sem depender de atualização manual.</p>
+              <p>O usuário acompanha o caso sem depender de atualização manual.</p>
             </article>
           </div>
         </div>
@@ -98,15 +98,15 @@ export function LandingComoFuncionaPage() {
           <div className="value-grid">
             <article className="value-card">
               <h3>Primeiro atendimento</h3>
-              <p>Cliente abre a demanda em minutos e recebe visibilidade de status.</p>
+              <p>O cliente abre a demanda em minutos e recebe visibilidade de status.</p>
             </article>
             <article className="value-card">
               <h3>Triagem comercial</h3>
-              <p>Equipe valida dados iniciais e organiza prioridades por vara.</p>
+              <p>A equipe valida dados iniciais e organiza prioridades por vara.</p>
             </article>
             <article className="value-card">
               <h3>Acompanhamento contínuo</h3>
-              <p>Usuário consulta detalhes sem fricção e com histórico consolidado.</p>
+              <p>O usuário consulta detalhes sem fricção e com histórico consolidado.</p>
             </article>
             <article className="value-card value-card-strong">
               <p className="hero-kicker">Fluxo pronto</p>

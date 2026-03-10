@@ -1,5 +1,5 @@
 import { getFirebaseAuth, getFirebaseFirestore } from "./config/firebaseAdmin.js";
-import { hasFirebaseCredentials } from "./config/env.js";
+import { hasFirebaseCredentials, isMasterEmail } from "./config/env.js";
 import { FirestoreCaseRepository } from "./repositories/firestoreCaseRepository.js";
 import { MockCpfProvider } from "./services/cpfProvider.js";
 import type { AuthVerifier } from "./types/auth.js";
@@ -9,10 +9,15 @@ import type { CpfProvider } from "./services/cpfProvider.js";
 class FirebaseAuthVerifier implements AuthVerifier {
   async verifyIdToken(token: string) {
     const decoded = await getFirebaseAuth().verifyIdToken(token);
+    const bootstrapMaster = isMasterEmail(decoded.email);
+
     return {
       uid: decoded.uid,
       email: decoded.email ?? null,
-      name: decoded.name ?? null
+      name: decoded.name ?? null,
+      emailVerified: decoded.email_verified ?? false,
+      isMaster: bootstrapMaster,
+      isBootstrapMaster: bootstrapMaster
     };
   }
 }
@@ -36,4 +41,3 @@ export function createDefaultDependencies(): AppDependencies {
     cpfProvider: new MockCpfProvider()
   };
 }
-
