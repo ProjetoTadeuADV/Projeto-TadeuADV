@@ -24,7 +24,7 @@ function parseEmailList(value: string | undefined): string[] {
 export const env = {
   NODE_ENV: process.env.NODE_ENV ?? "development",
   PORT: parsePort(process.env.PORT, 8080),
-  CORS_ORIGIN: process.env.CORS_ORIGIN ?? "http://localhost:5173",
+  CORS_ORIGIN: process.env.CORS_ORIGIN ?? "http://localhost:5173,https://*.vercel.app",
   FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID ?? "",
   FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL ?? "",
   FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY ?? "",

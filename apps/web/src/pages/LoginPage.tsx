@@ -11,6 +11,15 @@ interface ResolveLoginResponse {
   email: string;
 }
 
+function shouldTreatAsEmailInput(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  return /[A-Za-z@._+-]/.test(trimmed);
+}
+
 function normalizeIdentifierForSubmit(value: string): string {
   const trimmed = value.trim();
   if (trimmed.includes("@")) {
@@ -160,7 +169,7 @@ export function LoginPage() {
                     value={identifier}
                     onChange={(event) => {
                       const value = event.target.value;
-                      if (value.includes("@")) {
+                      if (shouldTreatAsEmailInput(value)) {
                         setIdentifier(value);
                         return;
                       }
