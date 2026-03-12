@@ -487,19 +487,21 @@ export function createV1Router(deps: AppDependencies) {
       }
 
       const payload = validateUserProfilePayload(req.body);
+      const currentUserUid = req.user.uid;
+      const currentUserEmail = req.user.email;
       const existingCpfUser = await deps.repository.findUserByCpf(payload.cpf);
-      if (existingCpfUser && existingCpfUser.id !== req.user.uid) {
+      if (existingCpfUser && existingCpfUser.id !== currentUserUid) {
         throw new HttpError(
           409,
           'Já existe uma conta com este CPF. Faça login ou use "Esqueci minha senha".'
         );
       }
 
-      const normalizedCurrentEmail = normalizeEmail(req.user.email);
+      const normalizedCurrentEmail = normalizeEmail(currentUserEmail);
       if (normalizedCurrentEmail) {
         const users = await deps.repository.listUsers();
         const emailInUse = users.some(
-          (item) => item.id !== req.user.uid && normalizeEmail(item.email) === normalizedCurrentEmail
+          (item) => item.id !== currentUserUid && normalizeEmail(item.email) === normalizedCurrentEmail
         );
 
         if (emailInUse) {
@@ -510,7 +512,7 @@ export function createV1Router(deps: AppDependencies) {
         }
       }
 
-      const updated = await deps.repository.updateUserProfile(req.user.uid, {
+      const updated = await deps.repository.updateUserProfile(currentUserUid, {
         cpf: payload.cpf,
         name: payload.name
       });
