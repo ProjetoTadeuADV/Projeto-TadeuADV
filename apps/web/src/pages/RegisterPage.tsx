@@ -18,6 +18,10 @@ interface RegisterAvailabilityResponse {
   emailInUse: boolean;
 }
 
+interface ResolveLoginResponse {
+  email: string;
+}
+
 const STEPS: StepItem[] = [
   { id: "dados", order: 1, title: "Dados" },
   { id: "verificacao", order: 2, title: "Código de Verificação" },
@@ -182,10 +186,27 @@ export function RegisterPage() {
 
       return true;
     } catch (nextError) {
-      if (nextError instanceof ApiError) {
-        setError(nextError.message);
-      } else {
-        setError("Não foi possível validar o cadastro agora. Tente novamente.");
+      try {
+        await apiRequest<ResolveLoginResponse>("/v1/auth/resolve-login", {
+          method: "POST",
+          body: {
+            identifier: normalizedCpf
+          }
+        });
+
+        setError('Já existe uma conta com este CPF. Faça login ou use "Esqueci minha senha".');
+        return false;
+      } catch (fallbackError) {
+        const fallbackNotFound = fallbackError instanceof ApiError && fallbackError.statusCode === 404;
+        if (fallbackNotFound) {
+          return true;
+        }
+
+        if (nextError instanceof ApiError) {
+          setError(nextError.message);
+        } else {
+          setError("Não foi possível validar o cadastro agora. Verifique a integração da API no Vercel.");
+        }
       }
 
       return false;
