@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
-import type { MasterOverview, MasterUserOverview } from "../types";
+import type { MasterOverview, MasterUserActivity, MasterUserOverview } from "../types";
 
 const STATUS_LABELS: Record<string, string> = {
   recebido: "Recebido",
@@ -9,13 +9,48 @@ const STATUS_LABELS: Record<string, string> = {
   encerrado: "Encerrado"
 };
 
+const ACCESS_LEVEL_LABELS: Record<MasterUserOverview["accessLevel"], string> = {
+  user: "Padrão",
+  operator: "Operador",
+  master: "Master"
+};
+
+function getUserInitials(user: { name: string | null; email: string | null }): string {
+  const source = user.name?.trim() || user.email?.trim() || "";
+  if (!source) {
+    return "DE";
+  }
+
+  const words = source
+    .replace(/[@._-]/g, " ")
+    .split(" ")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (words.length === 0) {
+    return "DE";
+  }
+
+  if (words.length === 1) {
+    return words[0].slice(0, 2).toUpperCase();
+  }
+
+  return `${words[0][0] ?? ""}${words[1][0] ?? ""}`.toUpperCase();
+}
+
 export function MasterDashboardPage() {
-  const { getToken, user } = useAuth();
+  const { getToken, user, isMasterUser } = useAuth();
   const [overview, setOverview] = useState<MasterOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+  const [pendingAccessUserId, setPendingAccessUserId] = useState<string | null>(null);
+  const [pendingDeleteUserId, setPendingDeleteUserId] = useState<string | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [selectedAccessLevel, setSelectedAccessLevel] = useState<MasterUserOverview["accessLevel"]>("user");
+  const [activity, setActivity] = useState<MasterUserActivity | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
 
   const loadOverview = useCallback(async () => {
     setLoading(true);
@@ -38,6 +73,21 @@ export function MasterDashboardPage() {
     void loadOverview();
   }, [loadOverview]);
 
+  useEffect(() => {
+    if (!selectedUserId) {
+      return;
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeActivityModal();
+      }
+    }
+
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [selectedUserId]);
+
   const summaryItems = useMemo(() => {
     if (!overview) {
       return [];
@@ -47,40 +97,155 @@ export function MasterDashboardPage() {
       { label: "Usuários totais", value: overview.summary.totalUsers },
       { label: "Contas master", value: overview.summary.totalMasterUsers },
       { label: "E-mails verificados", value: overview.summary.verifiedUsers },
-      { label: "Usuários ativos em 30 dias", value: overview.summary.activeUsersLast30Days },
-      { label: "Novos usuários em 7 dias", value: overview.summary.newUsersLast7Days },
       { label: "Casos totais", value: overview.summary.totalCases },
       { label: "Casos ativos", value: overview.summary.activeCases },
       { label: "Casos encerrados", value: overview.summary.closedCases }
     ];
   }, [overview]);
 
-  async function handleToggleMaster(targetUser: MasterUserOverview) {
+  const selectedUser = useMemo(() => {
+    if (!selectedUserId || !overview) {
+      return null;
+    }
+
+    return overview.users.find((item) => item.id === selectedUserId) ?? null;
+  }, [overview, selectedUserId]);
+
+  useEffect(() => {
+    if (!selectedUser) {
+      setSelectedAccessLevel("user");
+      return;
+    }
+
+    setSelectedAccessLevel(selectedUser.accessLevel);
+  }, [selectedUser]);
+
+  const canManageSelectedUser = useMemo(() => {
+    if (!selectedUser || !isMasterUser) {
+      return false;
+    }
+
+    if (selectedUser.isBootstrapMaster) {
+      return false;
+    }
+
+    if (selectedUser.id === user?.uid) {
+      return false;
+    }
+
+    return true;
+  }, [isMasterUser, selectedUser, user?.uid]);
+
+  const hasPendingAccessSave = useMemo(() => {
+    if (!selectedUser) {
+      return false;
+    }
+
+    return pendingAccessUserId === selectedUser.id;
+  }, [pendingAccessUserId, selectedUser]);
+
+  const hasPendingDelete = useMemo(() => {
+    if (!selectedUser) {
+      return false;
+    }
+
+    return pendingDeleteUserId === selectedUser.id;
+  }, [pendingDeleteUserId, selectedUser]);
+
+  const hasAccessChanged = useMemo(() => {
+    if (!selectedUser) {
+      return false;
+    }
+
+    return selectedAccessLevel !== selectedUser.accessLevel;
+  }, [selectedAccessLevel, selectedUser]);
+
+  const loadUserActivity = useCallback(
+    async (userId: string) => {
+      setSelectedUserId(userId);
+      setActivityLoading(true);
+      setActivityError(null);
+      setActivity(null);
+
+      try {
+        const token = await getToken();
+        const result = await apiRequest<MasterUserActivity>(`/v1/admin/users/${userId}/activity`, {
+          token
+        });
+        setActivity(result);
+      } catch (err) {
+        const message =
+          err instanceof ApiError ? err.message : "Não foi possível carregar os detalhes deste usuário.";
+        setActivityError(message);
+      } finally {
+        setActivityLoading(false);
+      }
+    },
+    [getToken]
+  );
+
+  async function handleUpdateAccess(targetUser: MasterUserOverview, accessLevel: MasterUserOverview["accessLevel"]) {
     setFeedback(null);
-    setPendingUserId(targetUser.id);
+    setError(null);
+    setPendingAccessUserId(targetUser.id);
 
     try {
       const token = await getToken();
-      await apiRequest(`/v1/admin/users/${targetUser.id}/master`, {
+      await apiRequest(`/v1/admin/users/${targetUser.id}/access`, {
         method: "PATCH",
         token,
         body: {
-          isMaster: !targetUser.isMaster
+          accessLevel
         }
       });
-      setFeedback(
-        targetUser.isMaster
-          ? "Acesso master removido com sucesso."
-          : "Acesso master concedido com sucesso."
-      );
+
+      setFeedback(`Acesso atualizado para ${ACCESS_LEVEL_LABELS[accessLevel]}.`);
       await loadOverview();
+      await loadUserActivity(targetUser.id);
     } catch (err) {
       const message =
-        err instanceof ApiError ? err.message : "Não foi possível atualizar o acesso master.";
+        err instanceof ApiError ? err.message : "Não foi possível atualizar o nível de acesso.";
       setError(message);
     } finally {
-      setPendingUserId(null);
+      setPendingAccessUserId(null);
     }
+  }
+
+  async function handleDeleteUser(targetUser: MasterUserOverview) {
+    setFeedback(null);
+    setError(null);
+
+    const label = targetUser.name || targetUser.email || "esta conta";
+    const confirmed = window.confirm(
+      `Deseja excluir ${label}? Esta ação remove o usuário e todos os casos vinculados.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPendingDeleteUserId(targetUser.id);
+    try {
+      const token = await getToken();
+      await apiRequest(`/v1/admin/users/${targetUser.id}`, {
+        method: "DELETE",
+        token
+      });
+      setFeedback("Conta excluída com sucesso.");
+      closeActivityModal();
+      await loadOverview();
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Não foi possível excluir a conta.";
+      setError(message);
+    } finally {
+      setPendingDeleteUserId(null);
+    }
+  }
+
+  function closeActivityModal() {
+    setSelectedUserId(null);
+    setActivity(null);
+    setActivityError(null);
   }
 
   return (
@@ -88,9 +253,9 @@ export function MasterDashboardPage() {
       <section className="workspace-hero workspace-hero--simple">
         <div className="workspace-hero-grid">
           <div>
-            <p className="hero-kicker">Painel master</p>
+            <p className="hero-kicker">Painel administrativo</p>
             <h1>Visão geral da plataforma</h1>
-            <p>Analise a base de usuários e conceda acesso master para outras contas quando precisar.</p>
+            <p>Lista central de contas cadastradas com acesso aos detalhes por usuário em modal.</p>
           </div>
         </div>
 
@@ -110,7 +275,7 @@ export function MasterDashboardPage() {
         <header className="page-header">
           <div>
             <h2>Contas cadastradas</h2>
-            <p>Veja todas as contas e promova outras pessoas ao perfil master em poucos cliques.</p>
+            <p>Use o botão Editar perfil para abrir os detalhes e a sessão individual de cada cliente.</p>
           </div>
         </header>
 
@@ -138,123 +303,205 @@ export function MasterDashboardPage() {
                   <th>Ativos</th>
                   <th>Último acesso</th>
                   <th>Último caso</th>
-                  <th>Ação</th>
+                  <th>Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {overview.users.map((item) => {
-                  const isCurrentUser = item.id === user?.uid;
-                  const actionDisabled = isCurrentUser || item.isBootstrapMaster || pendingUserId === item.id;
-
-                  return (
-                    <tr key={item.id}>
-                      <td>
-                        <div className="table-primary">
-                          <strong>{item.name || "Usuário sem nome"}</strong>
-                          <span>{item.email || "Sem e-mail cadastrado"}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="table-badge-stack">
-                          {item.isMaster ? (
-                            <span className="info-pill info-pill--master">Master</span>
-                          ) : (
-                            <span className="info-pill">Padrão</span>
-                          )}
-                          {item.isBootstrapMaster && (
-                            <span className="info-pill info-pill--neutral">Principal</span>
-                          )}
-                        </div>
-                      </td>
-                      <td>{item.cpf || "Não informado"}</td>
-                      <td>
-                        <span
-                          className={
-                            item.emailVerified
-                              ? "info-pill info-pill--success"
-                              : "info-pill info-pill--warning"
-                          }
+                {overview.users.map((item) => (
+                  <tr key={item.id}>
+                    <td data-label="Usuário">
+                      <div className="table-primary">
+                        <strong>{item.name || "Usuário sem nome"}</strong>
+                        <span>{item.email || "Sem e-mail cadastrado"}</span>
+                      </div>
+                    </td>
+                    <td data-label="Perfil">
+                      <div className="table-badge-stack">
+                        {item.accessLevel === "master" ? (
+                          <span className="info-pill info-pill--master">Master</span>
+                        ) : item.accessLevel === "operator" ? (
+                          <span className="info-pill info-pill--operator">Operador</span>
+                        ) : (
+                          <span className="info-pill">Padrão</span>
+                        )}
+                      </div>
+                    </td>
+                    <td data-label="CPF">{item.cpf || "Não informado"}</td>
+                    <td data-label="Verificação">
+                      <span
+                        className={
+                          item.emailVerified ? "info-pill info-pill--success" : "info-pill info-pill--warning"
+                        }
+                      >
+                        {item.emailVerified ? "Verificado" : "Pendente"}
+                      </span>
+                    </td>
+                    <td data-label="Casos">{item.totalCases}</td>
+                    <td data-label="Ativos">{item.activeCases}</td>
+                    <td data-label="Último acesso">{new Date(item.lastSeenAt).toLocaleString("pt-BR")}</td>
+                    <td data-label="Último caso">
+                      {item.lastCaseAt ? new Date(item.lastCaseAt).toLocaleString("pt-BR") : "Sem casos"}
+                    </td>
+                    <td data-label="Ações">
+                      <div className="table-actions">
+                        <button
+                          type="button"
+                          className="secondary-button secondary-button--small"
+                          onClick={() => void loadUserActivity(item.id)}
                         >
-                          {item.emailVerified ? "Verificado" : "Pendente"}
-                        </span>
-                      </td>
-                      <td>{item.totalCases}</td>
-                      <td>{item.activeCases}</td>
-                      <td>{new Date(item.lastSeenAt).toLocaleString("pt-BR")}</td>
-                      <td>{item.lastCaseAt ? new Date(item.lastCaseAt).toLocaleString("pt-BR") : "Sem casos"}</td>
-                      <td>
-                        <div className="table-actions">
-                          <button
-                            type="button"
-                            className="secondary-button secondary-button--small"
-                            disabled={actionDisabled}
-                            onClick={() => void handleToggleMaster(item)}
-                          >
-                            {pendingUserId === item.id
-                              ? "Salvando..."
-                              : item.isBootstrapMaster
-                                ? "Master fixo"
-                                : isCurrentUser
-                                  ? "Sua conta"
-                                  : item.isMaster
-                                    ? "Remover master"
-                                    : "Tornar master"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                          Editar perfil
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         )}
       </section>
 
-      <section className="workspace-panel">
-        <header className="page-header">
-          <div>
-            <h2>Movimentação recente</h2>
-            <p>Últimos casos atualizados para acompanhar rapidamente onde a operação está concentrada.</p>
-          </div>
-        </header>
+      {selectedUserId && (
+        <div className="modal-backdrop" role="presentation" onClick={closeActivityModal}>
+          <section
+            className="modal-card modal-card--wide"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Detalhes do usuário"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="modal-header">
+              <div className="modal-user-hero">
+                <div className="modal-user-avatar" aria-hidden="true">
+                  {selectedUser?.avatarUrl ? (
+                    <img src={selectedUser.avatarUrl} alt="" />
+                  ) : (
+                    <span>{getUserInitials(selectedUser ?? { name: null, email: null })}</span>
+                  )}
+                </div>
+                <div>
+                  <h2>Informações do cliente</h2>
+                  <p>Casos e requisições da conta selecionada.</p>
+                </div>
+              </div>
+              <button type="button" className="ghost-button" onClick={closeActivityModal}>
+                Fechar
+              </button>
+            </header>
 
-        {!loading && !error && overview && overview.recentCases.length === 0 && (
-          <div className="empty-state">
-            <h2>Sem movimentações recentes</h2>
-            <p>Quando os usuários começarem a abrir casos, essa lista será preenchida.</p>
-          </div>
-        )}
+            {selectedUser && (
+              <section className="admin-access-editor">
+                <label>
+                  Tipo de acesso
+                  <select
+                    value={selectedAccessLevel}
+                    onChange={(event) =>
+                      setSelectedAccessLevel(event.target.value as MasterUserOverview["accessLevel"])
+                    }
+                    disabled={!canManageSelectedUser || hasPendingAccessSave}
+                  >
+                    <option value="user">Padrão</option>
+                    <option value="operator">Operador (somente leitura)</option>
+                    <option value="master">Master</option>
+                  </select>
+                </label>
 
-        {!loading && !error && overview && overview.recentCases.length > 0 && (
-          <div className="card-grid">
-            {overview.recentCases.map((item) => (
-              <article key={item.id} className="case-card">
-                <div className="case-card-top">
-                  <strong>{item.varaNome}</strong>
-                  <span className={`status-badge status-badge--${item.status}`}>
-                    {STATUS_LABELS[item.status]}
-                  </span>
+                {isMasterUser ? (
+                  <button
+                    type="button"
+                    className="secondary-button secondary-button--small"
+                    disabled={!canManageSelectedUser || !hasAccessChanged || hasPendingAccessSave}
+                    onClick={() => void handleUpdateAccess(selectedUser, selectedAccessLevel)}
+                  >
+                    {hasPendingAccessSave ? "Salvando..." : "Salvar tipo de acesso"}
+                  </button>
+                ) : (
+                  <p className="helper-text">Perfil operador possui acesso somente leitura neste painel.</p>
+                )}
+
+                {isMasterUser && (
+                  <button
+                    type="button"
+                    className="danger-button danger-button--small"
+                    disabled={!canManageSelectedUser || hasPendingDelete}
+                    onClick={() => void handleDeleteUser(selectedUser)}
+                  >
+                    {hasPendingDelete ? "Excluindo..." : "Excluir conta"}
+                  </button>
+                )}
+              </section>
+            )}
+
+            {selectedUser?.isBootstrapMaster && (
+              <p className="helper-text">A conta master principal não pode ser alterada por este painel.</p>
+            )}
+            {selectedUser?.id === user?.uid && isMasterUser && (
+              <p className="helper-text">Para segurança, altere seu acesso usando outra conta master.</p>
+            )}
+
+            {activityLoading && <p>Carregando detalhes...</p>}
+            {activityError && <p className="error-text">{activityError}</p>}
+
+            {!activityLoading && !activityError && activity && (
+              <>
+                <div className="detail-list">
+                  <div className="detail-item">
+                    <span>Usuário</span>
+                    <strong>{activity.user.name || "Usuário sem nome"}</strong>
+                  </div>
+                  <div className="detail-item">
+                    <span>E-mail</span>
+                    <strong>{activity.user.email || "Sem e-mail cadastrado"}</strong>
+                  </div>
+                  <div className="detail-item">
+                    <span>Tipo de acesso</span>
+                    <strong>{ACCESS_LEVEL_LABELS[activity.user.accessLevel]}</strong>
+                  </div>
+                  <div className="detail-item">
+                    <span>Total de casos</span>
+                    <strong>{activity.user.totalCases}</strong>
+                  </div>
+                  <div className="detail-item">
+                    <span>Casos ativos</span>
+                    <strong>{activity.user.activeCases}</strong>
+                  </div>
                 </div>
-                <div className="table-primary">
-                  <strong>{item.userName || "Usuário sem nome"}</strong>
-                  <span>{item.userEmail || "Sem e-mail cadastrado"}</span>
-                </div>
-                <div className="case-card-meta">
-                  <span>
-                    <small>Criado em</small>
-                    {new Date(item.createdAt).toLocaleString("pt-BR")}
-                  </span>
-                  <span>
-                    <small>Atualizado em</small>
-                    {new Date(item.updatedAt).toLocaleString("pt-BR")}
-                  </span>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
+
+                {activity.requests.length === 0 ? (
+                  <div className="empty-state">
+                    <h2>Sem requisições para este usuário</h2>
+                    <p>Quando a conta abrir casos, os registros aparecerão aqui.</p>
+                  </div>
+                ) : (
+                  <div className="card-grid">
+                    {activity.requests.map((request) => (
+                      <article key={request.id} className="case-card">
+                        <div className="case-card-top">
+                          <strong>{request.varaNome}</strong>
+                          <span className={`status-badge status-badge--${request.status}`}>
+                            {STATUS_LABELS[request.status]}
+                          </span>
+                        </div>
+                        <div className="case-card-meta">
+                          <span>
+                            <small>CPF</small>
+                            {request.cpf}
+                          </span>
+                          <span>
+                            <small>Abertura</small>
+                            {new Date(request.createdAt).toLocaleString("pt-BR")}
+                          </span>
+                        </div>
+                        <p>{request.resumo}</p>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        </div>
+      )}
     </section>
   );
 }

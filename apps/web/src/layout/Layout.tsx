@@ -1,18 +1,41 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
 import { BrandWordmark } from "../components/BrandWordmark";
 import { Sidebar } from "../components/Sidebar";
 import { useAuth } from "../context/AuthContext";
 import { SidebarProvider } from "../context/SidebarContext";
 
-export function Layout() {
-  const { user, logout, isMasterUser } = useAuth();
-  const navigate = useNavigate();
-  const homePath = isMasterUser ? "/master/dashboard" : "/dashboard";
-
-  async function handleLogout() {
-    await logout();
-    navigate("/", { replace: true });
+function resolveAvatarInitials(value: string): string {
+  const sanitized = value.trim();
+  if (!sanitized) {
+    return "P";
   }
+
+  const tokens = sanitized
+    .replace(/[@._-]/g, " ")
+    .split(" ")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (tokens.length === 0) {
+    return "P";
+  }
+
+  if (tokens.length === 1) {
+    return tokens[0].slice(0, 2).toUpperCase();
+  }
+
+  return `${tokens[0][0] ?? ""}${tokens[1][0] ?? ""}`.toUpperCase();
+}
+
+export function Layout() {
+  const { user, accessProfile, isMasterUser, isOperatorUser, canAccessAdmin } = useAuth();
+  const homePath = canAccessAdmin ? "/master/dashboard" : "/dashboard";
+  const profileLabel =
+    accessProfile !== null
+      ? accessProfile.name ?? accessProfile.email ?? user?.email ?? "Perfil"
+      : user?.displayName || user?.email || "Perfil";
+  const avatarUrl = accessProfile?.avatarUrl ?? user?.photoURL ?? null;
+  const avatarInitials = resolveAvatarInitials(profileLabel);
 
   return (
     <SidebarProvider>
@@ -27,16 +50,21 @@ export function Layout() {
               </NavLink>
 
               <div className="topbar-user">
-                {isMasterUser && <span className="topbar-badge">Master</span>}
-                {isMasterUser && (
-                  <NavLink to="/administrador" className="topbar-admin-link">
-                    ADMINISTRADOR
+                {canAccessAdmin && (
+                  <NavLink
+                    to="/administrador"
+                    className={({ isActive }) => (isActive ? "topbar-badge topbar-badge--active" : "topbar-badge")}
+                  >
+                    {isMasterUser ? "Master" : isOperatorUser ? "Operador" : "Administrador"}
                   </NavLink>
                 )}
-                <span title={user?.email ?? ""}>{user?.displayName || user?.email}</span>
-                <button type="button" className="ghost-button" onClick={handleLogout}>
-                  Sair
-                </button>
+                <NavLink to="/settings/profile" className="topbar-avatar-link" title={profileLabel} aria-label="Perfil">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="" className="topbar-avatar-image" />
+                  ) : (
+                    <span className="topbar-avatar-fallback">{avatarInitials}</span>
+                  )}
+                </NavLink>
               </div>
             </div>
           </header>

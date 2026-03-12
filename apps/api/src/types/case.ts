@@ -46,9 +46,13 @@ export interface UserRecord {
   id: string;
   email: string | null;
   name: string | null;
+  avatarUrl?: string | null;
+  nameCustomized?: boolean;
+  avatarUrlCustomized?: boolean;
   cpf?: string | null;
   emailVerified: boolean;
   isMaster: boolean;
+  isOperator?: boolean;
   createdAt: string;
   lastSeenAt: string;
 }

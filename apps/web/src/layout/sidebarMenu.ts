@@ -57,13 +57,12 @@ const baseSidebarMenu: SidebarMenuItem[] = [
   }
 ];
 
-const masterSidebarItem: SidebarMenuItem = {
-  id: "master-dashboard",
-  path: "/master/dashboard",
-  label: "Visão Master",
-  icon: "M"
-};
+export function getSidebarMenu(isMasterUser: boolean, canCreateCases: boolean): SidebarMenuItem[] {
+  void isMasterUser;
 
-export function getSidebarMenu(isMasterUser: boolean): SidebarMenuItem[] {
-  return isMasterUser ? [masterSidebarItem, ...baseSidebarMenu] : baseSidebarMenu;
+  if (canCreateCases) {
+    return baseSidebarMenu;
+  }
+
+  return baseSidebarMenu.filter((item) => item.id !== "novo-caso");
 }

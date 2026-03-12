@@ -7,10 +7,7 @@ import { PublicLayout } from "./layout/PublicLayout";
 import { CaseDetailPage } from "./pages/CaseDetailPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DadosPage } from "./pages/DadosPage";
-import { LandingComoFuncionaPage } from "./pages/LandingComoFuncionaPage";
-import { LandingEscopoPage } from "./pages/LandingEscopoPage";
 import { LandingPage } from "./pages/LandingPage";
-import { LandingVantagensPage } from "./pages/LandingVantagensPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MasterDashboardPage } from "./pages/MasterDashboardPage";
 import { MasterLoginPage } from "./pages/MasterLoginPage";
@@ -18,6 +15,7 @@ import { NewCasePage } from "./pages/NewCasePage";
 import { Pagina1Page } from "./pages/Pagina1Page";
 import { Pagina2Page } from "./pages/Pagina2Page";
 import { Pagina3Page } from "./pages/Pagina3Page";
+import { ProfileSettingsPage } from "./pages/ProfileSettingsPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { Subpagina1Page } from "./pages/Subpagina1Page";
 import { Subpagina2Page } from "./pages/Subpagina2Page";
@@ -25,12 +23,12 @@ import { Subpagina3Page } from "./pages/Subpagina3Page";
 import { Subpagina4Page } from "./pages/Subpagina4Page";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 
-function resolveSignedArea(isMasterUser: boolean): string {
-  return isMasterUser ? "/master/dashboard" : "/dashboard";
+function resolveSignedArea(canAccessAdmin: boolean): string {
+  return canAccessAdmin ? "/master/dashboard" : "/dashboard";
 }
 
 function PublicOnlyRoute() {
-  const { user, loading, isMasterUser } = useAuth();
+  const { user, loading, canAccessAdmin } = useAuth();
 
   if (loading) {
     return (
@@ -41,14 +39,14 @@ function PublicOnlyRoute() {
   }
 
   if (user) {
-    return <Navigate to={user.emailVerified ? resolveSignedArea(isMasterUser) : "/verify-email"} replace />;
+    return <Navigate to={user.emailVerified ? resolveSignedArea(canAccessAdmin) : "/verify-email"} replace />;
   }
 
   return <Outlet />;
 }
 
 function PublicLandingRoute() {
-  const { user, loading, isMasterUser } = useAuth();
+  const { user, loading, canAccessAdmin } = useAuth();
 
   if (loading) {
     return (
@@ -59,7 +57,7 @@ function PublicLandingRoute() {
   }
 
   if (user) {
-    return <Navigate to={user.emailVerified ? resolveSignedArea(isMasterUser) : "/verify-email"} replace />;
+    return <Navigate to={user.emailVerified ? resolveSignedArea(canAccessAdmin) : "/verify-email"} replace />;
   }
 
   return <Outlet />;
@@ -74,9 +72,9 @@ export default function App() {
         <Route element={<PublicLandingRoute />}>
           <Route element={<PublicLayout />}>
             <Route path="/" element={<LandingPage />} />
-            <Route path="/como-funciona" element={<LandingComoFuncionaPage />} />
-            <Route path="/vantagens" element={<LandingVantagensPage />} />
-            <Route path="/escopo-inicial" element={<LandingEscopoPage />} />
+            <Route path="/como-funciona" element={<Navigate to="/" replace />} />
+            <Route path="/vantagens" element={<Navigate to="/" replace />} />
+            <Route path="/escopo-inicial" element={<Navigate to="/" replace />} />
           </Route>
         </Route>
 
@@ -99,6 +97,8 @@ export default function App() {
             <Route path="/pagina-2/subpagina-3" element={<Subpagina3Page />} />
             <Route path="/pagina-2/subpagina-4" element={<Subpagina4Page />} />
             <Route path="/dados" element={<DadosPage />} />
+            <Route path="/settings/profile" element={<ProfileSettingsPage />} />
+            <Route path="/app/settings/profile" element={<ProfileSettingsPage />} />
           </Route>
         </Route>
 

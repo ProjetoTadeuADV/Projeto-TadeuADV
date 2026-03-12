@@ -35,9 +35,22 @@ export function authMiddleware(authVerifier: AuthVerifier, repository: CaseRepos
       const token = header.slice("Bearer ".length).trim();
       const verifiedUser = await authVerifier.verifyIdToken(token);
       const existingUser = await repository.getUserById(verifiedUser.uid);
+      const persistedName =
+        existingUser?.nameCustomized === true
+          ? existingUser.name ?? null
+          : existingUser?.name ?? verifiedUser.name;
+      const persistedAvatarUrl =
+        existingUser?.avatarUrlCustomized === true
+          ? existingUser.avatarUrl ?? null
+          : existingUser?.avatarUrl ?? verifiedUser.avatarUrl ?? null;
+      const hasMasterAccess = verifiedUser.isBootstrapMaster || existingUser?.isMaster === true;
+      const hasOperatorAccess = !hasMasterAccess && existingUser?.isOperator === true;
       const resolvedUser = {
         ...verifiedUser,
-        isMaster: verifiedUser.isBootstrapMaster || existingUser?.isMaster === true
+        name: persistedName,
+        avatarUrl: persistedAvatarUrl,
+        isMaster: hasMasterAccess,
+        isOperator: hasOperatorAccess
       };
 
       req.user = resolvedUser;
@@ -45,9 +58,11 @@ export function authMiddleware(authVerifier: AuthVerifier, repository: CaseRepos
       await repository.upsertUser({
         id: resolvedUser.uid,
         email: resolvedUser.email,
-        name: resolvedUser.name,
+        name: persistedName,
+        avatarUrl: persistedAvatarUrl,
         emailVerified: resolvedUser.emailVerified,
         isMaster: resolvedUser.isMaster,
+        isOperator: resolvedUser.isOperator,
         createdAt: now,
         lastSeenAt: now
       });

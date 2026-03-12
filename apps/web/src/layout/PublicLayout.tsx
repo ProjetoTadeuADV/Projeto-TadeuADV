@@ -1,10 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { BrandWordmark } from "../components/BrandWordmark";
 
-function topLinkClass({ isActive }: { isActive: boolean }) {
-  return isActive ? "public-link active" : "public-link";
-}
-
 export function PublicLayout() {
   return (
     <div className="public-shell">
@@ -16,12 +12,21 @@ export function PublicLayout() {
 
           <div className="public-topbar-actions">
             <nav className="public-nav" aria-label="Navegação da landing">
-              <NavLink to="/como-funciona" className={topLinkClass}>
+              <a href="#como-funciona" className="public-link">
                 Como Funciona
-              </NavLink>
-              <NavLink to="/vantagens" className={topLinkClass}>
-                Sobre
-              </NavLink>
+              </a>
+              <a href="#experiencia" className="public-link">
+                Avaliações
+              </a>
+              <a href="#atuacao" className="public-link">
+                Atuação
+              </a>
+              <a href="#planos" className="public-link">
+                Planos
+              </a>
+              <a href="#faq" className="public-link">
+                FAQ
+              </a>
             </nav>
 
             <div className="public-actions">

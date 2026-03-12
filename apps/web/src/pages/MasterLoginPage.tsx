@@ -4,7 +4,7 @@ import { AuthBackLink } from "../components/AuthBackLink";
 import { useAuth } from "../context/AuthContext";
 
 export function MasterLoginPage() {
-  const { login, user, refreshUser, refreshAccessProfile, logout, isMasterUser } = useAuth();
+  const { login, user, refreshUser, refreshAccessProfile, logout, canAccessAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState("");
@@ -12,7 +12,7 @@ export function MasterLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  if (user?.emailVerified && isMasterUser) {
+  if (user?.emailVerified && canAccessAdmin) {
     return <Navigate to="/master/dashboard" replace />;
   }
 
@@ -45,9 +45,9 @@ export function MasterLoginPage() {
       }
 
       const access = await refreshAccessProfile();
-      if (!access?.isMaster) {
+      if (!access?.canAccessAdmin) {
         await logout();
-        setError("Esta conta ainda não possui acesso master.");
+        setError("Esta conta ainda não possui acesso administrativo.");
         return;
       }
 

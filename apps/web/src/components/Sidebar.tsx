@@ -9,12 +9,15 @@ function pathIsActive(currentPath: string, itemPath: string): boolean {
 }
 
 export function Sidebar() {
-  const { isMasterUser } = useAuth();
+  const { isMasterUser, canCreateCases } = useAuth();
   const { isExpanded, handleMouseEnter, handleMouseLeave } = useSidebar();
   const location = useLocation();
   const [hoveredParentId, setHoveredParentId] = useState<string | null>(null);
   const [openedParentId, setOpenedParentId] = useState<string | null>(null);
-  const menuItems = useMemo(() => getSidebarMenu(isMasterUser), [isMasterUser]);
+  const menuItems = useMemo(
+    () => getSidebarMenu(isMasterUser, canCreateCases),
+    [canCreateCases, isMasterUser]
+  );
 
   const expandedClass = isExpanded ? "sidebar sidebar--expanded" : "sidebar";
 

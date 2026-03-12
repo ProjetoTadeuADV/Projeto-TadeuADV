@@ -2,7 +2,7 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export function MasterRoute() {
-  const { user, loading, isMasterUser } = useAuth();
+  const { user, loading, canAccessAdmin } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -21,7 +21,7 @@ export function MasterRoute() {
     return <Navigate to="/verify-email" replace state={{ from: location, email: user.email }} />;
   }
 
-  if (!isMasterUser) {
+  if (!canAccessAdmin) {
     return <Navigate to="/dashboard" replace />;
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateCreateCaseInput } from "./caseInput.js";
+import { validateCreateCaseInput, validateRegisterAvailabilityPayload } from "./caseInput.js";
 import { CASE_STATUS_LABELS, isCaseStatus } from "../types/case.js";
 
 describe("validateCreateCaseInput", () => {
@@ -33,3 +33,16 @@ describe("Case status mapping", () => {
   });
 });
 
+describe("validateRegisterAvailabilityPayload", () => {
+  it("deve normalizar CPF e e-mail para validacao de cadastro", () => {
+    const parsed = validateRegisterAvailabilityPayload({
+      cpf: "935.411.347-80",
+      email: "USUARIO@EXEMPLO.COM"
+    });
+
+    expect(parsed).toEqual({
+      cpf: "93541134780",
+      email: "usuario@exemplo.com"
+    });
+  });
+});

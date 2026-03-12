@@ -1,9 +1,15 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
 import { formatCpf, isValidCpf, normalizeCpf } from "../lib/cpf";
 import type { CaseRecord, CpfConsultaResult, VaraOption } from "../types";
+
+const CPF_STATUS_LABELS: Record<CpfConsultaResult["situacao"], string> = {
+  regular: "Regular",
+  pendente: "Pendente",
+  indisponivel: "Indisponível"
+};
 
 export function NewCasePage() {
   const { getToken } = useAuth();
@@ -18,17 +24,48 @@ export function NewCasePage() {
   const [cpf, setCpf] = useState("");
   const [resumo, setResumo] = useState("");
   const [cpfData, setCpfData] = useState<CpfConsultaResult | null>(null);
+  const hasVaras = varas.length > 0;
+
+  const selectedVaraName = useMemo(
+    () => varas.find((item) => item.id === varaId)?.nome ?? "",
+    [varas, varaId]
+  );
+
+  async function requestWithAuthRetry<T>(
+    path: string,
+    options: {
+      method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+      body?: unknown;
+    }
+  ): Promise<T> {
+    const firstToken = await getToken();
+
+    try {
+      return await apiRequest<T>(path, { ...options, token: firstToken });
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.statusCode !== 401) {
+        throw err;
+      }
+
+      const refreshedToken = await getToken(true);
+      return apiRequest<T>(path, { ...options, token: refreshedToken });
+    }
+  }
 
   useEffect(() => {
     async function loadVaras() {
       setLoadingVaras(true);
+      setError(null);
 
       try {
         const data = await apiRequest<VaraOption[]>("/v1/varas");
         setVaras(data);
         if (data.length > 0) {
           setVaraId(data[0].id);
+          return;
         }
+
+        setError("Nenhuma vara foi configurada no sistema.");
       } catch {
         setError("Falha ao carregar a lista de varas.");
       } finally {
@@ -39,9 +76,24 @@ export function NewCasePage() {
     void loadVaras();
   }, []);
 
+  useEffect(() => {
+    if (!cpfData) {
+      return;
+    }
+
+    if (normalizeCpf(cpfData.cpf) !== normalizeCpf(cpf)) {
+      setCpfData(null);
+    }
+  }, [cpf, cpfData]);
+
   async function handleCpfLookup() {
     setCpfData(null);
     setError(null);
+
+    if (!hasVaras || !varaId) {
+      setError("Selecione uma vara válida antes de consultar o CPF.");
+      return;
+    }
 
     if (!isValidCpf(cpf)) {
       setError("CPF inválido para consulta.");
@@ -50,15 +102,18 @@ export function NewCasePage() {
 
     setConsultingCpf(true);
     try {
-      const token = await getToken();
-      const result = await apiRequest<CpfConsultaResult>("/v1/cpf/consulta", {
+      const result = await requestWithAuthRetry<CpfConsultaResult>("/v1/cpf/consulta", {
         method: "POST",
-        token,
         body: { cpf: normalizeCpf(cpf) }
       });
       setCpfData(result);
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Erro na consulta de CPF.";
+      const message =
+        err instanceof ApiError
+          ? err.statusCode === 401
+            ? "Sua sessão expirou. Entre novamente para consultar CPF."
+            : err.message
+          : "Erro na consulta de CPF.";
       setError(message);
     } finally {
       setConsultingCpf(false);
@@ -69,32 +124,41 @@ export function NewCasePage() {
     event.preventDefault();
     setError(null);
 
+    if (!hasVaras || !varaId) {
+      setError("Nenhuma vara disponível para abrir o caso.");
+      return;
+    }
+
     if (!isValidCpf(cpf)) {
       setError("Informe um CPF válido.");
       return;
     }
 
-    if (resumo.trim().length < 10) {
+    const trimmedResumo = resumo.trim();
+    if (trimmedResumo.length < 10) {
       setError("Descreva o problema com pelo menos 10 caracteres.");
       return;
     }
 
     setSubmitting(true);
     try {
-      const token = await getToken();
-      const created = await apiRequest<CaseRecord>("/v1/cases", {
+      const created = await requestWithAuthRetry<CaseRecord>("/v1/cases", {
         method: "POST",
-        token,
         body: {
           varaId,
           cpf: normalizeCpf(cpf),
-          resumo
+          resumo: trimmedResumo
         }
       });
 
       navigate(`/cases/${created.id}`, { replace: true });
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Erro ao criar caso.";
+      const message =
+        err instanceof ApiError
+          ? err.statusCode === 401
+            ? "Sua sessão expirou. Entre novamente para criar o caso."
+            : err.message
+          : "Erro ao criar caso.";
       setError(message);
     } finally {
       setSubmitting(false);
@@ -122,7 +186,12 @@ export function NewCasePage() {
           <form className="form-grid case-form" onSubmit={handleSubmit}>
             <label>
               Vara
-              <select value={varaId} onChange={(event) => setVaraId(event.target.value)} required>
+              <select
+                value={varaId}
+                onChange={(event) => setVaraId(event.target.value)}
+                required
+                disabled={!hasVaras}
+              >
                 {varas.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.nome}
@@ -146,7 +215,7 @@ export function NewCasePage() {
                   type="button"
                   className="secondary-button"
                   onClick={handleCpfLookup}
-                  disabled={consultingCpf}
+                  disabled={consultingCpf || !hasVaras || !varaId}
                 >
                   {consultingCpf ? "Consultando..." : "Consultar CPF"}
                 </button>
@@ -155,9 +224,10 @@ export function NewCasePage() {
 
             {cpfData && (
               <div className="info-box">
-                <strong>Consulta de CPF</strong>
+                <strong>Consulta de CPF (simulação interna)</strong>
+                <span>Vara selecionada: {selectedVaraName || "Não informada"}</span>
                 <span>Nome: {cpfData.nome}</span>
-                <span>Situação: {cpfData.situacao}</span>
+                <span>Situação: {CPF_STATUS_LABELS[cpfData.situacao]}</span>
                 <span>Atualizado em: {new Date(cpfData.updatedAt).toLocaleString("pt-BR")}</span>
               </div>
             )}
@@ -175,7 +245,7 @@ export function NewCasePage() {
 
             {error && <p className="error-text">{error}</p>}
 
-            <button type="submit" disabled={submitting}>
+            <button type="submit" disabled={submitting || !hasVaras || !varaId}>
               {submitting ? "Salvando..." : "Abrir caso"}
             </button>
           </form>

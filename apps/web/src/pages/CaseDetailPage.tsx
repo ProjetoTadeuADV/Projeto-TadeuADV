@@ -98,6 +98,10 @@ export function CaseDetailPage() {
               <strong>{STATUS_LABEL[caseItem.status]}</strong>
             </div>
             <div className="detail-item">
+              <span>Cliente</span>
+              <strong>{caseItem.clienteNome ?? caseItem.cpfConsulta?.nome ?? "Não informado"}</strong>
+            </div>
+            <div className="detail-item">
               <span>CPF</span>
               <strong>{caseItem.cpf}</strong>
             </div>
@@ -109,6 +113,12 @@ export function CaseDetailPage() {
               <span>Última atualização</span>
               <strong>{new Date(caseItem.updatedAt).toLocaleString("pt-BR")}</strong>
             </div>
+            {(caseItem.responsavelNome || caseItem.responsavelEmail) && (
+              <div className="detail-item">
+                <span>Conta responsável</span>
+                <strong>{caseItem.responsavelNome ?? caseItem.responsavelEmail}</strong>
+              </div>
+            )}
           </div>
 
           {caseItem.cpfConsulta && (

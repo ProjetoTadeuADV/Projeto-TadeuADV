@@ -3,6 +3,7 @@ import { FirebaseError } from "firebase/app";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthBackLink } from "../components/AuthBackLink";
 import { useAuth } from "../context/AuthContext";
+import { ApiError } from "../lib/api";
 
 type VerifyEmailState = {
   email?: string | null;
@@ -12,6 +13,10 @@ type VerifyEmailState = {
 } | null;
 
 function formatFirebaseError(error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
   if (error instanceof FirebaseError) {
     return `Não foi possível reenviar agora (${error.code}).`;
   }
@@ -20,7 +25,7 @@ function formatFirebaseError(error: unknown) {
 }
 
 export function VerifyEmailPage() {
-  const { user, loading, logout, refreshUser, resendVerificationEmail } = useAuth();
+  const { user, loading, logout, refreshUser, resendVerificationEmail, deleteCurrentAccount } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const state = location.state as VerifyEmailState;
@@ -31,6 +36,7 @@ export function VerifyEmailPage() {
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [resending, setResending] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   if (loading) {
     return (
@@ -56,7 +62,7 @@ export function VerifyEmailPage() {
     setResending(true);
     try {
       await resendVerificationEmail();
-      setStatus("Solicitamos um novo e-mail de verificação. Confira sua caixa de entrada.");
+      setStatus("Reenvio solicitado. Confira sua caixa de entrada.");
     } catch (nextError) {
       setError(formatFirebaseError(nextError));
     } finally {
@@ -81,7 +87,7 @@ export function VerifyEmailPage() {
         return;
       }
 
-      setStatus("A confirmação ainda não apareceu. Abra o link do e-mail e tente novamente.");
+      setStatus("A confirmação ainda não apareceu. Abra o link recebido e tente novamente.");
     } catch {
       setError("Não foi possível validar a confirmação agora.");
     } finally {
@@ -92,6 +98,37 @@ export function VerifyEmailPage() {
   async function handleLogout() {
     await logout();
     navigate("/login", { replace: true });
+  }
+
+  async function handleDeleteAccount() {
+    if (deletingAccount) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Deseja excluir sua conta agora? Esta ação remove seu cadastro e os casos vinculados."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingAccount(true);
+    setError(null);
+    setStatus(null);
+
+    try {
+      await deleteCurrentAccount();
+      navigate("/", { replace: true });
+    } catch (nextError) {
+      const message =
+        nextError instanceof ApiError
+          ? nextError.message
+          : "Não foi possível excluir sua conta agora. Tente novamente.";
+      setError(message);
+    } finally {
+      setDeletingAccount(false);
+    }
   }
 
   return (
@@ -105,32 +142,42 @@ export function VerifyEmailPage() {
           <strong>{email || "seu e-mail cadastrado"}</strong>.
         </p>
 
-        <div className="auth-status">
-          <p>
-            Clique em <strong>Reenviar e-mail</strong>, abra o link recebido e depois volte aqui
-            para usar <strong>Já confirmei meu e-mail</strong>.
-          </p>
-        </div>
+        <p className="auth-inline-note">
+          Reenvie a mensagem, abra o link recebido e depois clique em "Já confirmei meu e-mail".
+        </p>
 
         {status && <p className="auth-feedback">{status}</p>}
         {error && <p className="error-text">{error}</p>}
 
-        <div className="auth-actions">
-          <button type="button" onClick={handleCheck} disabled={checking}>
+        <div className="auth-actions auth-actions--compact">
+          <button type="button" onClick={handleCheck} disabled={checking || deletingAccount}>
             {checking ? "Conferindo..." : "Já confirmei meu e-mail"}
           </button>
           <button
             type="button"
             className="secondary-button"
             onClick={handleResend}
-            disabled={resending}
+            disabled={resending || deletingAccount}
           >
             {resending ? "Reenviando..." : "Reenviar e-mail"}
           </button>
         </div>
 
-        <div className="auth-actions auth-actions--links">
-          <button type="button" className="ghost-button" onClick={handleLogout}>
+        <div className="auth-inline-links">
+          <button
+            type="button"
+            className="text-button text-button--danger"
+            onClick={handleDeleteAccount}
+            disabled={deletingAccount}
+          >
+            {deletingAccount ? "Excluindo conta..." : "Excluir minha conta"}
+          </button>
+          <button
+            type="button"
+            className="text-button"
+            onClick={handleLogout}
+            disabled={deletingAccount}
+          >
             Sair desta conta
           </button>
           <Link to="/login" className="helper-link">

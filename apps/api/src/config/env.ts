@@ -29,7 +29,14 @@ export const env = {
   FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL ?? "",
   FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY ?? "",
   MOCK_CPF_DEFAULT_NAME: process.env.MOCK_CPF_DEFAULT_NAME ?? "Cliente Consultado",
-  MASTER_EMAILS: parseEmailList(process.env.MASTER_EMAILS)
+  MASTER_EMAILS: parseEmailList(process.env.MASTER_EMAILS),
+  VERIFY_EMAIL_CONTINUE_URL: process.env.VERIFY_EMAIL_CONTINUE_URL ?? "",
+  EMAIL_BRAND_NAME: process.env.EMAIL_BRAND_NAME ?? "DoutorEu",
+  EMAIL_LOGO_URL: process.env.EMAIL_LOGO_URL ?? "",
+  EMAIL_FROM: process.env.EMAIL_FROM ?? "",
+  EMAIL_REPLY_TO: process.env.EMAIL_REPLY_TO ?? "",
+  SENDGRID_API_KEY: process.env.SENDGRID_API_KEY ?? "",
+  SENDGRID_TEMPLATE_ID: process.env.SENDGRID_TEMPLATE_ID ?? ""
 };
 
 function hasPlaceholder(value: string): boolean {

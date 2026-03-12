@@ -12,25 +12,51 @@ class FakeAuthVerifier implements AuthVerifier {
       uid: "user-a",
       email: "a@test.com",
       name: "Usuario A",
+      avatarUrl: "https://cdn.test/avatar-a.png",
       emailVerified: true,
       isMaster: false,
+      isOperator: false,
       isBootstrapMaster: false
     },
     "token-user-b": {
       uid: "user-b",
       email: "b@test.com",
       name: "Usuario B",
+      avatarUrl: "https://cdn.test/avatar-b.png",
       emailVerified: true,
       isMaster: false,
+      isOperator: false,
+      isBootstrapMaster: false
+    },
+    "token-user-unverified": {
+      uid: "user-unverified",
+      email: "unverified@test.com",
+      name: "Usuario Sem Verificacao",
+      avatarUrl: null,
+      emailVerified: false,
+      isMaster: false,
+      isOperator: false,
       isBootstrapMaster: false
     },
     "token-master": {
       uid: "master-user",
       email: "master@test.com",
       name: "Conta Master",
+      avatarUrl: "https://cdn.test/avatar-master.png",
       emailVerified: true,
       isMaster: true,
+      isOperator: false,
       isBootstrapMaster: true
+    },
+    "token-operator": {
+      uid: "operator-user",
+      email: "operator@test.com",
+      name: "Conta Operador",
+      avatarUrl: null,
+      emailVerified: true,
+      isMaster: false,
+      isOperator: true,
+      isBootstrapMaster: false
     }
   };
 
@@ -92,6 +118,68 @@ describe("v1 routes", () => {
     });
   });
 
+  it("deve responder fallback quando envio customizado nao estiver configurado", async () => {
+    const app = buildTestApp();
+
+    const response = await request(app)
+      .post("/v1/auth/verification-email")
+      .set("Authorization", "Bearer token-user-unverified");
+
+    expect(response.status).toBe(200);
+    expect(response.body.result).toMatchObject({
+      sent: false,
+      reason: "custom-sender-not-configured"
+    });
+  });
+
+  it("deve resolver login por CPF para e-mail cadastrado", async () => {
+    const app = buildTestApp();
+
+    await request(app)
+      .post("/v1/users/profile")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        cpf: "935.411.347-80",
+        name: "Usuario A"
+      });
+
+    const response = await request(app)
+      .post("/v1/auth/resolve-login")
+      .send({
+        identifier: "935.411.347-80"
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.result).toMatchObject({
+      email: "a@test.com"
+    });
+  });
+
+  it("deve sinalizar CPF e e-mail ja cadastrados na validacao de registro", async () => {
+    const app = buildTestApp();
+
+    await request(app)
+      .post("/v1/users/profile")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        cpf: "935.411.347-80",
+        name: "Usuario A"
+      });
+
+    const response = await request(app)
+      .post("/v1/auth/register-availability")
+      .send({
+        cpf: "935.411.347-80",
+        email: "a@test.com"
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.result).toMatchObject({
+      cpfInUse: true,
+      emailInUse: true
+    });
+  });
+
   it("deve criar e listar casos isolando por usuario", async () => {
     const app = buildTestApp();
 
@@ -132,6 +220,62 @@ describe("v1 routes", () => {
     expect(listB.body.result[0].userId).toBe("user-b");
   });
 
+  it("deve permitir ao perfil admin listar e consultar casos de todos os clientes", async () => {
+    const app = buildTestApp();
+
+    await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Primeiro caso para visao administrativa."
+      });
+
+    const caseB = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-b")
+      .send({
+        varaId: "jec-campinas",
+        cpf: "111.444.777-35",
+        resumo: "Segundo caso para visao administrativa."
+      });
+
+    const listMaster = await request(app)
+      .get("/v1/cases")
+      .set("Authorization", "Bearer token-master");
+
+    expect(listMaster.status).toBe(200);
+    expect(listMaster.body.result).toHaveLength(2);
+    expect(listMaster.body.result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          userId: "user-a",
+          responsavelEmail: "a@test.com",
+          clienteNome: "Cliente Teste 0001"
+        }),
+        expect.objectContaining({
+          userId: "user-b",
+          responsavelEmail: "b@test.com",
+          clienteNome: "Cliente Teste 0001"
+        })
+      ])
+    );
+
+    const caseId = caseB.body.result.id as string;
+    const getMasterCase = await request(app)
+      .get(`/v1/cases/${caseId}`)
+      .set("Authorization", "Bearer token-master");
+
+    expect(getMasterCase.status).toBe(200);
+    expect(getMasterCase.body.result).toMatchObject({
+      id: caseId,
+      userId: "user-b",
+      responsavelEmail: "b@test.com",
+      clienteNome: "Cliente Teste 0001"
+    });
+  });
+
   it("deve retornar contrato esperado na consulta CPF mock", async () => {
     const app = buildTestApp();
 
@@ -164,6 +308,82 @@ describe("v1 routes", () => {
       id: "user-a",
       cpf: "93541134780"
     });
+  });
+
+  it("deve impedir cadastro de CPF duplicado em outra conta", async () => {
+    const app = buildTestApp();
+
+    await request(app)
+      .post("/v1/users/profile")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        cpf: "935.411.347-80",
+        name: "Usuario A"
+      });
+
+    const response = await request(app)
+      .post("/v1/users/profile")
+      .set("Authorization", "Bearer token-user-b")
+      .send({
+        cpf: "935.411.347-80",
+        name: "Usuario B"
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.status).toBe("error");
+  });
+
+  it("deve retornar e atualizar perfil da conta autenticada", async () => {
+    const app = buildTestApp();
+
+    const getResponse = await request(app)
+      .get("/v1/users/me")
+      .set("Authorization", "Bearer token-user-a");
+
+    expect(getResponse.status).toBe(200);
+    expect(getResponse.body.result.user).toMatchObject({
+      id: "user-a",
+      firebaseUid: "user-a",
+      email: "a@test.com",
+      name: "Usuario A"
+    });
+
+    const patchResponse = await request(app)
+      .patch("/v1/users/me")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        name: "Usuario A Editado",
+        avatarUrl: "   "
+      });
+
+    expect(patchResponse.status).toBe(200);
+    expect(patchResponse.body.result.user).toMatchObject({
+      id: "user-a",
+      name: "Usuario A Editado",
+      avatarUrl: null
+    });
+
+    const secondGetResponse = await request(app)
+      .get("/v1/users/me")
+      .set("Authorization", "Bearer token-user-a");
+
+    expect(secondGetResponse.status).toBe(200);
+    expect(secondGetResponse.body.result.user).toMatchObject({
+      name: "Usuario A Editado",
+      avatarUrl: null
+    });
+  });
+
+  it("deve validar payload vazio na atualizacao de perfil da conta", async () => {
+    const app = buildTestApp();
+
+    const response = await request(app)
+      .patch("/v1/users/me")
+      .set("Authorization", "Bearer token-user-a")
+      .send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body.status).toBe("error");
   });
 
   it("deve bloquear a visao geral para usuario comum", async () => {
@@ -248,5 +468,133 @@ describe("v1 routes", () => {
 
     expect(response.status).toBe(400);
     expect(response.body.status).toBe("error");
+  });
+
+  it("deve permitir definir usuario como operador com leitura no admin e abertura de caso", async () => {
+    const app = buildTestApp();
+
+    await request(app)
+      .get("/v1/auth/session")
+      .set("Authorization", "Bearer token-user-b");
+
+    const promoteToOperator = await request(app)
+      .patch("/v1/admin/users/user-b/access")
+      .set("Authorization", "Bearer token-master")
+      .send({
+        accessLevel: "operator"
+      });
+
+    expect(promoteToOperator.status).toBe(200);
+    expect(promoteToOperator.body.result).toMatchObject({
+      id: "user-b",
+      accessLevel: "operator",
+      isMaster: false,
+      isOperator: true
+    });
+
+    const sessionResponse = await request(app)
+      .get("/v1/auth/session")
+      .set("Authorization", "Bearer token-user-b");
+
+    expect(sessionResponse.status).toBe(200);
+    expect(sessionResponse.body.result).toMatchObject({
+      uid: "user-b",
+      isMaster: false,
+      isOperator: true
+    });
+
+    const overviewResponse = await request(app)
+      .get("/v1/admin/overview")
+      .set("Authorization", "Bearer token-user-b");
+
+    expect(overviewResponse.status).toBe(200);
+
+    const forbiddenMutation = await request(app)
+      .patch("/v1/admin/users/user-a/access")
+      .set("Authorization", "Bearer token-user-b")
+      .send({
+        accessLevel: "master"
+      });
+
+    expect(forbiddenMutation.status).toBe(403);
+
+    const createCaseAsOperator = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-b")
+      .send({
+        varaId: "jec-campinas",
+        cpf: "111.444.777-35",
+        resumo: "Operador pode criar requisicoes durante a fase de testes."
+      });
+
+    expect(createCaseAsOperator.status).toBe(201);
+
+    const cpfLookupAsOperator = await request(app)
+      .post("/v1/cpf/consulta")
+      .set("Authorization", "Bearer token-user-b")
+      .send({
+        cpf: "111.444.777-35"
+      });
+
+    expect(cpfLookupAsOperator.status).toBe(200);
+  });
+
+  it("deve permitir usuario excluir a propria conta e casos", async () => {
+    const app = buildTestApp();
+
+    const createCaseResponse = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Caso para validar exclusao da propria conta."
+      });
+
+    expect(createCaseResponse.status).toBe(201);
+
+    const deleteResponse = await request(app)
+      .delete("/v1/users/me")
+      .set("Authorization", "Bearer token-user-a");
+
+    expect(deleteResponse.status).toBe(200);
+    expect(deleteResponse.body.result).toMatchObject({
+      deletedUserId: "user-a",
+      deletedCases: 1
+    });
+
+    const overviewResponse = await request(app)
+      .get("/v1/admin/overview")
+      .set("Authorization", "Bearer token-master");
+
+    expect(overviewResponse.status).toBe(200);
+    expect(overviewResponse.body.result.users).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "user-a" })])
+    );
+  });
+
+  it("deve permitir master excluir outro usuario", async () => {
+    const app = buildTestApp();
+
+    const createCaseResponse = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-b")
+      .send({
+        varaId: "jec-campinas",
+        cpf: "111.444.777-35",
+        resumo: "Caso para validar exclusao pelo administrador."
+      });
+
+    expect(createCaseResponse.status).toBe(201);
+
+    const deleteResponse = await request(app)
+      .delete("/v1/admin/users/user-b")
+      .set("Authorization", "Bearer token-master");
+
+    expect(deleteResponse.status).toBe(200);
+    expect(deleteResponse.body.result).toMatchObject({
+      deletedUserId: "user-b",
+      deletedCases: 1
+    });
   });
 });

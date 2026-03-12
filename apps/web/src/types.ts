@@ -32,6 +32,9 @@ export interface CaseRecord {
   cpf: string;
   resumo: string;
   cpfConsulta: CpfConsultaResult | null;
+  clienteNome?: string | null;
+  responsavelNome?: string | null;
+  responsavelEmail?: string | null;
   status: CaseStatus;
   createdAt: string;
   updatedAt: string;
@@ -41,9 +44,21 @@ export interface AuthAccessProfile {
   uid: string;
   email: string | null;
   name: string | null;
+  avatarUrl: string | null;
   emailVerified: boolean;
   isMaster: boolean;
+  isOperator: boolean;
+  accessLevel: "user" | "operator" | "master";
+  canAccessAdmin: boolean;
   isBootstrapMaster: boolean;
+}
+
+export interface AccountProfile {
+  id: string;
+  email: string | null;
+  firebaseUid: string;
+  name: string | null;
+  avatarUrl: string | null;
 }
 
 export interface MasterSummary {
@@ -61,9 +76,12 @@ export interface MasterUserOverview {
   id: string;
   email: string | null;
   name: string | null;
+  avatarUrl: string | null;
   cpf: string | null;
   emailVerified: boolean;
   isMaster: boolean;
+  isOperator: boolean;
+  accessLevel: "user" | "operator" | "master";
   isBootstrapMaster: boolean;
   createdAt: string;
   lastSeenAt: string;
@@ -87,4 +105,19 @@ export interface MasterOverview {
   summary: MasterSummary;
   users: MasterUserOverview[];
   recentCases: MasterRecentCase[];
+}
+
+export interface MasterUserRequest {
+  id: string;
+  varaNome: string;
+  cpf: string;
+  resumo: string;
+  status: CaseStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MasterUserActivity {
+  user: MasterUserOverview;
+  requests: MasterUserRequest[];
 }

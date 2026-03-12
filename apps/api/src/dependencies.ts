@@ -15,8 +15,10 @@ class FirebaseAuthVerifier implements AuthVerifier {
       uid: decoded.uid,
       email: decoded.email ?? null,
       name: decoded.name ?? null,
+      avatarUrl: typeof decoded.picture === "string" ? decoded.picture : null,
       emailVerified: decoded.email_verified ?? false,
       isMaster: bootstrapMaster,
+      isOperator: false,
       isBootstrapMaster: bootstrapMaster
     };
   }
