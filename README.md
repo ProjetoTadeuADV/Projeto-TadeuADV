@@ -1,11 +1,11 @@
 # Plataforma JEC MVP (Web + API)
 
-MVP funcional para abertura e acompanhamento de casos jurídicos com:
+MVP funcional para abertura e acompanhamento de casos juridicos com:
 
 - Frontend `React + Vite` (Vercel)
 - API `Node.js + Express` (Railway)
 - `Firebase Auth` (login por e-mail/senha)
-- `Firestore` (persistência de usuários e casos)
+- `Firestore` (persistencia de usuarios e casos)
 - Consulta de CPF via adaptador mock (`source: "mock"`)
 
 ## Estrutura
@@ -24,7 +24,7 @@ apps/
 
 ## Setup local
 
-1. Instalar dependências:
+1. Instalar dependencias:
 
 ```bash
 npm install
@@ -55,7 +55,9 @@ API: `http://localhost:8080`
 - `npm run dev:web` -> frontend
 - `npm run dev:api` -> API
 - `npm run build` -> build de `web` + `api`
-- `npm run test` -> testes da API (unit + integração)
+- `npm run test` -> testes da API (unit + integracao)
+- `npm run check:web-env` -> valida `VITE_API_URL` antes de deploy
+- `npm run check:live -- <url-do-front> [url-da-api-esperada]` -> valida configuracao no ar e `GET /v1/health`
 
 ## Endpoints
 
@@ -73,7 +75,7 @@ API: `http://localhost:8080`
 2. Definir Root Directory: `apps/web`.
 3. Build command: `npm run build`.
 4. Output Directory: `dist`.
-5. Configurar variáveis:
+5. Configurar variaveis:
    - `VITE_API_URL`
    - `VITE_FIREBASE_API_KEY`
    - `VITE_FIREBASE_AUTH_DOMAIN`
@@ -81,14 +83,15 @@ API: `http://localhost:8080`
    - `VITE_FIREBASE_STORAGE_BUCKET`
    - `VITE_FIREBASE_MESSAGING_SENDER_ID`
    - `VITE_FIREBASE_APP_ID`
+6. `VITE_API_URL` precisa apontar para o backend real no ar (nao usar `localhost` ou placeholder).
 
 ## Deploy no Railway (API)
 
-1. Criar serviço a partir do mesmo repo.
+1. Criar servico a partir do mesmo repo.
 2. Definir Root Directory: `apps/api`.
 3. Build command: `npm run build`.
 4. Start command: `npm run start`.
-5. Configurar variáveis:
+5. Configurar variaveis:
    - `NODE_ENV=production`
    - `PORT=8080`
    - `CORS_ORIGIN=https://SEU_APP.vercel.app`
@@ -96,18 +99,36 @@ API: `http://localhost:8080`
    - `FIREBASE_CLIENT_EMAIL`
    - `FIREBASE_PRIVATE_KEY` (com `\n` escapado)
    - `MOCK_CPF_DEFAULT_NAME` (opcional)
+6. Nao usar valores locais/placeholder em producao (`localhost`, `SEU_APP`, `SUA_API` etc).
 
-## Configuração Firebase
+## Alinhamento local x producao (obrigatorio)
+
+1. Defina a mesma origem de dados do Firebase (mesmo projeto) para backend local e backend no ar.
+2. Garanta que o frontend no ar use a API correta:
+
+```bash
+npm run check:live -- https://SEU_FRONT.vercel.app https://SUA_API_REAL.up.railway.app
+```
+
+3. Se houver divergencia no comando acima, atualize `VITE_API_URL` no Vercel e faca redeploy.
+4. Valide o backend no ar:
+
+```bash
+curl https://SUA_API_REAL.up.railway.app/v1/health
+```
+
+5. Somente depois rode smoke test de cadastro/login/casos em producao.
+
+## Configuracao Firebase
 
 1. Ativar Email/Password em Authentication.
-2. Criar Firestore em modo produção.
-3. Criar Service Account (Admin SDK) e usar as credenciais nas variáveis da API.
+2. Criar Firestore em modo producao.
+3. Criar Service Account (Admin SDK) e usar as credenciais nas variaveis da API.
 
-## Smoke test (produção)
+## Smoke test (producao)
 
 1. Criar conta no frontend.
 2. Confirmar acesso ao dashboard.
 3. Abrir novo caso com `vara + CPF + resumo`.
 4. Confirmar listagem no dashboard e abertura do detalhe.
 5. Conferir `GET /v1/health` da API.
-

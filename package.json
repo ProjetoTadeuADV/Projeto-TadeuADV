@@ -10,10 +10,11 @@
     "dev:web": "npm run dev --workspace apps/web",
     "dev:api": "npm run dev --workspace apps/api",
     "build": "npm run build --workspaces",
-    "test": "npm run test --workspace apps/api"
+    "test": "npm run test --workspace apps/api",
+    "check:web-env": "npm run check:env --workspace apps/web",
+    "check:live": "npm run check:live --workspace apps/web --"
   },
   "engines": {
     "node": ">=20.0.0"
   }
 }
-

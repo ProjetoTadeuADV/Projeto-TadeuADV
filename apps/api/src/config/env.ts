@@ -39,6 +39,77 @@ export const env = {
   SENDGRID_TEMPLATE_ID: process.env.SENDGRID_TEMPLATE_ID ?? ""
 };
 
+function looksLikePlaceholder(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized.includes("seu_app") ||
+    normalized.includes("sua_api") ||
+    normalized.includes("your-app") ||
+    normalized.includes("your_api") ||
+    normalized.includes("example") ||
+    normalized.includes("placeholder")
+  );
+}
+
+function isLocalHost(rawValue: string): boolean {
+  const normalized = rawValue.trim().toLowerCase();
+  if (
+    normalized.includes("localhost") ||
+    normalized.includes("127.0.0.1") ||
+    normalized.includes("0.0.0.0")
+  ) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    return ["localhost", "127.0.0.1", "0.0.0.0"].includes(parsed.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+function assertProductionEnvSafety(): void {
+  if (env.NODE_ENV !== "production") {
+    return;
+  }
+
+  const issues: string[] = [];
+  const corsOrigins = env.CORS_ORIGIN.split(",").map((item) => item.trim()).filter(Boolean);
+
+  if (corsOrigins.length === 0) {
+    issues.push("CORS_ORIGIN vazio.");
+  }
+
+  if (corsOrigins.some((origin) => isLocalHost(origin))) {
+    issues.push("CORS_ORIGIN contem localhost/127.0.0.1.");
+  }
+
+  if (corsOrigins.some((origin) => looksLikePlaceholder(origin))) {
+    issues.push("CORS_ORIGIN contem placeholder (SEU_APP/SUA_API/etc).");
+  }
+
+  if (!env.VERIFY_EMAIL_CONTINUE_URL.trim()) {
+    issues.push("VERIFY_EMAIL_CONTINUE_URL vazio.");
+  } else {
+    if (isLocalHost(env.VERIFY_EMAIL_CONTINUE_URL)) {
+      issues.push("VERIFY_EMAIL_CONTINUE_URL aponta para localhost.");
+    }
+
+    if (looksLikePlaceholder(env.VERIFY_EMAIL_CONTINUE_URL)) {
+      issues.push("VERIFY_EMAIL_CONTINUE_URL contem placeholder.");
+    }
+  }
+
+  if (issues.length > 0) {
+    const message = [
+      "Configuracao de producao invalida para API.",
+      ...issues.map((item) => `- ${item}`)
+    ].join("\n");
+    throw new Error(message);
+  }
+}
+
 function hasPlaceholder(value: string): boolean {
   return (
     value.includes("seu-projeto-firebase") ||
@@ -66,3 +137,5 @@ export function isMasterEmail(email: string | null | undefined): boolean {
 
   return env.MASTER_EMAILS.includes(email.trim().toLowerCase());
 }
+
+assertProductionEnvSafety();

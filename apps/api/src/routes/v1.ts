@@ -283,7 +283,10 @@ export function createV1Router(deps: AppDependencies) {
       status: "ok",
       result: {
         service: "jec-api",
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        environment: env.NODE_ENV,
+        firebaseProjectId: env.FIREBASE_PROJECT_ID || null,
+        hasFirebaseCredentials: hasFirebaseCredentials()
       }
     });
   });
