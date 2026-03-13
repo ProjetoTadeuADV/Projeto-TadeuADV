@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
 import { formatCpf, isValidCpf, normalizeCpf } from "../lib/cpf";
 
-type RegisterStep = "dados" | "verificacao" | "senha";
+type RegisterStep = "dados" | "senha";
 
 interface StepItem {
   id: RegisterStep;
@@ -24,8 +24,7 @@ interface ResolveLoginResponse {
 
 const STEPS: StepItem[] = [
   { id: "dados", order: 1, title: "Dados" },
-  { id: "verificacao", order: 2, title: "Código de Verificação" },
-  { id: "senha", order: 3, title: "Senha" }
+  { id: "senha", order: 2, title: "Senha" }
 ];
 
 function normalizePhone(value: string): string {
@@ -114,10 +113,8 @@ export function RegisterPage() {
   const [birthDate, setBirthDate] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [sendingCode, setSendingCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
 
   const activeStepIndex = STEPS.findIndex((item) => item.id === step);
   const formattedEmail = useMemo(() => email.trim().toLowerCase(), [email]);
@@ -213,9 +210,8 @@ export function RegisterPage() {
     }
   }
 
-  async function handleSendVerificationCode() {
+  async function handleGoToPasswordStep() {
     setError(null);
-    setInfo(null);
 
     if (!validateStepDados()) {
       return;
@@ -226,29 +222,12 @@ export function RegisterPage() {
       return;
     }
 
-    setSendingCode(true);
-    try {
-      setStep("verificacao");
-      setInfo(`Código de verificação enviado para ${formattedEmail}.`);
-    } finally {
-      setSendingCode(false);
-    }
-  }
-
-  async function handleResendCode() {
-    setError(null);
-    setSendingCode(true);
-    try {
-      setInfo(`Novo código de verificação enviado para ${formattedEmail}.`);
-    } finally {
-      setSendingCode(false);
-    }
+    setStep("senha");
   }
 
   async function handleCreateAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    setInfo(null);
 
     if (!validateStepDados()) {
       setStep("dados");
@@ -359,7 +338,7 @@ export function RegisterPage() {
               />
               <div className="auth-flow-cta-text">
                 <h2>Abra seu caso com clareza e acompanhamento.</h2>
-                <p>Preencha seus dados, confirme o e-mail e finalize sua senha em poucos passos.</p>
+                <p>Preencha seus dados, defina sua senha e confirme o e-mail pelo link enviado.</p>
               </div>
             </aside>
 
@@ -442,36 +421,10 @@ export function RegisterPage() {
 
                     <button
                       type="button"
-                      onClick={() => void handleSendVerificationCode()}
-                      disabled={sendingCode}
+                      onClick={() => void handleGoToPasswordStep()}
                     >
-                      {sendingCode ? "Enviando..." : "Enviar código de verificação por e-mail"}
+                      Continuar para senha
                     </button>
-                  </>
-                )}
-
-                {step === "verificacao" && (
-                  <>
-                    <div className="auth-status">
-                      <p>
-                        Código enviado para <strong>{formattedEmail || "seu e-mail"}</strong>.
-                      </p>
-                      <p>Confira sua caixa de entrada para seguir com o cadastro.</p>
-                    </div>
-
-                    <div className="auth-actions auth-actions--compact">
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => void handleResendCode()}
-                        disabled={sendingCode}
-                      >
-                        {sendingCode ? "Reenviando..." : "Reenviar código"}
-                      </button>
-                      <button type="button" onClick={() => setStep("senha")}>
-                        Continuar
-                      </button>
-                    </div>
                   </>
                 )}
 
@@ -514,7 +467,6 @@ export function RegisterPage() {
                 )}
 
                 {error && <p className="error-text">{error}</p>}
-                {info && <p className="auth-feedback">{info}</p>}
               </form>
 
               <div className="auth-flow-footer">
@@ -525,7 +477,7 @@ export function RegisterPage() {
                   <button
                     type="button"
                     className="text-button"
-                    onClick={() => setStep(step === "senha" ? "verificacao" : "dados")}
+                    onClick={() => setStep("dados")}
                   >
                     Voltar etapa
                   </button>
