@@ -372,7 +372,9 @@ export function RegisterPage() {
                   <>
                     <div className="auth-flow-fields auth-flow-fields--two">
                       <label>
-                        Nome completo
+                        <span className="required-label">
+                          Nome completo <span className="required-indicator" aria-hidden="true">*</span>
+                        </span>
                         <input
                           type="text"
                           value={name}
@@ -383,7 +385,9 @@ export function RegisterPage() {
                       </label>
 
                       <label>
-                        CPF
+                        <span className="required-label">
+                          CPF <span className="required-indicator" aria-hidden="true">*</span>
+                        </span>
                         <input
                           type="text"
                           value={cpf}
@@ -395,7 +399,9 @@ export function RegisterPage() {
                       </label>
 
                       <label>
-                        Número de telefone
+                        <span className="required-label">
+                          Número de telefone <span className="required-indicator" aria-hidden="true">*</span>
+                        </span>
                         <input
                           type="text"
                           value={phone}
@@ -407,7 +413,9 @@ export function RegisterPage() {
                       </label>
 
                       <label>
-                        E-mail
+                        <span className="required-label">
+                          E-mail <span className="required-indicator" aria-hidden="true">*</span>
+                        </span>
                         <input
                           type="email"
                           value={email}
@@ -418,7 +426,9 @@ export function RegisterPage() {
                       </label>
 
                       <label>
-                        Data de nascimento
+                        <span className="required-label">
+                          Data de nascimento <span className="required-indicator" aria-hidden="true">*</span>
+                        </span>
                         <input
                           type="text"
                           value={birthDate}
@@ -469,7 +479,9 @@ export function RegisterPage() {
                   <>
                     <div className="auth-flow-fields">
                       <label>
-                        Crie sua senha
+                        <span className="required-label">
+                          Crie sua senha <span className="required-indicator" aria-hidden="true">*</span>
+                        </span>
                         <input
                           type="password"
                           value={password}
@@ -481,7 +493,9 @@ export function RegisterPage() {
                       </label>
 
                       <label>
-                        Confirme a senha
+                        <span className="required-label">
+                          Confirme a senha <span className="required-indicator" aria-hidden="true">*</span>
+                        </span>
                         <input
                           type="password"
                           value={confirmPassword}

@@ -374,6 +374,18 @@ textarea {
   font-weight: 600;
 }
 
+.required-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.required-indicator {
+  color: #d93025;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .helper-text {
   margin-top: 1rem;
 }

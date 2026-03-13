@@ -163,7 +163,9 @@ export function LoginPage() {
 
               <form onSubmit={handleSubmit} className="form-grid">
                 <label>
-                  E-mail ou CPF
+                  <span className="required-label">
+                    E-mail ou CPF <span className="required-indicator" aria-hidden="true">*</span>
+                  </span>
                   <input
                     type="text"
                     value={identifier}
@@ -183,7 +185,9 @@ export function LoginPage() {
                 </label>
 
                 <label>
-                  Senha
+                  <span className="required-label">
+                    Senha <span className="required-indicator" aria-hidden="true">*</span>
+                  </span>
                   <input
                     type="password"
                     value={password}

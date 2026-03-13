@@ -11,6 +11,7 @@ import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   reload,
+  sendEmailVerification,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
@@ -92,6 +93,30 @@ async function requestCustomVerificationEmail(
   }
 }
 
+async function requestVerificationEmailWithFallback(
+  currentUser: User
+): Promise<VerificationEmailDispatchResult> {
+  const dispatch = await requestCustomVerificationEmail(currentUser);
+  if (dispatch.sent || dispatch.reason === "already-verified") {
+    return dispatch;
+  }
+
+  try {
+    // Fallback para o template padrão do Firebase quando SendGrid/API falhar.
+    await sendEmailVerification(currentUser);
+    return {
+      sent: true,
+      provider: "firebase-client-fallback"
+    };
+  } catch (fallbackError) {
+    console.warn("verification-email-fallback-failed", {
+      dispatch,
+      message: fallbackError instanceof Error ? fallbackError.message : "unknown"
+    });
+    return dispatch;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [accessProfile, setAccessProfile] = useState<AuthAccessProfile | null>(null);
@@ -164,7 +189,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const result = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
     await updateProfile(result.user, { displayName: normalizedName });
 
-    const dispatch = await requestCustomVerificationEmail(result.user);
+    const dispatch = await requestVerificationEmailWithFallback(result.user);
     if (!dispatch.sent && dispatch.reason !== "already-verified") {
       console.warn("verification-email-dispatch-failed", dispatch);
     }
@@ -196,7 +221,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error("Usuário não autenticado.");
     }
 
-    const dispatch = await requestCustomVerificationEmail(auth.currentUser);
+    const dispatch = await requestVerificationEmailWithFallback(auth.currentUser);
     if (dispatch.sent || dispatch.reason === "already-verified") {
       return;
     }

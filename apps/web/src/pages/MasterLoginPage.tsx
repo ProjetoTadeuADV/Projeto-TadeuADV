@@ -70,7 +70,9 @@ export function MasterLoginPage() {
 
         <form onSubmit={handleSubmit} className="form-grid">
           <label>
-            E-mail master
+            <span className="required-label">
+              E-mail master <span className="required-indicator" aria-hidden="true">*</span>
+            </span>
             <input
               type="email"
               value={email}
@@ -81,7 +83,9 @@ export function MasterLoginPage() {
           </label>
 
           <label>
-            Senha
+            <span className="required-label">
+              Senha <span className="required-indicator" aria-hidden="true">*</span>
+            </span>
             <input
               type="password"
               value={password}
