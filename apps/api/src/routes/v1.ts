@@ -119,8 +119,45 @@ interface AuthSnapshotUser {
   name: string | null;
   avatarUrl: string | null;
   emailVerified: boolean;
+  isMaster: boolean;
+  isOperator: boolean;
   createdAt: string;
   lastSeenAt: string;
+}
+
+function readBooleanClaim(claims: Record<string, unknown>, key: string): boolean {
+  const value = claims[key];
+  if (value === true) {
+    return true;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1" || normalized === "yes";
+  }
+
+  if (typeof value === "number") {
+    return value === 1;
+  }
+
+  return false;
+}
+
+function resolveAccessFromClaims(claims: Record<string, unknown>) {
+  const roleClaim = typeof claims.role === "string" ? claims.role.trim().toLowerCase() : "";
+  const claimMaster =
+    roleClaim === "master" ||
+    readBooleanClaim(claims, "isMaster") ||
+    readBooleanClaim(claims, "master");
+  const claimOperator =
+    roleClaim === "operator" ||
+    readBooleanClaim(claims, "isOperator") ||
+    readBooleanClaim(claims, "operator");
+
+  return {
+    isMaster: claimMaster,
+    isOperator: !claimMaster && claimOperator
+  };
 }
 
 function canAccessAdminPanel(user: { isMaster: boolean; isOperator?: boolean } | null | undefined): boolean {
@@ -216,6 +253,10 @@ async function listFirebaseAuthUsers(): Promise<AuthSnapshotUser[]> {
       ...page.users.map((item) => {
         const createdAt = parseDate(item.metadata.creationTime, now);
         const lastSeenAt = parseDate(item.metadata.lastSignInTime, createdAt);
+        const claimAccess = resolveAccessFromClaims(item.customClaims ?? {});
+        const bootstrapMaster = isMasterEmail(item.email);
+        const isMaster = bootstrapMaster || claimAccess.isMaster;
+        const isOperator = !isMaster && claimAccess.isOperator;
 
         return {
           id: item.uid,
@@ -223,6 +264,8 @@ async function listFirebaseAuthUsers(): Promise<AuthSnapshotUser[]> {
           name: item.displayName ?? null,
           avatarUrl: item.photoURL ?? null,
           emailVerified: item.emailVerified,
+          isMaster,
+          isOperator,
           createdAt,
           lastSeenAt
         };
@@ -723,7 +766,8 @@ export function createV1Router(deps: AppDependencies) {
         await Promise.all(
           authUsers.map(async (item) => {
             const existing = usersById.get(item.id);
-            const isMaster = isMasterEmail(item.email) || existing?.isMaster === true;
+            const isMaster = item.isMaster || existing?.isMaster === true;
+            const isOperator = !isMaster && (item.isOperator || existing?.isOperator === true);
             await deps.repository.upsertUser({
               id: item.id,
               email: item.email ?? existing?.email ?? null,
@@ -732,7 +776,7 @@ export function createV1Router(deps: AppDependencies) {
               cpf: existing?.cpf ?? null,
               emailVerified: item.emailVerified,
               isMaster,
-              isOperator: isMaster ? false : (existing?.isOperator ?? false),
+              isOperator,
               createdAt: existing?.createdAt ?? item.createdAt,
               lastSeenAt: resolveLatestDate([existing?.lastSeenAt, item.lastSeenAt], item.createdAt)
             });

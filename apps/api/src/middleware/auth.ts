@@ -43,8 +43,10 @@ export function authMiddleware(authVerifier: AuthVerifier, repository: CaseRepos
         existingUser?.avatarUrlCustomized === true
           ? existingUser.avatarUrl ?? null
           : existingUser?.avatarUrl ?? verifiedUser.avatarUrl ?? null;
-      const hasMasterAccess = verifiedUser.isBootstrapMaster || existingUser?.isMaster === true;
-      const hasOperatorAccess = !hasMasterAccess && existingUser?.isOperator === true;
+      const hasMasterAccess =
+        verifiedUser.isMaster || verifiedUser.isBootstrapMaster || existingUser?.isMaster === true;
+      const hasOperatorAccess =
+        !hasMasterAccess && (verifiedUser.isOperator || existingUser?.isOperator === true);
       const resolvedUser = {
         ...verifiedUser,
         name: persistedName,

@@ -6,10 +6,49 @@ import type { AuthVerifier } from "./types/auth.js";
 import type { CaseRepository } from "./repositories/caseRepository.js";
 import type { CpfProvider } from "./services/cpfProvider.js";
 
+function readBooleanClaim(claims: Record<string, unknown>, key: string): boolean {
+  const value = claims[key];
+  if (value === true) {
+    return true;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1" || normalized === "yes";
+  }
+
+  if (typeof value === "number") {
+    return value === 1;
+  }
+
+  return false;
+}
+
+function resolveClaimAccess(claims: Record<string, unknown>) {
+  const roleClaim = typeof claims.role === "string" ? claims.role.trim().toLowerCase() : "";
+  const claimMaster =
+    roleClaim === "master" ||
+    readBooleanClaim(claims, "isMaster") ||
+    readBooleanClaim(claims, "master");
+  const claimOperator =
+    roleClaim === "operator" ||
+    readBooleanClaim(claims, "isOperator") ||
+    readBooleanClaim(claims, "operator");
+
+  return {
+    claimMaster,
+    claimOperator
+  };
+}
+
 class FirebaseAuthVerifier implements AuthVerifier {
   async verifyIdToken(token: string) {
     const decoded = await getFirebaseAuth().verifyIdToken(token);
+    const claims = decoded as unknown as Record<string, unknown>;
+    const { claimMaster, claimOperator } = resolveClaimAccess(claims);
     const bootstrapMaster = isMasterEmail(decoded.email);
+    const isMaster = bootstrapMaster || claimMaster;
+    const isOperator = !isMaster && claimOperator;
 
     return {
       uid: decoded.uid,
@@ -17,8 +56,8 @@ class FirebaseAuthVerifier implements AuthVerifier {
       name: decoded.name ?? null,
       avatarUrl: typeof decoded.picture === "string" ? decoded.picture : null,
       emailVerified: decoded.email_verified ?? false,
-      isMaster: bootstrapMaster,
-      isOperator: false,
+      isMaster,
+      isOperator,
       isBootstrapMaster: bootstrapMaster
     };
   }

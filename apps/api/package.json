@@ -7,7 +7,9 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "ops:sync-auth-users": "tsx scripts/syncAuthUsers.ts",
+    "ops:grant-master": "tsx scripts/grantMaster.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
