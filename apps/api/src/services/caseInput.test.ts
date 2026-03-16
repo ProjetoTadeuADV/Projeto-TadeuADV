@@ -44,6 +44,7 @@ describe("validateCreateCaseInput", () => {
       defendantType: "pessoa_juridica",
       defendantDocument: "12345678000190",
       claimSubject: "Cobranca indevida",
+      attachments: [],
       requests: [
         "Restituicao em dobro dos valores cobrados indevidamente.",
         "Condenacao em danos morais em valor a ser arbitrado."

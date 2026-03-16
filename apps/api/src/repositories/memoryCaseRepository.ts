@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { CaseRepository } from "./caseRepository.js";
-import type { CaseRecord, NewCaseInput, UserRecord } from "../types/case.js";
+import type { CaseRecord, NewCaseInput, PetitionAttachment, UserRecord } from "../types/case.js";
 
 function normalizeOptionalText(value: string | null | undefined): string | null {
   if (typeof value !== "string") {
@@ -195,6 +195,34 @@ export class MemoryCaseRepository implements CaseRepository {
 
     this.cases.set(caseId, newCase);
     return newCase;
+  }
+
+  async appendCaseAttachments(
+    caseId: string,
+    userId: string,
+    attachments: PetitionAttachment[]
+  ): Promise<CaseRecord | null> {
+    const existing = this.cases.get(caseId);
+    if (!existing || existing.userId !== userId) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const petitionInitial = existing.petitionInitial
+      ? {
+          ...existing.petitionInitial,
+          attachments: [...(existing.petitionInitial.attachments ?? []), ...attachments]
+        }
+      : null;
+
+    const updated: CaseRecord = {
+      ...existing,
+      petitionInitial,
+      updatedAt: now
+    };
+
+    this.cases.set(caseId, updated);
+    return updated;
   }
 
   async listCasesByUserId(userId: string): Promise<CaseRecord[]> {

@@ -1,4 +1,6 @@
-import { Router } from "express";
+﻿import { Router, type Request, type Response } from "express";
+import multer from "multer";
+import { promises as fs } from "node:fs";
 import { env, hasFirebaseCredentials, isMasterEmail } from "../config/env.js";
 import { getFirebaseAuth } from "../config/firebaseAdmin.js";
 import { VARAS } from "../constants/varas.js";
@@ -21,7 +23,61 @@ import {
   sendCustomVerificationEmail
 } from "../services/verificationEmailSender.js";
 import { generateInitialPetitionPdf } from "../services/petitionPdf.js";
+import {
+  MAX_ATTACHMENTS_PER_CASE,
+  MAX_ATTACHMENT_SIZE_BYTES,
+  formatAttachmentSize,
+  resolveCaseAttachmentPath,
+  storeCaseAttachments
+} from "../services/caseAttachmentStorage.js";
 import { HttpError } from "../utils/httpError.js";
+
+const caseAttachmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    files: MAX_ATTACHMENTS_PER_CASE,
+    fileSize: MAX_ATTACHMENT_SIZE_BYTES
+  }
+});
+
+function runCaseAttachmentUpload(req: Request, res: Response): Promise<Express.Multer.File[]> {
+  return new Promise((resolve, reject) => {
+    caseAttachmentUpload.array("attachments", MAX_ATTACHMENTS_PER_CASE)(req, res, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      const files = Array.isArray(req.files) ? (req.files as Express.Multer.File[]) : [];
+      resolve(files);
+    });
+  });
+}
+
+function toAttachmentUploadError(error: unknown): HttpError {
+  if (!error || typeof error !== "object") {
+    return new HttpError(400, "Falha no envio dos anexos.");
+  }
+
+  const maybeMulterError = error as { name?: string; code?: string; message?: string };
+  if (maybeMulterError.name !== "MulterError") {
+    return new HttpError(400, maybeMulterError.message ?? "Falha no envio dos anexos.");
+  }
+
+  if (maybeMulterError.code === "LIMIT_FILE_SIZE") {
+    return new HttpError(400, `Cada anexo deve ter no máximo ${formatAttachmentSize(MAX_ATTACHMENT_SIZE_BYTES)}.`);
+  }
+
+  if (maybeMulterError.code === "LIMIT_FILE_COUNT") {
+    return new HttpError(400, `Limite de ${MAX_ATTACHMENTS_PER_CASE} anexos por petição.`);
+  }
+
+  if (maybeMulterError.code === "LIMIT_UNEXPECTED_FILE") {
+    return new HttpError(400, "Campo de upload inválido. Use o campo 'attachments'.");
+  }
+
+  return new HttpError(400, maybeMulterError.message ?? "Falha no envio dos anexos.");
+}
 
 function countRecentUsers(users: UserRecord[], days: number): number {
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
@@ -743,13 +799,109 @@ export function createV1Router(deps: AppDependencies) {
     }
   });
 
+  router.post(
+    "/cases/:id/attachments",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        let files: Express.Multer.File[] = [];
+        try {
+          files = await runCaseAttachmentUpload(req, res);
+        } catch (uploadError) {
+          throw toAttachmentUploadError(uploadError);
+        }
+
+        if (files.length === 0) {
+          throw new HttpError(400, "Selecione ao menos um anexo para envio.");
+        }
+
+        const caseItem = await deps.repository.getCaseByIdForUser(req.params.id, req.user.uid);
+        if (!caseItem) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        if (!caseItem.petitionInitial) {
+          throw new HttpError(400, "Este caso ainda não possui petição estruturada para anexos.");
+        }
+
+        const existingAttachments = caseItem.petitionInitial.attachments ?? [];
+        if (existingAttachments.length + files.length > MAX_ATTACHMENTS_PER_CASE) {
+          throw new HttpError(400, `Limite de ${MAX_ATTACHMENTS_PER_CASE} anexos por petição.`);
+        }
+
+        const storedAttachments = await storeCaseAttachments(caseItem.id, files);
+        const updated = await deps.repository.appendCaseAttachments(caseItem.id, req.user.uid, storedAttachments);
+        if (!updated) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        res.status(200).json({
+          status: "ok",
+          result: updated
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.get(
+    "/cases/:id/attachments/:attachmentId",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        let caseItem: CaseRecord | null = null;
+        if (canAccessAdminPanel(req.user)) {
+          const allCases = await deps.repository.listAllCases();
+          caseItem = allCases.find((item) => item.id === req.params.id) ?? null;
+        } else {
+          caseItem = await deps.repository.getCaseByIdForUser(req.params.id, req.user.uid);
+        }
+
+        if (!caseItem) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const attachments = caseItem.petitionInitial?.attachments ?? [];
+        const selectedAttachment = attachments.find((item) => item.id === req.params.attachmentId);
+        if (!selectedAttachment) {
+          throw new HttpError(404, "Anexo não encontrado para este caso.");
+        }
+
+        const filePath = resolveCaseAttachmentPath(caseItem.id, selectedAttachment.storedName);
+        let fileBuffer: Buffer;
+        try {
+          fileBuffer = await fs.readFile(filePath);
+        } catch {
+          throw new HttpError(404, "Arquivo de anexo não encontrado no armazenamento.");
+        }
+
+        const safeDownloadName = selectedAttachment.originalName.replace(/[\"\\]/g, "_");
+        res.setHeader("Content-Type", selectedAttachment.mimeType || "application/octet-stream");
+        res.setHeader("Content-Length", String(fileBuffer.length));
+        res.setHeader("Content-Disposition", `attachment; filename=\"${safeDownloadName}\"`);
+        res.status(200).send(fileBuffer);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
   router.get(
     "/cases/:id/peticao-inicial.pdf",
     authMiddleware(deps.authVerifier, deps.repository),
     async (req, res, next) => {
       try {
         if (!req.user) {
-          throw new HttpError(401, "UsuÃ¡rio nÃ£o autenticado.");
+          throw new HttpError(401, "Usuário não autenticado.");
         }
 
         let caseItem: CaseRecord | null = null;
@@ -762,7 +914,7 @@ export function createV1Router(deps: AppDependencies) {
         }
 
         if (!caseItem) {
-          throw new HttpError(404, "Caso nÃ£o encontrado.");
+          throw new HttpError(404, "Caso não encontrado.");
         }
 
         const owner = await deps.repository.getUserById(caseItem.userId);
@@ -1057,5 +1209,8 @@ export function createV1Router(deps: AppDependencies) {
 
   return router;
 }
+
+
+
 
 

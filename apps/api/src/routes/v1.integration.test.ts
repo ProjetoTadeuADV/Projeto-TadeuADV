@@ -93,6 +93,13 @@ function buildTestApp() {
   return createApp(deps);
 }
 
+function parseBinaryResponse(res: any, callback: (error: Error | null, body: Buffer) => void) {
+  const data: Buffer[] = [];
+  res.on("data", (chunk: Buffer | string) => data.push(Buffer.from(chunk)));
+  res.on("end", () => callback(null, Buffer.concat(data)));
+  res.on("error", (error: Error) => callback(error, Buffer.alloc(0)));
+}
+
 describe("v1 routes", () => {
   it("deve bloquear requisicao sem token", async () => {
     const app = buildTestApp();
@@ -271,8 +278,70 @@ describe("v1 routes", () => {
     expect(getCase.body.result.petitionInitial).toMatchObject({
       claimSubject: "Cobranca indevida",
       defendantType: "pessoa_juridica",
+      attachments: [],
       hearingInterest: true
     });
+  });
+
+  it("deve permitir anexar arquivos ao caso e baixar anexo salvo", async () => {
+    const app = buildTestApp();
+
+    const createCase = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Resumo da reclamacao com descricao suficiente para teste de anexos.",
+        petitionInitial: {
+          claimantAddress: "Rua A, 100, Centro, Sao Paulo/SP",
+          claimSubject: "Entrega nao realizada",
+          defendantType: "pessoa_juridica",
+          defendantName: "Empresa XYZ",
+          defendantDocument: "12.345.678/0001-90",
+          defendantAddress: "Av. B, 200, Sao Paulo/SP",
+          facts:
+            "O consumidor nao recebeu o produto dentro do prazo e nao obteve solucao no atendimento administrativo.",
+          legalGrounds:
+            "Ha falha na prestacao do servico e responsabilidade objetiva do fornecedor pelos danos causados.",
+          requests: ["Entrega imediata do produto ou devolucao integral do valor pago."],
+          evidence: "Conversas e comprovantes do pedido.",
+          claimValue: 1299.9,
+          hearingInterest: true
+        }
+      });
+
+    expect(createCase.status).toBe(201);
+    const caseId = createCase.body.result.id as string;
+
+    const uploadResponse = await request(app)
+      .post(`/v1/cases/${caseId}/attachments`)
+      .set("Authorization", "Bearer token-user-a")
+      .attach("attachments", Buffer.from("conteudo de teste do anexo"), "comprovante.txt");
+
+    expect(uploadResponse.status).toBe(200);
+    expect(uploadResponse.body.result.petitionInitial.attachments).toHaveLength(1);
+
+    const [savedAttachment] = uploadResponse.body.result.petitionInitial.attachments as Array<{
+      id: string;
+      originalName: string;
+      mimeType: string;
+    }>;
+    expect(savedAttachment).toMatchObject({
+      originalName: "comprovante.txt",
+      mimeType: "text/plain"
+    });
+
+    const downloadResponse = await request(app)
+      .get(`/v1/cases/${caseId}/attachments/${savedAttachment.id}`)
+      .set("Authorization", "Bearer token-user-a")
+      .buffer(true)
+      .parse(parseBinaryResponse);
+
+    expect(downloadResponse.status).toBe(200);
+    expect(downloadResponse.headers["content-type"]).toContain("text/plain");
+    expect(Buffer.isBuffer(downloadResponse.body)).toBe(true);
+    expect(downloadResponse.body.toString("utf-8")).toContain("conteudo de teste do anexo");
   });
 
   it("deve permitir ao perfil admin listar e consultar casos de todos os clientes", async () => {

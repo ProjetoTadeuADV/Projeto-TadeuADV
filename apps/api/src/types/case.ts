@@ -22,6 +22,15 @@ export interface CpfConsultaResult {
 
 export type PetitionDefendantType = "pessoa_fisica" | "pessoa_juridica" | "nao_informado";
 
+export interface PetitionAttachment {
+  id: string;
+  originalName: string;
+  storedName: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+}
+
 export interface PetitionInitialData {
   claimantAddress: string;
   claimSubject: string;
@@ -33,6 +42,7 @@ export interface PetitionInitialData {
   legalGrounds: string;
   requests: string[];
   evidence: string | null;
+  attachments: PetitionAttachment[];
   claimValue: number | null;
   hearingInterest: boolean;
 }

@@ -1,5 +1,5 @@
-import { PDFDocument, StandardFonts, type PDFFont, type PDFPage } from "pdf-lib";
-import type { CaseRecord, UserRecord } from "../types/case.js";
+﻿import { PDFDocument, StandardFonts, type PDFFont, type PDFPage } from "pdf-lib";
+import type { CaseRecord, PetitionAttachment, UserRecord } from "../types/case.js";
 import { isValidCpf, normalizeCpf } from "../utils/cpf.js";
 import { HttpError } from "../utils/httpError.js";
 
@@ -31,6 +31,7 @@ interface PetitionData {
   legalGrounds: string;
   requests: string[];
   evidence: string | null;
+  attachments: PetitionAttachment[];
   claimValue: number | null;
   hearingInterest: boolean;
   clientName: string | null;
@@ -254,7 +255,7 @@ function formatCpf(cpfInput: string): string {
 
 function formatDefendantDocument(value: string | null): string {
   if (!value) {
-    return "nao informado";
+    return "não informado";
   }
 
   const digits = value.replace(/\D/g, "");
@@ -271,13 +272,31 @@ function formatDefendantDocument(value: string | null): string {
 
 function formatCurrencyBr(value: number | null): string {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    return "a definir em liquidacao";
+    return "a definir em liquidação";
   }
 
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL"
   }).format(value);
+}
+
+function formatAttachmentSize(sizeBytes: number): string {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  let value = sizeBytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const rounded = unitIndex === 0 ? `${Math.round(value)}` : value.toFixed(1);
+  return `${rounded} ${units[unitIndex]}`;
 }
 
 function resolveLocalDateLine(claimantAddress: string | null): string {
@@ -295,7 +314,7 @@ function resolveLocalDateLine(claimantAddress: string | null): string {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-  const cityHint = parts.length > 0 ? parts[parts.length - 1] : "Local nao informado";
+  const cityHint = parts.length > 0 ? parts[parts.length - 1] : "Local não informado";
   return `${cityHint}, ${today}.`;
 }
 
@@ -312,40 +331,40 @@ function buildPetitionData(context: PetitionPdfContext): PetitionData {
 
   const validationErrors: string[] = [];
   if (!caseId) {
-    validationErrors.push("Identificador do caso nao encontrado.");
+    validationErrors.push("Identificador do caso não encontrado.");
   }
 
   if (varaNome.length < 3) {
-    validationErrors.push("Vara responsavel nao informada.");
+    validationErrors.push("Vara responsável não informada.");
   }
 
   if (!isValidCpf(authorCpf)) {
-    validationErrors.push("CPF invalido para emissao da peticao.");
+    validationErrors.push("CPF inválido para emissão da petição.");
   }
 
   if (summary.length < 10) {
-    validationErrors.push("Resumo da peticao muito curto.");
+    validationErrors.push("Resumo da petição muito curto.");
   }
 
   if (!authorName) {
-    validationErrors.push("Nome do requerente nao disponivel.");
+    validationErrors.push("Nome do requerente não disponível.");
   }
 
   if (petitionInitial && petitionInitial.requests.length === 0) {
-    validationErrors.push("Pedidos da peticao inicial nao informados.");
+    validationErrors.push("Pedidos da petição inicial não informados.");
   }
 
   if (validationErrors.length > 0) {
-    throw new HttpError(422, "Dados insuficientes para gerar a peticao inicial.", {
+    throw new HttpError(422, "Dados insuficientes para gerar a petição inicial.", {
       fields: validationErrors
     });
   }
 
   const fallbackRequests = [
-    "Recebimento da presente peticao inicial e regular processamento do feito.",
-    "Citacao da parte reclamada para apresentar defesa no prazo legal.",
-    "Procedencia dos pedidos com condenacao da parte reclamada nas obrigacoes cabiveis.",
-    "Producao de todas as provas admitidas em direito."
+    "Recebimento da presente petição inicial e regular processamento do feito.",
+    "Citação da parte reclamada para apresentar defesa no prazo legal.",
+    "Procedência dos pedidos com condenação da parte reclamada nas obrigações cabíveis.",
+    "Produção de todas as provas admitidas em direito."
   ];
 
   return {
@@ -355,7 +374,7 @@ function buildPetitionData(context: PetitionPdfContext): PetitionData {
     authorCpf,
     authorEmail: ownerEmail,
     claimantAddress: petitionInitial?.claimantAddress ?? null,
-    claimSubject: petitionInitial?.claimSubject ?? "reparacao civel",
+    claimSubject: petitionInitial?.claimSubject ?? "reparação cível",
     defendantName: petitionInitial?.defendantName ?? null,
     defendantDocument: petitionInitial?.defendantDocument ?? null,
     defendantAddress: petitionInitial?.defendantAddress ?? null,
@@ -363,9 +382,10 @@ function buildPetitionData(context: PetitionPdfContext): PetitionData {
     facts: petitionInitial?.facts ?? summary,
     legalGrounds:
       petitionInitial?.legalGrounds ??
-      "Os fatos narrados indicam violacao de direito material, com necessidade de tutela jurisdicional para recomposicao integral do dano suportado.",
+      "Os fatos narrados indicam violação de direito material, com necessidade de tutela jurisdicional para recomposição integral do dano suportado.",
     requests: petitionInitial?.requests.length ? petitionInitial.requests : fallbackRequests,
     evidence: petitionInitial?.evidence ?? null,
+    attachments: petitionInitial?.attachments ?? [],
     claimValue: petitionInitial?.claimValue ?? null,
     hearingInterest: petitionInitial?.hearingInterest ?? true,
     clientName
@@ -400,12 +420,12 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
   const boldFont = await pdf.embedFont(StandardFonts.TimesRomanBold);
   const writer = new FormalPdfWriter(pdf, regularFont, boldFont, data.varaNome.toUpperCase());
 
-  writer.writeCentered(`PETICAO INICIAL - ${data.claimSubject.toUpperCase()}`, boldFont, 12.5, 20);
+  writer.writeCentered(`PETIÇÃO INICIAL - ${data.claimSubject.toUpperCase()}`, boldFont, 12.5, 20);
   writer.writeCentered("Processo n.: ________________________________", regularFont, 11, 18);
 
   writer.addSpace(6);
   writer.writeParagraph(
-    `${data.authorName}, inscrito(a) no CPF sob o numero ${formatCpf(data.authorCpf)}, residente em ${data.claimantAddress ?? "endereco nao informado"}, vem, respeitosamente, perante Vossa Excelencia, ajuizar a presente demanda em face de ${data.defendantName ?? "parte reclamada nao informada"}, pelos fatos e fundamentos a seguir expostos.`,
+    `${data.authorName}, inscrito(a) no CPF sob o número ${formatCpf(data.authorCpf)}, residente em ${data.claimantAddress ?? "endereço não informado"}, vem, respeitosamente, perante Vossa Excelência, ajuizar a presente demanda em face de ${data.defendantName ?? "parte reclamada não informada"}, pelos fatos e fundamentos a seguir expostos.`,
     {
       font: regularFont,
       fontSize: 11,
@@ -425,12 +445,12 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
     fontSize: 11,
     lineHeight: 17
   });
-  writer.writeParagraph(`Endereco do requerente: ${data.claimantAddress ?? "nao informado"}.`, {
+  writer.writeParagraph(`Endereço do requerente: ${data.claimantAddress ?? "não informado"}.`, {
     font: regularFont,
     fontSize: 11,
     lineHeight: 17
   });
-  writer.writeParagraph(`Reclamada: ${data.defendantName ?? "nao informada"}.`, {
+  writer.writeParagraph(`Reclamada: ${data.defendantName ?? "não informada"}.`, {
     font: regularFont,
     fontSize: 11,
     lineHeight: 17
@@ -440,7 +460,7 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
     fontSize: 11,
     lineHeight: 17
   });
-  writer.writeParagraph(`Endereco da reclamada: ${data.defendantAddress ?? "nao informado"}.`, {
+  writer.writeParagraph(`Endereço da reclamada: ${data.defendantAddress ?? "não informado"}.`, {
     font: regularFont,
     fontSize: 11,
     lineHeight: 17
@@ -473,7 +493,7 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
     firstLineIndent: 22
   });
 
-  writer.writeSectionTitle("VI - DAS PROVAS E DA AUDIENCIA");
+  writer.writeSectionTitle("VI - DAS PROVAS E DA AUDIÊNCIA");
   writer.writeParagraph(
     `Provas indicadas: ${data.evidence ?? "documentos, comprovantes e demais meios admitidos em direito."}`,
     {
@@ -484,7 +504,7 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
     }
   );
   writer.writeParagraph(
-    `Interesse em audiencia de conciliacao: ${data.hearingInterest ? "sim" : "nao"}.`,
+    `Interesse em audiência de conciliação: ${data.hearingInterest ? "sim" : "não"}.`,
     {
       font: regularFont,
       fontSize: 11,
@@ -492,10 +512,32 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
       firstLineIndent: 22
     }
   );
+  if (data.attachments.length > 0) {
+    writer.writeParagraph("Documentos anexados no sistema:", {
+      font: regularFont,
+      fontSize: 11,
+      lineHeight: 17,
+      firstLineIndent: 22
+    });
+    writer.writeNumberedList(
+      data.attachments.map(
+        (item) => `${item.originalName} (${formatAttachmentSize(item.sizeBytes)})`
+      ),
+      10.5,
+      16
+    );
+  } else {
+    writer.writeParagraph("Não há anexos digitais vinculados a esta petição.", {
+      font: regularFont,
+      fontSize: 11,
+      lineHeight: 17,
+      firstLineIndent: 22
+    });
+  }
 
   writer.addSpace(10);
   writer.writeParagraph(
-    `Referencia interna do caso: ${data.caseId}. Cliente identificado na triagem: ${data.clientName ?? "nao informado"}. E-mail para contato: ${data.authorEmail ?? "nao informado"}.`,
+    `Referência interna do caso: ${data.caseId}. Cliente identificado na triagem: ${data.clientName ?? "não informado"}. E-mail para contato: ${data.authorEmail ?? "não informado"}.`,
     {
       font: regularFont,
       fontSize: 10.5,
@@ -527,3 +569,5 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
   const fileName = `peticao-inicial-${data.caseId}.pdf`;
   return { fileName, bytes };
 }
+
+

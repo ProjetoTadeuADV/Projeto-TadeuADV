@@ -1,4 +1,4 @@
-import { z } from "zod";
+﻿import { z } from "zod";
 import { getVaraById } from "../constants/varas.js";
 import { normalizeCpf, isValidCpf } from "../utils/cpf.js";
 import { HttpError } from "../utils/httpError.js";
@@ -61,11 +61,11 @@ function validateDefendantDocument(
   }
 
   if (defendantType === "pessoa_fisica" && value.length !== 11) {
-    throw new HttpError(400, "Documento da reclamada invalido para pessoa fisica.");
+    throw new HttpError(400, "Documento da reclamada inválido para pessoa física.");
   }
 
   if (defendantType === "pessoa_juridica" && value.length !== 14) {
-    throw new HttpError(400, "Documento da reclamada invalido para pessoa juridica.");
+    throw new HttpError(400, "Documento da reclamada inválido para pessoa jurídica.");
   }
 
   if (defendantType === "nao_informado" && value.length !== 11 && value.length !== 14) {
@@ -92,6 +92,7 @@ function normalizePetitionInitialData(value: z.infer<typeof petitionInitialSchem
     legalGrounds: value.legalGrounds,
     requests: value.requests.map((item) => item.trim()),
     evidence: normalizeOptionalText(value.evidence),
+    attachments: [],
     claimValue: value.claimValue ?? null,
     hearingInterest: value.hearingInterest ?? true
   };
@@ -286,3 +287,4 @@ export function validateAccountProfilePatchPayload(
 
   return normalized;
 }
+

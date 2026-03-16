@@ -1,4 +1,4 @@
-import type { CaseRecord, NewCaseInput, UserRecord } from "../types/case.js";
+import type { CaseRecord, NewCaseInput, PetitionAttachment, UserRecord } from "../types/case.js";
 
 export interface CaseRepository {
   upsertUser(user: UserRecord): Promise<void>;
@@ -19,6 +19,11 @@ export interface CaseRepository {
   ): Promise<UserRecord | null>;
   deleteUserWithCases(userId: string): Promise<{ deletedUser: boolean; deletedCases: number }>;
   createCase(input: NewCaseInput): Promise<CaseRecord>;
+  appendCaseAttachments(
+    caseId: string,
+    userId: string,
+    attachments: PetitionAttachment[]
+  ): Promise<CaseRecord | null>;
   listCasesByUserId(userId: string): Promise<CaseRecord[]>;
   getCaseByIdForUser(caseId: string, userId: string): Promise<CaseRecord | null>;
   listUsers(): Promise<UserRecord[]>;

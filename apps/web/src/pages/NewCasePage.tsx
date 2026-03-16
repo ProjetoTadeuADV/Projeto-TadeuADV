@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+﻿import { type ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
@@ -8,8 +8,12 @@ import type { CaseRecord, CpfConsultaResult, PetitionDefendantType, VaraOption }
 const CPF_STATUS_LABELS: Record<CpfConsultaResult["situacao"], string> = {
   regular: "Regular",
   pendente: "Pendente",
-  indisponivel: "Indisponivel"
+  indisponivel: "Indisponível"
 };
+
+const MAX_ATTACHMENTS_PER_CASE = 8;
+const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
+const ATTACHMENT_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.txt,.doc,.docx";
 
 interface ViaCepResponse {
   cep?: string;
@@ -98,6 +102,43 @@ function parseClaimValue(value: string): number | null {
   return parsed;
 }
 
+function formatAttachmentSize(sizeBytes: number): string {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  let value = sizeBytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const rounded = unitIndex === 0 ? `${Math.round(value)}` : value.toFixed(1);
+  return `${rounded} ${units[unitIndex]}`;
+}
+
+function attachmentFingerprint(file: File): string {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function PaperclipIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="M7 13.5l6.2-6.2a3.1 3.1 0 114.4 4.4L9.4 20A5 5 0 112.3 13l8.3-8.3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function NewCasePage() {
   const { getToken } = useAuth();
   const navigate = useNavigate();
@@ -132,9 +173,12 @@ export function NewCasePage() {
   const [legalGrounds, setLegalGrounds] = useState("");
   const [requestsText, setRequestsText] = useState("");
   const [evidence, setEvidence] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [attachmentFeedback, setAttachmentFeedback] = useState<string | null>(null);
   const [claimValueInput, setClaimValueInput] = useState("");
   const [hearingInterest, setHearingInterest] = useState(true);
   const [cpfData, setCpfData] = useState<CpfConsultaResult | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
 
   const hasVaras = varas.length > 0;
   const selectedVaraName = useMemo(
@@ -165,6 +209,114 @@ export function NewCasePage() {
       const refreshedToken = await getToken(true);
       return apiRequest<T>(path, { ...options, token: refreshedToken });
     }
+  }
+
+  async function uploadCaseAttachments(
+    caseId: string,
+    files: File[],
+    token: string
+  ): Promise<CaseRecord> {
+    const formData = new FormData();
+    files.forEach((item) => formData.append("attachments", item));
+
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/v1/cases/${caseId}/attachments`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      body: formData
+    });
+
+    let payload: unknown = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    const isApiSuccess =
+      typeof payload === "object" &&
+      payload !== null &&
+      "status" in payload &&
+      (payload as { status?: unknown }).status === "ok" &&
+      "result" in payload;
+
+    if (!response.ok || !isApiSuccess) {
+      const message =
+        typeof payload === "object" &&
+        payload !== null &&
+        "message" in payload &&
+        typeof (payload as { message?: unknown }).message === "string"
+          ? (payload as { message: string }).message
+          : "Falha ao enviar anexos da petição.";
+      throw new ApiError(response.status, message);
+    }
+
+    return (payload as { result: CaseRecord }).result;
+  }
+
+  async function uploadCaseAttachmentsWithAuthRetry(caseId: string, files: File[]): Promise<CaseRecord> {
+    const firstToken = await getToken();
+
+    try {
+      return await uploadCaseAttachments(caseId, files, firstToken);
+    } catch (nextError) {
+      if (!(nextError instanceof ApiError) || nextError.statusCode !== 401) {
+        throw nextError;
+      }
+
+      const refreshedToken = await getToken(true);
+      return uploadCaseAttachments(caseId, files, refreshedToken);
+    }
+  }
+
+  function handleAttachmentInputChange(event: ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(event.target.files ?? []);
+    event.target.value = "";
+
+    if (selected.length === 0) {
+      return;
+    }
+
+    const oversized = selected.find((item) => item.size > MAX_ATTACHMENT_SIZE_BYTES);
+    if (oversized) {
+      setError(
+        `O arquivo ${oversized.name} excede o limite de ${formatAttachmentSize(MAX_ATTACHMENT_SIZE_BYTES)}.`
+      );
+      return;
+    }
+
+    setAttachments((current) => {
+      const known = new Set(current.map((item) => attachmentFingerprint(item)));
+      const merged = [...current];
+
+      for (const file of selected) {
+        const fingerprint = attachmentFingerprint(file);
+        if (known.has(fingerprint)) {
+          continue;
+        }
+
+        merged.push(file);
+        known.add(fingerprint);
+      }
+
+      if (merged.length > MAX_ATTACHMENTS_PER_CASE) {
+        setError(`Limite de ${MAX_ATTACHMENTS_PER_CASE} anexos por petição.`);
+        return current;
+      }
+
+      setError(null);
+      setAttachmentFeedback(`${merged.length} anexo(s) pronto(s) para envio.`);
+      return merged;
+    });
+  }
+
+  function handleRemoveAttachment(index: number) {
+    setAttachments((current) => {
+      const next = current.filter((_, currentIndex) => currentIndex !== index);
+      setAttachmentFeedback(next.length > 0 ? `${next.length} anexo(s) pronto(s) para envio.` : null);
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -206,12 +358,12 @@ export function NewCasePage() {
     setError(null);
 
     if (!hasVaras || !varaId) {
-      setError("Selecione uma vara valida antes de consultar o CPF.");
+      setError("Selecione uma vara válida antes de consultar o CPF.");
       return;
     }
 
     if (!isValidCpf(cpf)) {
-      setError("CPF invalido para consulta.");
+      setError("CPF inválido para consulta.");
       return;
     }
 
@@ -226,7 +378,7 @@ export function NewCasePage() {
       const message =
         nextError instanceof ApiError
           ? nextError.statusCode === 401
-            ? "Sua sessao expirou. Entre novamente para consultar CPF."
+            ? "Sua sessão expirou. Entre novamente para consultar CPF."
             : nextError.message
           : "Erro na consulta de CPF.";
       setError(message);
@@ -241,7 +393,7 @@ export function NewCasePage() {
 
     const normalizedZipCode = normalizeZipCode(claimantZipCode);
     if (normalizedZipCode.length !== 8) {
-      setError("Informe um CEP valido com 8 digitos.");
+      setError("Informe um CEP válido com 8 dígitos.");
       return;
     }
 
@@ -254,7 +406,7 @@ export function NewCasePage() {
 
       const data = (await response.json()) as ViaCepResponse;
       if (data.erro) {
-        throw new Error("CEP nao encontrado.");
+        throw new Error("CEP não encontrado.");
       }
 
       setClaimantZipCode(formatZipCode(data.cep ?? normalizedZipCode));
@@ -262,9 +414,9 @@ export function NewCasePage() {
       setClaimantNeighborhood((data.bairro ?? "").trim());
       setClaimantCity((data.localidade ?? "").trim());
       setClaimantState((data.uf ?? "").trim().toUpperCase());
-      setZipCodeFeedback("Endereco localizado. Informe numero e complemento.");
+      setZipCodeFeedback("Endereço localizado. Informe número e complemento.");
     } catch (nextError) {
-      const message = nextError instanceof Error ? nextError.message : "Nao foi possivel consultar o CEP.";
+      const message = nextError instanceof Error ? nextError.message : "Não foi possível consultar o CEP.";
       setError(message);
     } finally {
       setLookingUpZipCode(false);
@@ -277,24 +429,24 @@ export function NewCasePage() {
     setZipCodeFeedback(null);
 
     if (!hasVaras || !varaId) {
-      setError("Nenhuma vara disponivel para abrir o caso.");
+      setError("Nenhuma vara disponível para abrir o caso.");
       return;
     }
 
     if (!isValidCpf(cpf)) {
-      setError("Informe um CPF valido.");
+      setError("Informe um CPF válido.");
       return;
     }
 
     const trimmedResumo = resumo.trim();
     if (trimmedResumo.length < 20) {
-      setError("Resumo da reclamacao deve ter pelo menos 20 caracteres.");
+      setError("Resumo da reclamação deve ter pelo menos 20 caracteres.");
       return;
     }
 
     const trimmedClaimSubject = claimSubject.trim();
     if (trimmedClaimSubject.length < 5) {
-      setError("Informe o assunto principal da reclamacao.");
+      setError("Informe o assunto principal da reclamação.");
       return;
     }
 
@@ -307,7 +459,7 @@ export function NewCasePage() {
     const trimmedComplement = claimantComplement.trim();
 
     if (normalizedZipCode.length !== 8) {
-      setError("Informe um CEP valido.");
+      setError("Informe um CEP válido.");
       return;
     }
 
@@ -317,7 +469,7 @@ export function NewCasePage() {
     }
 
     if (!trimmedNumber) {
-      setError("Informe o numero do endereco do requerente.");
+      setError("Informe o número do endereço do requerente.");
       return;
     }
 
@@ -356,7 +508,7 @@ export function NewCasePage() {
 
     const trimmedLegalGrounds = legalGrounds.trim();
     if (trimmedLegalGrounds.length < 30) {
-      setError("Informe os fundamentos da reclamacao com pelo menos 30 caracteres.");
+      setError("Informe os fundamentos da reclamação com pelo menos 30 caracteres.");
       return;
     }
 
@@ -369,24 +521,24 @@ export function NewCasePage() {
     const normalizedDefendantDocument = normalizeDigits(defendantDocument);
     if (normalizedDefendantDocument) {
       if (defendantType === "pessoa_fisica" && normalizedDefendantDocument.length !== 11) {
-        setError("Para pessoa fisica, informe CPF com 11 digitos.");
+        setError("Para pessoa física, informe CPF com 11 dígitos.");
         return;
       }
 
       if (defendantType === "pessoa_juridica" && normalizedDefendantDocument.length !== 14) {
-        setError("Para pessoa juridica, informe CNPJ com 14 digitos.");
+        setError("Para pessoa jurídica, informe CNPJ com 14 dígitos.");
         return;
       }
 
       if (defendantType === "nao_informado" && ![11, 14].includes(normalizedDefendantDocument.length)) {
-        setError("Documento da reclamada deve conter 11 ou 14 digitos.");
+        setError("Documento da reclamada deve conter 11 ou 14 dígitos.");
         return;
       }
     }
 
     const parsedClaimValue = parseClaimValue(claimValueInput);
     if (claimValueInput.trim() && parsedClaimValue === null) {
-      setError("Valor da causa invalido. Use formato numerico, ex: 1500,00.");
+      setError("Valor da causa inválido. Use formato numérico, ex: 1500,00.");
       return;
     }
 
@@ -409,18 +561,31 @@ export function NewCasePage() {
             legalGrounds: trimmedLegalGrounds,
             requests,
             evidence: evidence.trim() || null,
+            attachments: [],
             claimValue: parsedClaimValue,
             hearingInterest
           }
         }
       });
 
+      if (attachments.length > 0) {
+        try {
+          await uploadCaseAttachmentsWithAuthRetry(created.id, attachments);
+        } catch (uploadError) {
+          const message =
+            uploadError instanceof ApiError
+              ? uploadError.message
+              : "Caso criado, mas não foi possível salvar os anexos.";
+          window.alert(`Caso criado com sucesso, mas os anexos falharam: ${message}`);
+        }
+      }
+
       navigate(`/cases/${created.id}`, { replace: true });
     } catch (nextError) {
       const message =
         nextError instanceof ApiError
           ? nextError.statusCode === 401
-            ? "Sua sessao expirou. Entre novamente para criar o caso."
+            ? "Sua sessão expirou. Entre novamente para criar o caso."
             : nextError.message
           : "Erro ao criar caso.";
       setError(message);
@@ -434,16 +599,16 @@ export function NewCasePage() {
       <section className="workspace-hero workspace-hero--compact workspace-hero--simple">
         <div className="workspace-hero-grid">
           <div>
-            <p className="hero-kicker">Peticao inicial</p>
-            <h1>Abrir reclamacao completa</h1>
-            <p>Preencha os dados para gerar uma peticao mais pronta para protocolo.</p>
+            <p className="hero-kicker">Petição inicial</p>
+            <h1>Abrir reclamação completa</h1>
+            <p>Preencha os dados para gerar uma petição mais pronta para protocolo.</p>
           </div>
         </div>
       </section>
 
       {loadingVaras ? (
         <section className="workspace-panel">
-          <p>Carregando formulario...</p>
+          <p>Carregando formulário...</p>
         </section>
       ) : (
         <div className="case-layout">
@@ -490,37 +655,37 @@ export function NewCasePage() {
 
             {cpfData && (
               <div className="info-box">
-                <strong>Consulta de CPF (simulacao interna)</strong>
-                <span>Vara selecionada: {selectedVaraName || "Nao informada"}</span>
+                <strong>Consulta de CPF (simulação interna)</strong>
+                <span>Vara selecionada: {selectedVaraName || "Não informada"}</span>
                 <span>Nome: {cpfData.nome}</span>
-                <span>Situacao: {CPF_STATUS_LABELS[cpfData.situacao]}</span>
+                <span>Situação: {CPF_STATUS_LABELS[cpfData.situacao]}</span>
                 <span>Atualizado em: {new Date(cpfData.updatedAt).toLocaleString("pt-BR")}</span>
               </div>
             )}
 
             <label>
-              Resumo executivo da reclamacao
+              Resumo executivo da reclamação
               <textarea
                 value={resumo}
                 onChange={(event) => setResumo(event.target.value)}
                 rows={4}
-                placeholder="Resumo curto para identificacao rapida do caso."
+                placeholder="Resumo curto para identificação rápida do caso."
                 required
               />
             </label>
 
             <label>
-              Assunto principal da reclamacao
+              Assunto principal da reclamação
               <input
                 type="text"
                 value={claimSubject}
                 onChange={(event) => setClaimSubject(event.target.value)}
-                placeholder="Ex: cobranca indevida, produto nao entregue, cancelamento sem estorno"
+                placeholder="Ex: cobrança indevida, produto não entregue, cancelamento sem estorno"
                 required
               />
             </label>
 
-            <h2>Endereco do requerente</h2>
+            <h2>Endereço do requerente</h2>
             <label>
               CEP
               <div className="inline-input">
@@ -561,7 +726,7 @@ export function NewCasePage() {
               </label>
 
               <label>
-                Numero
+                Número
                 <input
                   type="text"
                   value={claimantNumber}
@@ -577,7 +742,7 @@ export function NewCasePage() {
                   type="text"
                   value={claimantComplement}
                   onChange={(event) => setClaimantComplement(event.target.value)}
-                  placeholder="Apartamento, bloco, referencia (opcional)"
+                  placeholder="Apartamento, bloco, referência (opcional)"
                 />
               </label>
 
@@ -623,9 +788,9 @@ export function NewCasePage() {
                 onChange={(event) => setDefendantType(event.target.value as PetitionDefendantType)}
                 required
               >
-                <option value="pessoa_juridica">Pessoa juridica</option>
-                <option value="pessoa_fisica">Pessoa fisica</option>
-                <option value="nao_informado">Nao informado</option>
+                <option value="pessoa_juridica">Pessoa jurídica</option>
+                <option value="pessoa_fisica">Pessoa física</option>
+                <option value="nao_informado">Não informado</option>
               </select>
             </label>
 
@@ -658,7 +823,7 @@ export function NewCasePage() {
             </label>
 
             <label>
-              Endereco da reclamada
+              Endereço da reclamada
               <input
                 type="text"
                 value={defendantAddress}
@@ -667,20 +832,20 @@ export function NewCasePage() {
               />
             </label>
 
-            <h2>Conteudo da peticao</h2>
+            <h2>Conteúdo da petição</h2>
             <label>
               Fatos
               <textarea
                 value={facts}
                 onChange={(event) => setFacts(event.target.value)}
                 rows={7}
-                placeholder="Narrativa cronologica do que ocorreu, com datas e detalhes relevantes."
+                placeholder="Narrativa cronológica do que ocorreu, com datas e detalhes relevantes."
                 required
               />
             </label>
 
             <label>
-              Fundamentos da reclamacao
+              Fundamentos da reclamação
               <textarea
                 value={legalGrounds}
                 onChange={(event) => setLegalGrounds(event.target.value)}
@@ -696,20 +861,60 @@ export function NewCasePage() {
                 value={requestsText}
                 onChange={(event) => setRequestsText(event.target.value)}
                 rows={6}
-                placeholder={"- Restituicao em dobro dos valores cobrados indevidamente.\n- Indenizacao por danos morais.\n- Inversao do onus da prova."}
+                placeholder={"- Restituição em dobro dos valores cobrados indevidamente.\n- Indenização por danos morais.\n- Inversão do ônus da prova."}
                 required
               />
             </label>
 
-            <label>
-              Provas e documentos
+            <div className="evidence-field">
+              <div className="evidence-field-header">
+                <span className="evidence-field-title">Provas e documentos</span>
+                <button
+                  type="button"
+                  className="attachment-trigger"
+                  onClick={() => attachmentInputRef.current?.click()}
+                >
+                  <span className="attachment-trigger-icon">
+                    <PaperclipIcon />
+                  </span>
+                  Incluir anexos
+                </button>
+              </div>
               <textarea
                 value={evidence}
                 onChange={(event) => setEvidence(event.target.value)}
                 rows={4}
-                placeholder="Contratos, conversas, notas fiscais, protocolos e demais evidencias."
+                placeholder="Contratos, conversas, notas fiscais, protocolos e demais evidências."
               />
-            </label>
+              <input
+                ref={attachmentInputRef}
+                type="file"
+                multiple
+                accept={ATTACHMENT_ACCEPT}
+                className="hidden-file-input"
+                onChange={handleAttachmentInputChange}
+              />
+              <p className="field-help">
+                Opcional: até {MAX_ATTACHMENTS_PER_CASE} arquivos, limite de{" "}
+                {formatAttachmentSize(MAX_ATTACHMENT_SIZE_BYTES)} por arquivo.
+              </p>
+              {attachmentFeedback && <p className="success-text">{attachmentFeedback}</p>}
+              {attachments.length > 0 && (
+                <ul className="attachment-list">
+                  {attachments.map((file, index) => (
+                    <li key={attachmentFingerprint(file)}>
+                      <div>
+                        <strong>{file.name}</strong>
+                        <span>{formatAttachmentSize(file.size)}</span>
+                      </div>
+                      <button type="button" className="attachment-remove" onClick={() => handleRemoveAttachment(index)}>
+                        Remover
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
             <label>
               Valor da causa
@@ -722,34 +927,35 @@ export function NewCasePage() {
             </label>
 
             <label>
-              Interesse em audiencia de conciliacao
+              Interesse em audiência de conciliação
               <select
                 value={hearingInterest ? "sim" : "nao"}
                 onChange={(event) => setHearingInterest(event.target.value === "sim")}
               >
                 <option value="sim">Sim</option>
-                <option value="nao">Nao</option>
+                <option value="nao">Não</option>
               </select>
             </label>
 
             {error && <p className="error-text">{error}</p>}
 
             <button type="submit" disabled={submitting || !hasVaras || !varaId}>
-              {submitting ? "Salvando..." : "Salvar e gerar peticao"}
+              {submitting ? "Salvando..." : "Salvar e gerar petição"}
             </button>
           </form>
 
           <aside className="workspace-panel tips-card tips-card--compact">
             <h2>Checklist</h2>
-            <ul className="tips-checklist" aria-label="Checklist da peticao">
+            <ul className="tips-checklist" aria-label="Checklist da petição">
               <li>Confirme vara e CPF do requerente.</li>
-              <li>Preencha CEP e complete numero/complemento.</li>
+              <li>Preencha CEP e complete número/complemento.</li>
               <li>Informe a parte reclamada com CPF ou CNPJ formatado.</li>
               <li>Descreva fatos e fundamentos com clareza objetiva.</li>
               <li>Liste pedidos em linhas separadas para o PDF.</li>
+              <li>Use o clipe para anexar documentos da reclamação.</li>
             </ul>
             <div className="tips-footer">
-              <p>No detalhe do caso, use o botao de exportacao para baixar a peticao em PDF.</p>
+              <p>No detalhe do caso, use o botão de exportação para baixar a petição em PDF.</p>
             </div>
           </aside>
         </div>
@@ -757,3 +963,4 @@ export function NewCasePage() {
     </section>
   );
 }
+

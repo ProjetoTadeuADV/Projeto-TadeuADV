@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Firestore } from "firebase-admin/firestore";
 import type { CaseRepository } from "./caseRepository.js";
-import type { CaseRecord, NewCaseInput, UserRecord } from "../types/case.js";
+import type { CaseRecord, NewCaseInput, PetitionAttachment, UserRecord } from "../types/case.js";
 
 const USERS_COLLECTION = "users";
 const CASES_COLLECTION = "cases";
@@ -263,6 +263,40 @@ export class FirestoreCaseRepository implements CaseRepository {
 
     await this.firestore.collection(CASES_COLLECTION).doc(caseId).set(payload);
     return payload;
+  }
+
+  async appendCaseAttachments(
+    caseId: string,
+    userId: string,
+    attachments: PetitionAttachment[]
+  ): Promise<CaseRecord | null> {
+    const ref = this.firestore.collection(CASES_COLLECTION).doc(caseId);
+    const snapshot = await ref.get();
+    if (!snapshot.exists) {
+      return null;
+    }
+
+    const existing = snapshot.data() as CaseRecord;
+    if (existing.userId !== userId) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const petitionInitial = existing.petitionInitial
+      ? {
+          ...existing.petitionInitial,
+          attachments: [...(existing.petitionInitial.attachments ?? []), ...attachments]
+        }
+      : null;
+
+    const updated: CaseRecord = {
+      ...existing,
+      petitionInitial,
+      updatedAt: now
+    };
+
+    await ref.set(updated, { merge: true });
+    return updated;
   }
 
   async listCasesByUserId(userId: string): Promise<CaseRecord[]> {

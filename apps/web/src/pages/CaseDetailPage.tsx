@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
@@ -6,14 +6,14 @@ import type { CaseRecord } from "../types";
 
 const STATUS_LABEL: Record<CaseRecord["status"], string> = {
   recebido: "Recebido",
-  em_analise: "Em analise",
+  em_analise: "Em análise",
   encerrado: "Encerrado"
 };
 
 const DEFENDANT_TYPE_LABEL: Record<NonNullable<CaseRecord["petitionInitial"]>["defendantType"], string> = {
-  pessoa_fisica: "Pessoa fisica",
-  pessoa_juridica: "Pessoa juridica",
-  nao_informado: "Nao informado"
+  pessoa_fisica: "Pessoa física",
+  pessoa_juridica: "Pessoa jurídica",
+  nao_informado: "Não informado"
 };
 
 function extractFileName(contentDisposition: string | null): string | null {
@@ -35,18 +35,36 @@ async function extractApiErrorMessage(response: Response): Promise<string> {
     // Ignora parse para usar fallback.
   }
 
-  return "Nao foi possivel gerar o PDF da peticao inicial.";
+  return "Não foi possível gerar o PDF da petição inicial.";
 }
 
 function formatCurrencyBr(value: number | null | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    return "Nao informado";
+    return "Não informado";
   }
 
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL"
   }).format(value);
+}
+
+function formatAttachmentSize(sizeBytes: number): string {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  let value = sizeBytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const rounded = unitIndex === 0 ? `${Math.round(value)}` : value.toFixed(1);
+  return `${rounded} ${units[unitIndex]}`;
 }
 
 export function CaseDetailPage() {
@@ -57,11 +75,13 @@ export function CaseDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [downloadingAttachmentId, setDownloadingAttachmentId] = useState<string | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadCase() {
       if (!id) {
-        setError("Caso invalido.");
+        setError("Caso inválido.");
         setLoading(false);
         return;
       }
@@ -85,7 +105,7 @@ export function CaseDetailPage() {
 
   async function handleExportPdf() {
     if (!id) {
-      setExportError("Caso invalido para exportacao.");
+      setExportError("Caso inválido para exportação.");
       return;
     }
 
@@ -117,10 +137,52 @@ export function CaseDetailPage() {
       window.URL.revokeObjectURL(objectUrl);
     } catch (nextError) {
       const message =
-        nextError instanceof Error ? nextError.message : "Falha ao exportar o PDF da peticao inicial.";
+        nextError instanceof Error ? nextError.message : "Falha ao exportar o PDF da petição inicial.";
       setExportError(message);
     } finally {
       setExportingPdf(false);
+    }
+  }
+
+  async function handleDownloadAttachment(attachmentId: string, fallbackName: string) {
+    if (!id) {
+      return;
+    }
+
+    setAttachmentError(null);
+    setDownloadingAttachmentId(attachmentId);
+
+    try {
+      const token = await getToken();
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/v1/cases/${id}/attachments/${attachmentId}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Não foi possível baixar o anexo.");
+      }
+
+      const fileName = extractFileName(response.headers.get("content-disposition")) ?? fallbackName;
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (nextError) {
+      const message = nextError instanceof Error ? nextError.message : "Falha ao baixar anexo.";
+      setAttachmentError(message);
+    } finally {
+      setDownloadingAttachmentId(null);
     }
   }
 
@@ -166,7 +228,7 @@ export function CaseDetailPage() {
                 onClick={() => void handleExportPdf()}
                 disabled={exportingPdf}
               >
-                {exportingPdf ? "Gerando PDF..." : "Exportar peticao inicial (PDF)"}
+                {exportingPdf ? "Gerando PDF..." : "Exportar petição inicial (PDF)"}
               </button>
               <span className={`status-badge status-badge--${caseItem.status}`}>
                 {STATUS_LABEL[caseItem.status]}
@@ -176,13 +238,14 @@ export function CaseDetailPage() {
               </Link>
             </div>
             {exportError && <p className="error-text">{exportError}</p>}
+            {attachmentError && <p className="error-text">{attachmentError}</p>}
           </div>
         </div>
       </section>
 
       <div className="detail-grid">
         <article className="detail-card">
-          <h2>Informacoes principais</h2>
+          <h2>Informações principais</h2>
           <div className="detail-list">
             <div className="detail-item">
               <span>Status</span>
@@ -190,7 +253,7 @@ export function CaseDetailPage() {
             </div>
             <div className="detail-item">
               <span>Cliente</span>
-              <strong>{caseItem.clienteNome ?? caseItem.cpfConsulta?.nome ?? "Nao informado"}</strong>
+              <strong>{caseItem.clienteNome ?? caseItem.cpfConsulta?.nome ?? "Não informado"}</strong>
             </div>
             <div className="detail-item">
               <span>CPF</span>
@@ -201,12 +264,12 @@ export function CaseDetailPage() {
               <strong>{new Date(caseItem.createdAt).toLocaleString("pt-BR")}</strong>
             </div>
             <div className="detail-item">
-              <span>Ultima atualizacao</span>
+              <span>Última atualização</span>
               <strong>{new Date(caseItem.updatedAt).toLocaleString("pt-BR")}</strong>
             </div>
             {(caseItem.responsavelNome || caseItem.responsavelEmail) && (
               <div className="detail-item">
-                <span>Conta responsavel</span>
+                <span>Conta responsável</span>
                 <strong>{caseItem.responsavelNome ?? caseItem.responsavelEmail}</strong>
               </div>
             )}
@@ -216,7 +279,7 @@ export function CaseDetailPage() {
             <div className="info-box">
               <strong>Consulta de CPF</strong>
               <span>Nome: {caseItem.cpfConsulta.nome}</span>
-              <span>Situacao: {caseItem.cpfConsulta.situacao}</span>
+              <span>Situação: {caseItem.cpfConsulta.situacao}</span>
               <span>Fonte: {caseItem.cpfConsulta.source}</span>
             </div>
           )}
@@ -229,16 +292,16 @@ export function CaseDetailPage() {
           {caseItem.petitionInitial && (
             <>
               <div className="info-box">
-                <strong>Dados estruturados da peticao</strong>
+                <strong>Dados estruturados da petição</strong>
                 <span>Assunto: {caseItem.petitionInitial.claimSubject}</span>
-                <span>Endereco do requerente: {caseItem.petitionInitial.claimantAddress}</span>
+                <span>Endereço do requerente: {caseItem.petitionInitial.claimantAddress}</span>
                 <span>Tipo da reclamada: {DEFENDANT_TYPE_LABEL[caseItem.petitionInitial.defendantType]}</span>
                 <span>Reclamada: {caseItem.petitionInitial.defendantName}</span>
-                <span>Documento da reclamada: {caseItem.petitionInitial.defendantDocument ?? "Nao informado"}</span>
-                <span>Endereco da reclamada: {caseItem.petitionInitial.defendantAddress ?? "Nao informado"}</span>
+                <span>Documento da reclamada: {caseItem.petitionInitial.defendantDocument ?? "Não informado"}</span>
+                <span>Endereço da reclamada: {caseItem.petitionInitial.defendantAddress ?? "Não informado"}</span>
                 <span>Valor da causa: {formatCurrencyBr(caseItem.petitionInitial.claimValue)}</span>
                 <span>
-                  Interesse em audiencia: {caseItem.petitionInitial.hearingInterest ? "Sim" : "Nao"}
+                  Interesse em audiência: {caseItem.petitionInitial.hearingInterest ? "Sim" : "Não"}
                 </span>
               </div>
 
@@ -267,20 +330,45 @@ export function CaseDetailPage() {
                   <p>{caseItem.petitionInitial.evidence}</p>
                 </div>
               )}
+
+              {(caseItem.petitionInitial.attachments ?? []).length > 0 && (
+                <div className="resumo-box">
+                  <strong>Anexos enviados</strong>
+                  <ul className="attachment-list">
+                    {(caseItem.petitionInitial.attachments ?? []).map((item) => (
+                      <li key={item.id}>
+                        <div>
+                          <strong>{item.originalName}</strong>
+                          <span>{formatAttachmentSize(item.sizeBytes)}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="attachment-remove"
+                          onClick={() => void handleDownloadAttachment(item.id, item.originalName)}
+                          disabled={downloadingAttachmentId === item.id}
+                        >
+                          {downloadingAttachmentId === item.id ? "Baixando..." : "Baixar"}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </>
           )}
         </article>
 
         <aside className="detail-card">
-          <h2>Proximos passos sugeridos</h2>
+          <h2>Próximos passos sugeridos</h2>
           <ul className="timeline-list">
-            <li>Revise o resumo para confirmar se esta claro e completo.</li>
-            <li>Confira a situacao do CPF antes de qualquer ajuste importante.</li>
-            <li>Acompanhe mudancas de status para saber em que etapa o caso esta.</li>
-            <li>Use este painel como referencia para o proximo retorno ao cliente.</li>
+            <li>Revise o resumo para confirmar se está claro e completo.</li>
+            <li>Confira a situação do CPF antes de qualquer ajuste importante.</li>
+            <li>Acompanhe mudanças de status para saber em que etapa o caso está.</li>
+            <li>Use este painel como referência para o próximo retorno ao cliente.</li>
           </ul>
         </aside>
       </div>
     </section>
   );
 }
+
