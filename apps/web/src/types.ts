@@ -24,6 +24,23 @@ export interface CpfConsultaResult {
   updatedAt: string;
 }
 
+export type PetitionDefendantType = "pessoa_fisica" | "pessoa_juridica" | "nao_informado";
+
+export interface PetitionInitialData {
+  claimantAddress: string;
+  claimSubject: string;
+  defendantType: PetitionDefendantType;
+  defendantName: string;
+  defendantDocument: string | null;
+  defendantAddress: string | null;
+  facts: string;
+  legalGrounds: string;
+  requests: string[];
+  evidence: string | null;
+  claimValue: number | null;
+  hearingInterest: boolean;
+}
+
 export interface CaseRecord {
   id: string;
   userId: string;
@@ -32,6 +49,7 @@ export interface CaseRecord {
   cpf: string;
   resumo: string;
   cpfConsulta: CpfConsultaResult | null;
+  petitionInitial?: PetitionInitialData | null;
   clienteNome?: string | null;
   responsavelNome?: string | null;
   responsavelEmail?: string | null;

@@ -68,6 +68,12 @@ API: `http://localhost:8080`
 - `POST /v1/cases` (auth)
 - `GET /v1/cases` (auth)
 - `GET /v1/cases/:id` (auth)
+- `GET /v1/cases/:id/peticao-inicial.pdf` (auth, exportacao PDF)
+
+`POST /v1/cases` aceita bloco opcional `petitionInitial` com dados estruturados:
+- `claimSubject`, `claimantAddress`
+- `defendantType`, `defendantName`, `defendantDocument`, `defendantAddress`
+- `facts`, `legalGrounds`, `requests[]`, `evidence`, `claimValue`, `hearingInterest`
 
 ## Deploy no Vercel (frontend)
 

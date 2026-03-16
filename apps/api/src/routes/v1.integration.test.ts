@@ -220,6 +220,61 @@ describe("v1 routes", () => {
     expect(listB.body.result[0].userId).toBe("user-b");
   });
 
+  it("deve persistir dados estruturados da peticao no caso", async () => {
+    const app = buildTestApp();
+
+    const createCase = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Resumo da reclamacao com descricao objetiva para triagem.",
+        petitionInitial: {
+          claimantAddress: "Rua A, 100, Centro, Sao Paulo/SP",
+          claimSubject: "Cobranca indevida",
+          defendantType: "pessoa_juridica",
+          defendantName: "Empresa XYZ",
+          defendantDocument: "12.345.678/0001-90",
+          defendantAddress: "Av. B, 200, Sao Paulo/SP",
+          facts:
+            "Foi identificada cobranca em duplicidade na fatura do cartao, sem estorno apos duas solicitacoes.",
+          legalGrounds:
+            "A cobranca indevida viola o CDC e gera dever de restituicao e reparacao pelos danos suportados.",
+          requests: [
+            "Restituicao em dobro dos valores cobrados indevidamente.",
+            "Condenacao ao pagamento de danos morais."
+          ],
+          evidence: "Faturas e protocolos de atendimento anexos.",
+          claimValue: 3800,
+          hearingInterest: true
+        }
+      });
+
+    expect(createCase.status).toBe(201);
+    expect(createCase.body.result.petitionInitial).toMatchObject({
+      claimSubject: "Cobranca indevida",
+      defendantName: "Empresa XYZ",
+      defendantDocument: "12345678000190",
+      requests: [
+        "Restituicao em dobro dos valores cobrados indevidamente.",
+        "Condenacao ao pagamento de danos morais."
+      ]
+    });
+
+    const caseId = createCase.body.result.id as string;
+    const getCase = await request(app)
+      .get(`/v1/cases/${caseId}`)
+      .set("Authorization", "Bearer token-user-a");
+
+    expect(getCase.status).toBe(200);
+    expect(getCase.body.result.petitionInitial).toMatchObject({
+      claimSubject: "Cobranca indevida",
+      defendantType: "pessoa_juridica",
+      hearingInterest: true
+    });
+  });
+
   it("deve permitir ao perfil admin listar e consultar casos de todos os clientes", async () => {
     const app = buildTestApp();
 
@@ -274,6 +329,36 @@ describe("v1 routes", () => {
       responsavelEmail: "b@test.com",
       clienteNome: "Cliente Teste 0001"
     });
+  });
+
+  it("deve gerar PDF da peticao inicial para o usuario autenticado", async () => {
+    const app = buildTestApp();
+
+    const createCase = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Cliente relata cobranca indevida recorrente sem solucao administrativa."
+      });
+
+    expect(createCase.status).toBe(201);
+    const caseId = createCase.body.result.id as string;
+
+    const pdfResponse = await request(app)
+      .get(`/v1/cases/${caseId}/peticao-inicial.pdf`)
+      .set("Authorization", "Bearer token-user-a");
+
+    expect(pdfResponse.status).toBe(200);
+    expect(pdfResponse.headers["content-type"]).toContain("application/pdf");
+    expect(pdfResponse.headers["content-disposition"]).toContain("peticao-inicial");
+
+    const bodyBuffer = Buffer.isBuffer(pdfResponse.body)
+      ? pdfResponse.body
+      : Buffer.from(pdfResponse.text ?? "", "binary");
+    expect(bodyBuffer.length).toBeGreaterThan(500);
+    expect(bodyBuffer.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
   });
 
   it("deve retornar contrato esperado na consulta CPF mock", async () => {

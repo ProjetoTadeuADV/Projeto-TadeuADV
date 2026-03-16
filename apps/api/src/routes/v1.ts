@@ -20,6 +20,7 @@ import {
   isCustomVerificationEmailEnabled,
   sendCustomVerificationEmail
 } from "../services/verificationEmailSender.js";
+import { generateInitialPetitionPdf } from "../services/petitionPdf.js";
 import { HttpError } from "../utils/httpError.js";
 
 function countRecentUsers(users: UserRecord[], days: number): number {
@@ -660,7 +661,8 @@ export function createV1Router(deps: AppDependencies) {
         varaNome: validated.varaNome,
         cpf: validated.cpf,
         resumo: validated.resumo,
-        cpfConsulta
+        cpfConsulta,
+        petitionInitial: validated.petitionInitial
       });
 
       res.status(201).json({
@@ -740,6 +742,43 @@ export function createV1Router(deps: AppDependencies) {
       next(error);
     }
   });
+
+  router.get(
+    "/cases/:id/peticao-inicial.pdf",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "UsuÃ¡rio nÃ£o autenticado.");
+        }
+
+        let caseItem: CaseRecord | null = null;
+
+        if (canAccessAdminPanel(req.user)) {
+          const allCases = await deps.repository.listAllCases();
+          caseItem = allCases.find((item) => item.id === req.params.id) ?? null;
+        } else {
+          caseItem = await deps.repository.getCaseByIdForUser(req.params.id, req.user.uid);
+        }
+
+        if (!caseItem) {
+          throw new HttpError(404, "Caso nÃ£o encontrado.");
+        }
+
+        const owner = await deps.repository.getUserById(caseItem.userId);
+        const pdf = await generateInitialPetitionPdf({
+          caseItem,
+          owner
+        });
+
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `attachment; filename=\"${pdf.fileName}\"`);
+        res.status(200).send(Buffer.from(pdf.bytes));
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
 
   router.get("/admin/overview", authMiddleware(deps.authVerifier, deps.repository), async (req, res, next) => {
     try {

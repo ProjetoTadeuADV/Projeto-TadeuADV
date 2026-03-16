@@ -1922,6 +1922,17 @@ button.sidebar-item {
   display: grid;
   grid-template-columns: minmax(360px, 1fr) minmax(260px, 0.45fr);
   gap: 1rem;
+  align-items: start;
+}
+
+.address-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.address-grid-span {
+  grid-column: 1 / -1;
 }
 
 .tips-card h2 {
@@ -1929,9 +1940,51 @@ button.sidebar-item {
   font-size: 1.2rem;
 }
 
+.tips-card--compact {
+  --checklist-sticky-offset: clamp(96px, 11vh, 128px);
+  align-self: start;
+  position: sticky;
+  top: var(--checklist-sticky-offset);
+  max-height: calc(100vh - var(--checklist-sticky-offset) - 0.85rem);
+  overflow: auto;
+  scrollbar-gutter: stable;
+  gap: 0.65rem;
+}
+
 .tips-list {
   display: grid;
   gap: 0.8rem;
+}
+
+.tips-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.46rem;
+}
+
+.tips-checklist li {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.55rem;
+  margin: 0;
+  border: 1px solid #dbe5f2;
+  border-radius: 10px;
+  background: #f7fbff;
+  padding: 0.42rem 0.58rem;
+  color: #47586a;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.tips-checklist li::before {
+  content: "\2713";
+  color: var(--primary-color);
+  font-weight: 800;
+  line-height: 1.2;
+  margin-top: 1px;
 }
 
 .tips-list strong {
@@ -1945,13 +1998,14 @@ button.sidebar-item {
 
 .tips-footer {
   border-top: 1px solid #d9e3f0;
-  padding-top: 0.75rem;
+  padding-top: 0.58rem;
 }
 
 .tips-footer p {
   margin: 0;
   color: #4f5967;
-  font-size: 0.92rem;
+  font-size: 0.88rem;
+  line-height: 1.35;
 }
 
 .detail-grid {
@@ -3068,6 +3122,17 @@ button.sidebar-item {
   .case-layout,
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .address-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tips-card--compact {
+    position: static;
+    top: auto;
+    max-height: none;
+    overflow: visible;
   }
 
   .case-card-meta {

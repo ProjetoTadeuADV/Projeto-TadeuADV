@@ -187,6 +187,7 @@ export class MemoryCaseRepository implements CaseRepository {
       cpf: input.cpf,
       resumo: input.resumo,
       cpfConsulta: input.cpfConsulta,
+      petitionInitial: input.petitionInitial ?? null,
       status: "recebido",
       createdAt: now,
       updatedAt: now
