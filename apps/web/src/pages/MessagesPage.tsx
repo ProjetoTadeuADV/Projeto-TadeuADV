@@ -284,7 +284,7 @@ export function MessagesPage() {
     }
   }
 
-  async function handleDownloadAttachment(attachment: PetitionAttachment) {
+  async function handleDownloadAttachment(messageId: string, attachment: PetitionAttachment) {
     if (!selectedCaseId) {
       return;
     }
@@ -293,12 +293,15 @@ export function MessagesPage() {
     setError(null);
     try {
       const token = await getToken();
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/v1/cases/${selectedCaseId}/attachments/${attachment.id}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/v1/cases/${selectedCaseId}/messages/${messageId}/attachments/${attachment.id}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
         }
-      });
+      );
 
       if (!response.ok) {
         let message = "Falha ao baixar anexo.";
@@ -412,7 +415,7 @@ export function MessagesPage() {
                                     <button
                                       type="button"
                                       className="message-attachment-button"
-                                      onClick={() => void handleDownloadAttachment(attachment)}
+                                      onClick={() => void handleDownloadAttachment(item.id, attachment)}
                                       disabled={downloadingAttachmentId === attachment.id}
                                     >
                                       <span>{attachment.originalName}</span>

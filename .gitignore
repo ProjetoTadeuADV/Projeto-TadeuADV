@@ -7,6 +7,6 @@ coverage/
 .env.*.local
 apps/*/node_modules/
 apps/*/dist/
+apps/*/.data/
 apps/*/.env
 apps/*/.env.local
-

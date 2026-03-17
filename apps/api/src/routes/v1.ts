@@ -42,7 +42,7 @@ import {
   MAX_ATTACHMENTS_PER_CASE,
   MAX_ATTACHMENT_SIZE_BYTES,
   formatAttachmentSize,
-  resolveCaseAttachmentPath,
+  resolveCaseAttachmentReadPaths,
   storeCaseAttachments
 } from "../services/caseAttachmentStorage.js";
 import { HttpError } from "../utils/httpError.js";
@@ -337,6 +337,25 @@ function resolveLatestDate(values: Array<string | null | undefined>, fallback: s
 
   valid.sort((a, b) => b.getTime() - a.getTime());
   return valid[0].toISOString();
+}
+
+async function readCaseAttachmentBuffer(caseId: string, storedName: string): Promise<Buffer> {
+  const candidatePaths = resolveCaseAttachmentReadPaths(caseId, storedName);
+
+  for (const filePath of candidatePaths) {
+    try {
+      return await fs.readFile(filePath);
+    } catch (error) {
+      const nodeError = error as NodeJS.ErrnoException;
+      if (nodeError?.code === "ENOENT") {
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw new HttpError(404, "Arquivo de anexo não encontrado no armazenamento.");
 }
 
 function resolveVerificationContinueUrl(): string {
@@ -1454,6 +1473,44 @@ export function createV1Router(deps: AppDependencies) {
   );
 
   router.get(
+    "/cases/:id/messages/:messageId/attachments/:attachmentId",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        const caseItem = await resolveCaseForMessagingAccess(deps, req.user, req.params.id);
+        if (!caseItem) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const message = (caseItem.messages ?? []).find((item) => item.id === req.params.messageId) ?? null;
+        if (!message) {
+          throw new HttpError(404, "Mensagem não encontrada para este caso.");
+        }
+
+        const selectedAttachment =
+          (message.attachments ?? []).find((item) => item.id === req.params.attachmentId) ?? null;
+        if (!selectedAttachment) {
+          throw new HttpError(404, "Anexo não encontrado para esta mensagem.");
+        }
+
+        const fileBuffer = await readCaseAttachmentBuffer(caseItem.id, selectedAttachment.storedName);
+
+        const safeDownloadName = selectedAttachment.originalName.replace(/[\"\\]/g, "_");
+        res.setHeader("Content-Type", selectedAttachment.mimeType || "application/octet-stream");
+        res.setHeader("Content-Length", String(fileBuffer.length));
+        res.setHeader("Content-Disposition", `attachment; filename=\"${safeDownloadName}\"`);
+        res.status(200).send(fileBuffer);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.get(
     "/cases/:id/attachments/:attachmentId",
     authMiddleware(deps.authVerifier, deps.repository),
     async (req, res, next) => {
@@ -1482,13 +1539,7 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(404, "Anexo não encontrado para este caso.");
         }
 
-        const filePath = resolveCaseAttachmentPath(caseItem.id, selectedAttachment.storedName);
-        let fileBuffer: Buffer;
-        try {
-          fileBuffer = await fs.readFile(filePath);
-        } catch {
-          throw new HttpError(404, "Arquivo de anexo não encontrado no armazenamento.");
-        }
+        const fileBuffer = await readCaseAttachmentBuffer(caseItem.id, selectedAttachment.storedName);
 
         const safeDownloadName = selectedAttachment.originalName.replace(/[\"\\]/g, "_");
         res.setHeader("Content-Type", selectedAttachment.mimeType || "application/octet-stream");
@@ -1539,13 +1590,7 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(404, "Anexo não encontrado para esta movimentação.");
         }
 
-        const filePath = resolveCaseAttachmentPath(caseItem.id, selectedAttachment.storedName);
-        let fileBuffer: Buffer;
-        try {
-          fileBuffer = await fs.readFile(filePath);
-        } catch {
-          throw new HttpError(404, "Arquivo de anexo não encontrado no armazenamento.");
-        }
+        const fileBuffer = await readCaseAttachmentBuffer(caseItem.id, selectedAttachment.storedName);
 
         const safeDownloadName = selectedAttachment.originalName.replace(/[\"\\]/g, "_");
         res.setHeader("Content-Type", selectedAttachment.mimeType || "application/octet-stream");

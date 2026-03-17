@@ -8,7 +8,8 @@ import { HttpError } from "../utils/httpError.js";
 export const MAX_ATTACHMENTS_PER_CASE = 8;
 export const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
 
-const DEFAULT_ATTACHMENT_ROOT = path.join(tmpdir(), "jec-api-case-attachments");
+const LEGACY_TEMP_ATTACHMENT_ROOT = path.join(tmpdir(), "jec-api-case-attachments");
+const DEFAULT_ATTACHMENT_ROOT = path.resolve(process.cwd(), ".data", "case-attachments");
 const STORAGE_ROOT =
   typeof process.env.CASE_ATTACHMENTS_DIR === "string" && process.env.CASE_ATTACHMENTS_DIR.trim().length > 0
     ? path.resolve(process.env.CASE_ATTACHMENTS_DIR.trim())
@@ -67,6 +68,14 @@ function resolveCaseDirectory(caseId: string): string {
 
 export function resolveCaseAttachmentPath(caseId: string, storedName: string): string {
   return path.join(resolveCaseDirectory(caseId), storedName);
+}
+
+export function resolveCaseAttachmentReadPaths(caseId: string, storedName: string): string[] {
+  const configuredPath = resolveCaseAttachmentPath(caseId, storedName);
+  const legacyPath = path.join(LEGACY_TEMP_ATTACHMENT_ROOT, caseId, storedName);
+  const candidates = [configuredPath, legacyPath];
+
+  return candidates.filter((item, index) => candidates.indexOf(item) === index);
 }
 
 export function formatAttachmentSize(sizeBytes: number): string {

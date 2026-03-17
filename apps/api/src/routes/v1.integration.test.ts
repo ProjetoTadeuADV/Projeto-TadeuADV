@@ -922,13 +922,15 @@ describe("v1 routes", () => {
 
     const messageItem = clientMessageResponse.body.result.messages.find(
       (item: { senderRole: string }) => item.senderRole === "client"
-    ) as { attachments: Array<{ id: string }> } | undefined;
+    ) as { id: string; attachments: Array<{ id: string }> } | undefined;
     if (!messageItem || messageItem.attachments.length === 0) {
       throw new Error("Mensagem do cliente sem anexos para download.");
     }
 
     const downloadMessageAttachment = await request(app)
-      .get(`/v1/cases/${caseId}/attachments/${messageItem.attachments[0].id}`)
+      .get(
+        `/v1/cases/${caseId}/messages/${messageItem.id}/attachments/${messageItem.attachments[0].id}`
+      )
       .set("Authorization", "Bearer token-user-a")
       .buffer(true)
       .parse(parseBinaryResponse);

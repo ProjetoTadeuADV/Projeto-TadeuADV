@@ -2531,8 +2531,10 @@ button.sidebar-item {
   color: var(--primary-color);
   display: block;
   min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .messages-case-button span {
@@ -2540,8 +2542,10 @@ button.sidebar-item {
   font-size: 0.78rem;
   display: block;
   min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .messages-case-button small {
@@ -2549,9 +2553,11 @@ button.sidebar-item {
   font-size: 0.82rem;
   display: block;
   min-width: 0;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 1.1rem;
 }
 
 .messages-thread-card {
@@ -2571,9 +2577,23 @@ button.sidebar-item {
   gap: 0.65rem;
 }
 
+.messages-thread-header > div {
+  min-width: 0;
+  flex: 1;
+}
+
 .messages-thread-header h2,
 .messages-thread-header span {
   margin: 0;
+}
+
+.messages-thread-header h2,
+.messages-thread-header span {
+  display: block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .messages-thread-header span {
