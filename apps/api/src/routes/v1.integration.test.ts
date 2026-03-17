@@ -288,6 +288,7 @@ describe("v1 routes", () => {
       claimSubject: string;
       defendantName: string;
       defendantDocument: string;
+      claimValue: number;
       timelineEvents: Array<{ eventDate: string }>;
       pretensions: Array<{ type: string }>;
       requests: string[];
@@ -296,6 +297,7 @@ describe("v1 routes", () => {
       claimSubject: "Cobranca indevida",
       defendantName: "Empresa XYZ",
       defendantDocument: "12345678000190",
+      claimValue: 6300,
       requests: [
         "Restituicao em dobro dos valores cobrados indevidamente.",
         "Condenacao ao pagamento de danos morais."
@@ -901,18 +903,38 @@ describe("v1 routes", () => {
     const clientMessageResponse = await request(app)
       .post(`/v1/cases/${caseId}/messages`)
       .set("Authorization", "Bearer token-user-a")
-      .send({
-        message: "Segue os documentos solicitados para continuidade."
-      });
+      .field("message", "Segue os documentos solicitados para continuidade.")
+      .attach("attachments", Buffer.from("conteudo do documento solicitado"), "documento-cliente.txt");
 
     expect(clientMessageResponse.status).toBe(201);
     expect(clientMessageResponse.body.result.messages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          senderRole: "client"
+          senderRole: "client",
+          attachments: expect.arrayContaining([
+            expect.objectContaining({
+              originalName: "documento-cliente.txt"
+            })
+          ])
         })
       ])
     );
+
+    const messageItem = clientMessageResponse.body.result.messages.find(
+      (item: { senderRole: string }) => item.senderRole === "client"
+    ) as { attachments: Array<{ id: string }> } | undefined;
+    if (!messageItem || messageItem.attachments.length === 0) {
+      throw new Error("Mensagem do cliente sem anexos para download.");
+    }
+
+    const downloadMessageAttachment = await request(app)
+      .get(`/v1/cases/${caseId}/attachments/${messageItem.attachments[0].id}`)
+      .set("Authorization", "Bearer token-user-a")
+      .buffer(true)
+      .parse(parseBinaryResponse);
+
+    expect(downloadMessageAttachment.status).toBe(200);
+    expect(downloadMessageAttachment.body.toString("utf-8")).toContain("conteudo do documento solicitado");
 
     const feeResponse = await request(app)
       .post(`/v1/cases/${caseId}/service-fee`)
@@ -932,6 +954,31 @@ describe("v1 routes", () => {
         status: "awaiting_payment"
       }
     });
+  });
+
+  it("deve bloquear envio de mensagens por operador nao alocado ao caso", async () => {
+    const app = buildTestApp();
+
+    const createCase = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Caso para validar restricao de chat para operador nao alocado."
+      });
+
+    expect(createCase.status).toBe(201);
+    const caseId = createCase.body.result.id as string;
+
+    const operatorMessage = await request(app)
+      .post(`/v1/cases/${caseId}/messages`)
+      .set("Authorization", "Bearer token-operator")
+      .send({
+        message: "Tentativa de envio sem alocacao."
+      });
+
+    expect(operatorMessage.status).toBe(403);
   });
 
   it("deve ocultar movimentacao interna para o cliente e permitir download de anexo publico", async () => {

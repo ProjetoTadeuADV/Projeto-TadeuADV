@@ -8,6 +8,7 @@ interface CaseNotificationEmailInput {
   stageLabel: string;
   description: string;
   statusLabel: string;
+  messagesUrl?: string | null;
 }
 
 interface ParsedSender {
@@ -22,14 +23,14 @@ function parseSender(raw: string): ParsedSender {
     const name = withNameMatch[1].trim().replace(/^"|"$/g, "");
     const email = withNameMatch[2].trim();
     if (!email) {
-      throw new Error("EMAIL_FROM precisa conter um endereço de e-mail válido.");
+      throw new Error("EMAIL_FROM precisa conter um endereco de e-mail valido.");
     }
 
     return name ? { email, name } : { email };
   }
 
   if (!normalized.includes("@")) {
-    throw new Error("EMAIL_FROM precisa conter um endereço de e-mail válido.");
+    throw new Error("EMAIL_FROM precisa conter um endereco de e-mail valido.");
   }
 
   return { email: normalized };
@@ -58,31 +59,43 @@ export function isCaseNotificationEmailEnabled(): boolean {
 
 function buildCaseNotificationText(input: CaseNotificationEmailInput): string {
   const recipient = input.toName?.trim() || "cliente";
+  const messagesUrl = input.messagesUrl?.trim() || "";
+
   return [
-    `Olá, ${recipient}.`,
+    `Ola, ${recipient}.`,
     "",
-    "Houve uma nova movimentação no seu caso:",
+    "Houve uma nova movimentacao no seu caso:",
     `- Caso: ${input.caseId}`,
     `- Vara: ${input.varaNome}`,
     `- Etapa: ${input.stageLabel}`,
     `- Status: ${input.statusLabel}`,
     "",
-    `Resumo da movimentação: ${input.description}`,
+    `Resumo da movimentacao: ${input.description}`,
     "",
-    "Acesse a plataforma para acompanhar os detalhes."
+    messagesUrl
+      ? `Acompanhe e responda pelo chat do caso: ${messagesUrl}`
+      : "Acesse a plataforma para acompanhar os detalhes."
   ].join("\n");
 }
 
 function buildCaseNotificationHtml(input: CaseNotificationEmailInput): string {
   const brandName = resolveBrandName();
   const recipient = escapeHtml(input.toName?.trim() || "cliente");
+  const messagesUrl = input.messagesUrl?.trim() || "";
+  const messagesCta = messagesUrl
+    ? `<p style="margin:16px 0 0;">
+                  <a href="${escapeHtml(messagesUrl)}" style="display:inline-block;padding:11px 16px;border-radius:10px;background:#0a4d90;color:#ffffff;text-decoration:none;font-weight:600;">
+                    Abrir mensagens do caso
+                  </a>
+                </p>`
+    : "";
 
   return `<!doctype html>
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Movimentação do caso</title>
+    <title>Movimentacao do caso</title>
   </head>
   <body style="margin:0;padding:0;background:#edf1f5;font-family:Inter,Arial,sans-serif;color:#1f2b36;">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#edf1f5;padding:24px 10px;">
@@ -96,10 +109,10 @@ function buildCaseNotificationHtml(input: CaseNotificationEmailInput): string {
             </tr>
             <tr>
               <td style="padding:22px 24px;">
-                <h1 style="margin:0 0 12px;font-size:24px;color:#003366;">Nova movimentação no seu caso</h1>
-                <p style="margin:0 0 14px;font-size:15px;line-height:1.5;">Olá, ${recipient}.</p>
+                <h1 style="margin:0 0 12px;font-size:24px;color:#003366;">Nova movimentacao no seu caso</h1>
+                <p style="margin:0 0 14px;font-size:15px;line-height:1.5;">Ola, ${recipient}.</p>
                 <p style="margin:0 0 14px;font-size:15px;line-height:1.5;">
-                  Registramos uma atualização no seu caso <strong>${escapeHtml(input.caseId)}</strong>.
+                  Registramos uma atualizacao no seu caso <strong>${escapeHtml(input.caseId)}</strong>.
                 </p>
                 <ul style="margin:0 0 14px 18px;padding:0;font-size:14px;line-height:1.6;color:#33495d;">
                   <li><strong>Vara:</strong> ${escapeHtml(input.varaNome)}</li>
@@ -109,6 +122,7 @@ function buildCaseNotificationHtml(input: CaseNotificationEmailInput): string {
                 <p style="margin:0;font-size:14px;line-height:1.6;color:#33495d;">
                   <strong>Resumo:</strong> ${escapeHtml(input.description)}
                 </p>
+                ${messagesCta}
               </td>
             </tr>
           </table>
@@ -140,7 +154,7 @@ export async function sendCaseNotificationEmail(input: CaseNotificationEmailInpu
     ],
     from,
     ...(replyTo ? { reply_to: replyTo } : {}),
-    subject: `[${brandName}] Atualização do caso ${input.caseId}`,
+    subject: `[${brandName}] Atualizacao do caso ${input.caseId}`,
     content: [
       {
         type: "text/plain",

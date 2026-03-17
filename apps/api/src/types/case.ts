@@ -109,6 +109,7 @@ export interface CaseMessageRecord {
   senderName: string | null;
   senderRole: CaseMessageSenderRole;
   message: string;
+  attachments: PetitionAttachment[];
   createdAt: string;
 }
 

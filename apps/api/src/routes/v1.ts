@@ -166,6 +166,27 @@ async function resolveCaseByAccess(
   return deps.repository.getCaseByIdForUser(caseId, user.uid);
 }
 
+async function resolveCaseForMessagingAccess(
+  deps: AppDependencies,
+  user: { uid: string; isMaster: boolean; isOperator?: boolean },
+  caseId: string
+): Promise<CaseRecord | null> {
+  const caseItem = await resolveCaseByAccess(deps, user, caseId);
+  if (!caseItem) {
+    return null;
+  }
+
+  if (user.isMaster) {
+    return caseItem;
+  }
+
+  if (user.isOperator && caseItem.assignedOperatorId !== user.uid) {
+    throw new HttpError(403, "Este caso nao esta alocado para voce.");
+  }
+
+  return caseItem;
+}
+
 function resolveSenderRole(
   user: { isMaster: boolean; isOperator?: boolean } | null | undefined
 ): "client" | "operator" | "master" {
@@ -327,6 +348,19 @@ function resolveVerificationContinueUrl(): string {
   return firstCorsOrigin || "http://localhost:5173";
 }
 
+function resolvePortalBaseUrl(): string {
+  const [firstCorsOrigin] = env.CORS_ORIGIN
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return firstCorsOrigin || "http://localhost:5173";
+}
+
+function buildCaseMessagesUrl(caseId: string): string {
+  const base = resolvePortalBaseUrl().replace(/\/+$/g, "");
+  return `${base}/messages?caseId=${encodeURIComponent(caseId)}`;
+}
+
 function normalizeEmail(value: string | null | undefined): string | null {
   if (typeof value !== "string") {
     return null;
@@ -366,7 +400,8 @@ async function notifyCaseOwnerByEmail(
     varaNome: caseItem.varaNome,
     stageLabel,
     description,
-    statusLabel: CASE_STATUS_LABELS[movement.statusAfter]
+    statusLabel: CASE_STATUS_LABELS[movement.statusAfter],
+    messagesUrl: buildCaseMessagesUrl(caseItem.id)
   });
 }
 
@@ -396,7 +431,8 @@ async function notifyCaseOwnerByCustomUpdate(
     varaNome: caseItem.varaNome,
     stageLabel: input.stageLabel,
     description: input.description,
-    statusLabel: CASE_STATUS_LABELS[input.statusAfter]
+    statusLabel: CASE_STATUS_LABELS[input.statusAfter],
+    messagesUrl: buildCaseMessagesUrl(caseItem.id)
   });
 }
 
@@ -1295,11 +1331,29 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(401, "Usuário não autenticado.");
         }
 
+        let files: Express.Multer.File[] = [];
+        const isMultipartRequest = req.is("multipart/form-data");
+        if (isMultipartRequest) {
+          try {
+            files = await runCaseAttachmentUpload(req, res);
+          } catch (uploadError) {
+            throw toAttachmentUploadError(uploadError);
+          }
+        }
+
         const payload = validateCaseMessagePayload(req.body);
-        const caseItem = await resolveCaseByAccess(deps, req.user, req.params.id);
+        const messageText = payload.message.trim();
+        if (!messageText && files.length === 0) {
+          throw new HttpError(400, "Informe uma mensagem ou adicione ao menos um anexo.");
+        }
+
+        const caseItem = await resolveCaseForMessagingAccess(deps, req.user, req.params.id);
         if (!caseItem) {
           throw new HttpError(404, "Caso não encontrado.");
         }
+
+        const storedAttachments =
+          files.length > 0 ? await storeCaseAttachments(caseItem.id, files) : [];
 
         const senderRole = resolveSenderRole(req.user);
         const senderName = req.user.name ?? req.user.email ?? null;
@@ -1307,16 +1361,19 @@ export function createV1Router(deps: AppDependencies) {
           senderUserId: req.user.uid,
           senderName,
           senderRole,
-          message: payload.message
+          message: messageText,
+          attachments: storedAttachments
         });
         if (!updated) {
           throw new HttpError(404, "Caso não encontrado.");
         }
 
         if (senderRole === "operator" || senderRole === "master") {
+          const notificationDescription =
+            messageText || "Nova mensagem com anexos enviada no chat do caso.";
           void notifyCaseOwnerByCustomUpdate(deps, updated, {
             stageLabel: "Mensagens do caso",
-            description: payload.message,
+            description: notificationDescription,
             statusAfter: updated.status
           }).catch((error) => {
             const details = error instanceof Error ? error.message : "unknown";
@@ -1417,7 +1474,9 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(404, "Caso não encontrado.");
         }
 
-        const attachments = caseItem.petitionInitial?.attachments ?? [];
+        const petitionAttachments = caseItem.petitionInitial?.attachments ?? [];
+        const messageAttachments = (caseItem.messages ?? []).flatMap((message) => message.attachments ?? []);
+        const attachments = [...petitionAttachments, ...messageAttachments];
         const selectedAttachment = attachments.find((item) => item.id === req.params.attachmentId);
         if (!selectedAttachment) {
           throw new HttpError(404, "Anexo não encontrado para este caso.");

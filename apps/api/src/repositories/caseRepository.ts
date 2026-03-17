@@ -97,6 +97,7 @@ export interface CaseRepository {
       senderName: string | null;
       senderRole: CaseMessageSenderRole;
       message: string;
+      attachments?: PetitionAttachment[];
     }
   ): Promise<CaseRecord | null>;
   listCasesByUserId(userId: string): Promise<CaseRecord[]>;

@@ -21,6 +21,7 @@ const CPF_STATUS_LABELS: Record<CpfConsultaResult["situacao"], string> = {
 const MAX_ATTACHMENTS_PER_CASE = 8;
 const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
 const ATTACHMENT_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.txt,.doc,.docx";
+const PETITION_TEXT_MAX_LENGTH = 500;
 
 interface ViaCepResponse {
   cep?: string;
@@ -190,6 +191,26 @@ function parseClaimValue(value: string): number | null {
   return parsed;
 }
 
+function formatCurrencyBr(value: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  }).format(value);
+}
+
+function formatCurrencyInputOnBlur(value: string): string {
+  const parsed = parseClaimValue(value);
+  if (parsed === null) {
+    return "";
+  }
+
+  return formatCurrencyBr(parsed);
+}
+
+function limitPetitionText(value: string): string {
+  return value.slice(0, PETITION_TEXT_MAX_LENGTH);
+}
+
 function isIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return false;
@@ -298,7 +319,6 @@ export function NewCasePage() {
   const [evidence, setEvidence] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
   const [attachmentFeedback, setAttachmentFeedback] = useState<string | null>(null);
-  const [claimValueInput, setClaimValueInput] = useState("");
   const [hearingInterest, setHearingInterest] = useState(true);
   const [cpfData, setCpfData] = useState<CpfConsultaResult | null>(null);
   const [cpfLockedByProfile, setCpfLockedByProfile] = useState(false);
@@ -310,6 +330,22 @@ export function NewCasePage() {
     () => varas.find((item) => item.id === varaId)?.nome ?? "",
     [varas, varaId]
   );
+  const claimValueTotal = useMemo(() => {
+    const total = pretensionDrafts.reduce((accumulator, item) => {
+      if (!item.selected) {
+        return accumulator;
+      }
+
+      const amount = parseClaimValue(item.amountInput);
+      if (amount === null) {
+        return accumulator;
+      }
+
+      return accumulator + amount;
+    }, 0);
+
+    return Number(total.toFixed(2));
+  }, [pretensionDrafts]);
 
   useEffect(() => {
     setDefendantDocument((current) => formatDefendantDocumentInput(current, defendantType));
@@ -449,12 +485,13 @@ export function NewCasePage() {
     field: "eventDate" | "description",
     value: string
   ) {
+    const normalizedValue = field === "description" ? limitPetitionText(value) : value;
     setTimelineEvents((current) =>
       current.map((item, itemIndex) =>
         itemIndex === index
           ? {
               ...item,
-              [field]: value
+              [field]: normalizedValue
             }
           : item
       )
@@ -493,12 +530,13 @@ export function NewCasePage() {
     field: "amountInput" | "details",
     value: string
   ) {
+    const normalizedValue = field === "details" ? limitPetitionText(value) : value;
     setPretensionDrafts((current) =>
       current.map((item) =>
         item.type === type
           ? {
               ...item,
-              [field]: value
+              [field]: normalizedValue
             }
           : item
       )
@@ -849,12 +887,6 @@ export function NewCasePage() {
       return;
     }
 
-    const parsedClaimValue = parseClaimValue(claimValueInput);
-    if (claimValueInput.trim() && parsedClaimValue === null) {
-      setError("Valor da causa inválido. Use formato numérico, ex: 1500,00.");
-      return;
-    }
-
     setSubmitting(true);
     try {
       const created = await requestWithAuthRetry<CaseRecord>("/v1/cases", {
@@ -877,7 +909,7 @@ export function NewCasePage() {
             pretensions: normalizedPretensions,
             evidence: evidence.trim() || null,
             attachments: [],
-            claimValue: parsedClaimValue,
+            claimValue: claimValueTotal,
             hearingInterest
           }
         }
@@ -991,11 +1023,15 @@ export function NewCasePage() {
               Resumo executivo da reclamação
               <textarea
                 value={resumo}
-                onChange={(event) => setResumo(event.target.value)}
+                onChange={(event) => setResumo(limitPetitionText(event.target.value))}
                 rows={4}
                 placeholder="Resumo curto para identificação rápida do caso."
+                maxLength={PETITION_TEXT_MAX_LENGTH}
                 required
               />
+              <span className="field-help">
+                {resumo.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
+              </span>
             </label>
 
             <label>
@@ -1228,7 +1264,11 @@ export function NewCasePage() {
                         }
                         rows={2}
                         placeholder="Descreva o que aconteceu nessa data."
+                        maxLength={PETITION_TEXT_MAX_LENGTH}
                       />
+                      <span className="field-help">
+                        {eventItem.description.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
+                      </span>
                     </label>
                     <div className="timeline-event-actions">
                       <button
@@ -1279,7 +1319,15 @@ export function NewCasePage() {
                                 onChange={(event) =>
                                   handlePretensionFieldChange(draft.type, "amountInput", event.target.value)
                                 }
-                                placeholder="Ex: 1500,00"
+                                onBlur={(event) =>
+                                  handlePretensionFieldChange(
+                                    draft.type,
+                                    "amountInput",
+                                    formatCurrencyInputOnBlur(event.target.value)
+                                  )
+                                }
+                                inputMode="decimal"
+                                placeholder="Ex: 1.500,00"
                               />
                             </label>
                           )}
@@ -1293,7 +1341,11 @@ export function NewCasePage() {
                               }
                               rows={2}
                               placeholder={option.detailsPlaceholder ?? "Descreva objetivamente o pedido."}
+                              maxLength={PETITION_TEXT_MAX_LENGTH}
                             />
+                            <span className="field-help">
+                              {draft.details.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
+                            </span>
                           </label>
                         </div>
                       )}
@@ -1307,32 +1359,44 @@ export function NewCasePage() {
               Fatos
               <textarea
                 value={facts}
-                onChange={(event) => setFacts(event.target.value)}
+                onChange={(event) => setFacts(limitPetitionText(event.target.value))}
                 rows={7}
                 placeholder="Narrativa cronológica do que ocorreu, com datas e detalhes relevantes."
+                maxLength={PETITION_TEXT_MAX_LENGTH}
                 required
               />
+              <span className="field-help">
+                {facts.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
+              </span>
             </label>
 
             <label>
               Fundamentos da reclamação
               <textarea
                 value={legalGrounds}
-                onChange={(event) => setLegalGrounds(event.target.value)}
+                onChange={(event) => setLegalGrounds(limitPetitionText(event.target.value))}
                 rows={7}
                 placeholder="Base legal e argumentos que justificam os pedidos."
+                maxLength={PETITION_TEXT_MAX_LENGTH}
                 required
               />
+              <span className="field-help">
+                {legalGrounds.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
+              </span>
             </label>
 
             <label>
               Pedidos complementares (opcional, um por linha)
               <textarea
                 value={requestsText}
-                onChange={(event) => setRequestsText(event.target.value)}
+                onChange={(event) => setRequestsText(limitPetitionText(event.target.value))}
                 rows={6}
                 placeholder={"- Restituição em dobro dos valores cobrados indevidamente.\n- Indenização por danos morais.\n- Inversão do ônus da prova."}
+                maxLength={PETITION_TEXT_MAX_LENGTH}
               />
+              <span className="field-help">
+                {requestsText.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
+              </span>
             </label>
 
             <div className="evidence-field">
@@ -1351,10 +1415,14 @@ export function NewCasePage() {
               </div>
               <textarea
                 value={evidence}
-                onChange={(event) => setEvidence(event.target.value)}
+                onChange={(event) => setEvidence(limitPetitionText(event.target.value))}
                 rows={4}
                 placeholder="Contratos, conversas, notas fiscais, protocolos e demais evidências."
+                maxLength={PETITION_TEXT_MAX_LENGTH}
               />
+              <p className="field-help">
+                {evidence.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
+              </p>
               <input
                 ref={attachmentInputRef}
                 type="file"
@@ -1386,13 +1454,15 @@ export function NewCasePage() {
             </div>
 
             <label>
-              Valor da causa
+              Valor total estimado da causa
               <input
                 type="text"
-                value={claimValueInput}
-                onChange={(event) => setClaimValueInput(event.target.value)}
-                placeholder="Ex: 2500,00"
+                value={formatCurrencyBr(claimValueTotal)}
+                readOnly
               />
+              <span className="field-help">
+                Soma automática dos valores informados nas pretensões financeiras.
+              </span>
             </label>
 
             <label>

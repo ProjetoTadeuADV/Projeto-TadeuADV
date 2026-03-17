@@ -70,6 +70,7 @@ describe("validateCreateCaseInput", () => {
       defendantType: "pessoa_juridica",
       defendantDocument: "12345678000190",
       claimSubject: "Cobranca indevida",
+      claimValue: 2500.5,
       attachments: [],
       timelineEvents: [
         {
@@ -93,6 +94,53 @@ describe("validateCreateCaseInput", () => {
         "Condenacao em danos morais em valor a ser arbitrado."
       ]
     });
+  });
+
+  it("deve calcular valor da causa pela soma das pretensoes com valor", () => {
+    const parsed = validateCreateCaseInput({
+      varaId: "jec-sp-capital",
+      cpf: "935.411.347-80",
+      resumo: "Resumo da reclamacao com contexto suficiente para triagem inicial.",
+      petitionInitial: {
+        claimantAddress: "Rua das Flores, 123, Centro, Sao Paulo/SP",
+        claimSubject: "Falha de servico",
+        defendantType: "pessoa_juridica",
+        defendantName: "Empresa XYZ",
+        defendantDocument: "12.345.678/0001-90",
+        defendantAddress: "Av. Paulista, 1000, Sao Paulo/SP",
+        facts:
+          "A empresa realizou cobranca duplicada em cartao de credito sem estorno apos contato administrativo.",
+        legalGrounds:
+          "A pratica configura cobranca indevida e violacao aos deveres de boa-fe objetiva e informacao.",
+        requests: [
+          "Restituicao em dobro dos valores cobrados indevidamente.",
+          "Condenacao em danos morais em valor a ser arbitrado."
+        ],
+        timelineEvents: [
+          {
+            eventDate: "2026-02-01",
+            description: "Compra realizada no site da reclamada."
+          }
+        ],
+        pretensions: [
+          {
+            type: "ressarcimento_valor",
+            amount: 2500.5,
+            details: "Reembolso integral do valor pago."
+          },
+          {
+            type: "indenizacao_danos",
+            amount: 900,
+            details: "Compensacao por danos."
+          }
+        ],
+        evidence: "Faturas, comprovantes de pagamento e protocolos de atendimento.",
+        claimValue: 1,
+        hearingInterest: true
+      }
+    });
+
+    expect(parsed.petitionInitial?.claimValue).toBe(3400.5);
   });
 
   it("deve lancar erro para vara invalida", () => {

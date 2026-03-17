@@ -159,6 +159,7 @@ function normalizeCaseMessages(value: Partial<CaseMessageRecord>[] | null | unde
     senderName: normalizeOptionalText(item.senderName),
     senderRole: item.senderRole ?? "client",
     message: item.message ?? "",
+    attachments: item.attachments ?? [],
     createdAt: item.createdAt ?? new Date(0).toISOString()
   }));
 }
@@ -709,6 +710,7 @@ export class FirestoreCaseRepository implements CaseRepository {
       senderName: string | null;
       senderRole: "client" | "operator" | "master" | "system";
       message: string;
+      attachments?: PetitionAttachment[];
     }
   ): Promise<CaseRecord | null> {
     const ref = this.firestore.collection(CASES_COLLECTION).doc(caseId);
@@ -726,6 +728,7 @@ export class FirestoreCaseRepository implements CaseRepository {
       senderName: normalizeOptionalText(message.senderName),
       senderRole: message.senderRole,
       message: message.message.trim(),
+      attachments: message.attachments ?? [],
       createdAt: now
     };
 

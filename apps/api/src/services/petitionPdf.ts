@@ -72,16 +72,29 @@ class FormalPdfWriter {
   }
 
   writeCentered(text: string, font: PDFFont, fontSize: number, lineHeight: number): void {
-    this.ensureSpace(lineHeight);
-    const textWidth = font.widthOfTextAtSize(text, fontSize);
-    const x = (A4_WIDTH - textWidth) / 2;
-    this.page.drawText(text, {
-      x,
-      y: this.y,
-      font,
-      size: fontSize
-    });
-    this.y -= lineHeight;
+    const normalized = text
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    for (const paragraph of normalized) {
+      const lines = splitTextByWidth(paragraph, font, fontSize, CONTENT_WIDTH);
+
+      for (const line of lines) {
+        this.ensureSpace(lineHeight);
+        const textWidth = font.widthOfTextAtSize(line, fontSize);
+        const x = (A4_WIDTH - textWidth) / 2;
+        this.page.drawText(line, {
+          x,
+          y: this.y,
+          font,
+          size: fontSize
+        });
+        this.y -= lineHeight;
+      }
+    }
   }
 
   writeParagraph(text: string, options: ParagraphOptions): void {

@@ -109,6 +109,7 @@ function normalizeCaseMessages(value: CaseMessageRecord[] | null | undefined): C
     senderName: normalizeOptionalText(item.senderName),
     senderRole: item.senderRole ?? "client",
     message: item.message ?? "",
+    attachments: item.attachments ?? [],
     createdAt: item.createdAt ?? new Date(0).toISOString()
   }));
 }
@@ -591,6 +592,7 @@ export class MemoryCaseRepository implements CaseRepository {
       senderName: string | null;
       senderRole: "client" | "operator" | "master" | "system";
       message: string;
+      attachments?: PetitionAttachment[];
     }
   ): Promise<CaseRecord | null> {
     const existing = this.cases.get(caseId);
@@ -607,6 +609,7 @@ export class MemoryCaseRepository implements CaseRepository {
       senderName: normalizeOptionalText(message.senderName),
       senderRole: message.senderRole,
       message: message.message.trim(),
+      attachments: message.attachments ?? [],
       createdAt: now
     };
 

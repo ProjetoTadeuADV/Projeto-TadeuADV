@@ -9,6 +9,8 @@ import type {
   PetitionInitialData
 } from "../types/case.js";
 
+const PETITION_TEXT_MAX_LENGTH = 500;
+
 const petitionTimelineEventSchema = z.object({
   eventDate: z
     .string()
@@ -17,7 +19,7 @@ const petitionTimelineEventSchema = z.object({
     .refine((value) => !Number.isNaN(new Date(`${value}T00:00:00.000Z`).getTime()), {
       message: "Data do evento inválida."
     }),
-  description: z.string().trim().min(5).max(1000)
+  description: z.string().trim().min(5).max(PETITION_TEXT_MAX_LENGTH)
 });
 
 const petitionPretensionSchema = z
@@ -31,7 +33,7 @@ const petitionPretensionSchema = z
       "outro"
     ]),
     amount: z.number().positive().max(100_000_000).nullable().optional(),
-    details: z.string().trim().max(1200).nullable().optional()
+    details: z.string().trim().max(PETITION_TEXT_MAX_LENGTH).nullable().optional()
   })
   .refine((value) => value.type !== "outro" || Boolean(value.details?.trim()), {
     message: "Informe o detalhamento para pretensão do tipo 'Outro'.",
@@ -45,20 +47,20 @@ const petitionInitialSchema = z.object({
   defendantName: z.string().trim().min(2).max(200),
   defendantDocument: z.string().trim().min(11).max(32),
   defendantAddress: z.string().trim().min(8).max(300).nullable().optional(),
-  facts: z.string().trim().min(30).max(12_000),
-  legalGrounds: z.string().trim().min(30).max(12_000),
-  requests: z.array(z.string().trim().min(10).max(600)).min(1).max(8),
+  facts: z.string().trim().min(30).max(PETITION_TEXT_MAX_LENGTH),
+  legalGrounds: z.string().trim().min(30).max(PETITION_TEXT_MAX_LENGTH),
+  requests: z.array(z.string().trim().min(10).max(PETITION_TEXT_MAX_LENGTH)).min(1).max(8),
   timelineEvents: z.array(petitionTimelineEventSchema).min(1).max(40),
   pretensions: z.array(petitionPretensionSchema).max(10).optional().default([]),
-  evidence: z.string().trim().max(5_000).nullable().optional(),
-  claimValue: z.number().positive().max(100_000_000).nullable().optional(),
+  evidence: z.string().trim().max(PETITION_TEXT_MAX_LENGTH).nullable().optional(),
+  claimValue: z.number().min(0).max(100_000_000).nullable().optional(),
   hearingInterest: z.boolean().optional().default(true)
 });
 
 const createCaseSchema = z.object({
   varaId: z.string().trim().min(1),
   cpf: z.string().trim().min(11),
-  resumo: z.string().trim().min(10).max(5000),
+  resumo: z.string().trim().min(10).max(PETITION_TEXT_MAX_LENGTH),
   petitionInitial: petitionInitialSchema.optional()
 });
 
@@ -91,7 +93,7 @@ const caseReviewSchema = z
   });
 
 const caseMessageSchema = z.object({
-  message: z.string().trim().min(1).max(5000)
+  message: z.string().trim().max(5000).optional().default("")
 });
 
 const caseServiceFeeSchema = z.object({
@@ -118,7 +120,7 @@ function normalizeOptionalText(value: string | null | undefined): string | null 
     return null;
   }
 
-  const trimmed = value.trim();
+  const trimmed = value.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   return trimmed.length > 0 ? trimmed : null;
 }
 
@@ -173,11 +175,35 @@ function normalizePretensions(
   }));
 }
 
+function calculateClaimValue(
+  pretensions: PetitionInitialData["pretensions"],
+  fallback: number | null | undefined
+): number {
+  const total = pretensions.reduce((sum, item) => {
+    if (typeof item.amount !== "number" || !Number.isFinite(item.amount)) {
+      return sum;
+    }
+
+    return sum + item.amount;
+  }, 0);
+
+  if (total > 0) {
+    return Number(total.toFixed(2));
+  }
+
+  if (typeof fallback === "number" && Number.isFinite(fallback) && fallback >= 0) {
+    return Number(fallback.toFixed(2));
+  }
+
+  return 0;
+}
+
 function normalizePetitionInitialData(value: z.infer<typeof petitionInitialSchema>): PetitionInitialData {
   const defendantDocument = validateDefendantDocument(
     normalizeDefendantDocument(value.defendantDocument),
     value.defendantType
   );
+  const pretensions = normalizePretensions(value.pretensions ?? []);
 
   return {
     claimantAddress: value.claimantAddress,
@@ -186,14 +212,14 @@ function normalizePetitionInitialData(value: z.infer<typeof petitionInitialSchem
     defendantName: value.defendantName,
     defendantDocument,
     defendantAddress: normalizeOptionalText(value.defendantAddress),
-    facts: value.facts,
-    legalGrounds: value.legalGrounds,
-    requests: value.requests.map((item) => item.trim()),
+    facts: normalizeOptionalText(value.facts) ?? value.facts,
+    legalGrounds: normalizeOptionalText(value.legalGrounds) ?? value.legalGrounds,
+    requests: value.requests.map((item) => normalizeOptionalText(item) ?? item.trim()),
     timelineEvents: normalizeTimelineEvents(value.timelineEvents),
-    pretensions: normalizePretensions(value.pretensions ?? []),
+    pretensions,
     evidence: normalizeOptionalText(value.evidence),
     attachments: [],
-    claimValue: value.claimValue ?? null,
+    claimValue: calculateClaimValue(pretensions, value.claimValue),
     hearingInterest: value.hearingInterest ?? true
   };
 }
@@ -218,7 +244,7 @@ export function validateCreateCaseInput(payload: unknown): ValidatedCreateCaseIn
     varaId: vara.id,
     varaNome: vara.nome,
     cpf,
-    resumo: parsed.data.resumo,
+    resumo: normalizeOptionalText(parsed.data.resumo) ?? parsed.data.resumo,
     petitionInitial: parsed.data.petitionInitial
       ? normalizePetitionInitialData(parsed.data.petitionInitial)
       : null
