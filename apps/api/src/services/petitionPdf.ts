@@ -574,17 +574,22 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
     firstLineIndent: 22
   });
 
-  writer.writeSectionTitle("IV - DOS PEDIDOS");
-  writer.writeNumberedList(data.requests, 11, 17);
-  if (data.pretensions.length > 0) {
-    writer.writeParagraph("Pretensões declaradas na triagem:", {
-      font: regularFont,
-      fontSize: 11,
-      lineHeight: 17,
-      firstLineIndent: 22
-    });
-    writer.writeNumberedList(data.pretensions.map((item) => formatPretensionSummary(item)), 10.8, 16.5);
+  const requestSource =
+    data.requests.length > 0 ? data.requests : data.pretensions.map((item) => formatPretensionSummary(item));
+  const normalizedRequests = new Set<string>();
+  const requestItems: string[] = [];
+  for (const item of requestSource) {
+    const normalizedKey = item.trim().toLocaleLowerCase("pt-BR");
+    if (!normalizedKey || normalizedRequests.has(normalizedKey)) {
+      continue;
+    }
+
+    normalizedRequests.add(normalizedKey);
+    requestItems.push(item.trim());
   }
+
+  writer.writeSectionTitle("IV - DOS PEDIDOS");
+  writer.writeNumberedList(requestItems, 11, 17);
 
   writer.writeSectionTitle("V - DO VALOR DA CAUSA");
   writer.writeParagraph(`Dá-se à causa o valor de ${formatCurrencyBr(data.claimValue)}.`, {

@@ -442,12 +442,12 @@ describe("v1 routes", () => {
         expect.objectContaining({
           userId: "user-a",
           responsavelEmail: "a@test.com",
-          clienteNome: "Cliente Teste 0001"
+          clienteNome: "Usuario A"
         }),
         expect.objectContaining({
           userId: "user-b",
           responsavelEmail: "b@test.com",
-          clienteNome: "Cliente Teste 0001"
+          clienteNome: "Usuario B"
         })
       ])
     );
@@ -462,7 +462,7 @@ describe("v1 routes", () => {
       id: caseId,
       userId: "user-b",
       responsavelEmail: "b@test.com",
-      clienteNome: "Cliente Teste 0001"
+      clienteNome: "Usuario B"
     });
   });
 
@@ -882,6 +882,19 @@ describe("v1 routes", () => {
     expect(createCase.status).toBe(201);
     const caseId = createCase.body.result.id as string;
 
+    await request(app)
+      .get("/v1/auth/session")
+      .set("Authorization", "Bearer token-operator");
+
+    const assignResponse = await request(app)
+      .post(`/v1/cases/${caseId}/assign-operator`)
+      .set("Authorization", "Bearer token-master")
+      .send({
+        operatorUserId: "operator-user"
+      });
+
+    expect(assignResponse.status).toBe(200);
+
     const reviewResponse = await request(app)
       .post(`/v1/cases/${caseId}/review`)
       .set("Authorization", "Bearer token-operator")
@@ -997,6 +1010,19 @@ describe("v1 routes", () => {
 
     expect(createCase.status).toBe(201);
     const caseId = createCase.body.result.id as string;
+
+    await request(app)
+      .get("/v1/auth/session")
+      .set("Authorization", "Bearer token-operator");
+
+    const assignResponse = await request(app)
+      .post(`/v1/cases/${caseId}/assign-operator`)
+      .set("Authorization", "Bearer token-master")
+      .send({
+        operatorUserId: "operator-user"
+      });
+
+    expect(assignResponse.status).toBe(200);
 
     const internalMovement = await request(app)
       .post(`/v1/cases/${caseId}/movements`)

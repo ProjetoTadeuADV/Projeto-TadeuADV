@@ -136,7 +136,7 @@ function enrichCaseWithOwner(
 
   return {
     ...caseItem,
-    clienteNome: caseItem.cpfConsulta?.nome ?? null,
+    clienteNome: owner?.name?.trim() || owner?.email?.trim() || null,
     responsavelNome: owner?.name ?? null,
     responsavelEmail: owner?.email ?? null
   };
@@ -185,6 +185,32 @@ async function resolveCaseForMessagingAccess(
   }
 
   return caseItem;
+}
+
+function ensureOperatorCanManageCase(
+  user: { uid: string; isMaster: boolean; isOperator?: boolean },
+  caseItem: CaseRecord,
+  options: { allowWhenUnassigned?: boolean } = {}
+): void {
+  if (user.isMaster) {
+    return;
+  }
+
+  if (user.isOperator !== true) {
+    throw new HttpError(403, "Acesso restrito a operadores.");
+  }
+
+  if (!caseItem.assignedOperatorId) {
+    if (options.allowWhenUnassigned) {
+      return;
+    }
+
+    throw new HttpError(403, "Este caso ainda não foi alocado para um operador responsável.");
+  }
+
+  if (caseItem.assignedOperatorId !== user.uid) {
+    throw new HttpError(403, "Este caso está alocado para outro operador.");
+  }
 }
 
 function resolveSenderRole(
@@ -1050,6 +1076,15 @@ export function createV1Router(deps: AppDependencies) {
 
         ensureAdminPanelAccess(req.user);
 
+        const allCases = await deps.repository.listAllCases();
+        const currentCase = allCases.find((item) => item.id === req.params.id);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+        ensureOperatorCanManageCase(req.user, currentCase, {
+          allowWhenUnassigned: true
+        });
+
         const payload = validateAssignOperatorPayload(req.body);
         const operator = await deps.repository.getUserById(payload.operatorUserId);
         if (!operator) {
@@ -1115,6 +1150,7 @@ export function createV1Router(deps: AppDependencies) {
         if (!currentCase) {
           throw new HttpError(404, "Caso não encontrado.");
         }
+        ensureOperatorCanManageCase(req.user, currentCase);
 
         const appended = await deps.repository.appendCaseMovement(req.params.id, {
           stage: payload.stage,
@@ -1165,6 +1201,7 @@ export function createV1Router(deps: AppDependencies) {
         if (!currentCase) {
           throw new HttpError(404, "Caso não encontrado.");
         }
+        ensureOperatorCanManageCase(req.user, currentCase);
 
         const now = new Date().toISOString();
         const actorName = req.user.name ?? req.user.email ?? null;
@@ -1265,6 +1302,7 @@ export function createV1Router(deps: AppDependencies) {
         if (!currentCase) {
           throw new HttpError(404, "Caso não encontrado.");
         }
+        ensureOperatorCanManageCase(req.user, currentCase);
 
         if (currentCase.reviewDecision === "rejected") {
           throw new HttpError(400, "Não é possível cadastrar cobrança para caso rejeitado.");
@@ -1440,6 +1478,7 @@ export function createV1Router(deps: AppDependencies) {
         if (!caseItem) {
           throw new HttpError(404, "Caso não encontrado.");
         }
+        ensureOperatorCanManageCase(req.user, caseItem);
 
         const movement = findMovementById(caseItem, req.params.movementId);
         if (!movement) {

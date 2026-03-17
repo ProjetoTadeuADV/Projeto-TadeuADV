@@ -48,6 +48,16 @@ function formatDate(dateIso: string): string {
 }
 
 function resolveClientName(item: CaseRecord): string {
+  const byOwnerName = item.responsavelNome?.trim();
+  if (byOwnerName) {
+    return byOwnerName;
+  }
+
+  const byOwnerEmail = item.responsavelEmail?.trim();
+  if (byOwnerEmail) {
+    return byOwnerEmail;
+  }
+
   const byApiField = item.clienteNome?.trim();
   if (byApiField) {
     return byApiField;

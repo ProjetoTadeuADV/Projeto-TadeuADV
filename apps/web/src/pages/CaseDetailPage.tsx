@@ -176,7 +176,7 @@ function fingerprintFile(file: File): string {
 }
 
 export function CaseDetailPage() {
-  const { getToken, canAccessAdmin, user } = useAuth();
+  const { getToken, canAccessAdmin, isMasterUser, isOperatorUser, user } = useAuth();
   const { id } = useParams<{ id: string }>();
 
   const [caseItem, setCaseItem] = useState<CaseRecord | null>(null);
@@ -671,6 +671,10 @@ export function CaseDetailPage() {
     return null;
   }
 
+  const isAssignedOperator = Boolean(user?.uid && caseItem.assignedOperatorId === user.uid);
+  const canManageOperatorActions =
+    canAccessAdmin && (isMasterUser || (isOperatorUser && (isAssignedOperator || !caseItem.assignedOperatorId)));
+
   return (
     <section className="page-stack">
       <section className="workspace-hero workspace-hero--compact workspace-hero--simple">
@@ -725,7 +729,9 @@ export function CaseDetailPage() {
             </div>
             <div className="detail-item">
               <span>Cliente</span>
-              <strong>{caseItem.clienteNome ?? caseItem.cpfConsulta?.nome ?? "Não informado"}</strong>
+              <strong>
+                {caseItem.responsavelNome ?? caseItem.clienteNome ?? caseItem.responsavelEmail ?? "Não informado"}
+              </strong>
             </div>
             <div className="detail-item">
               <span>CPF</span>
@@ -931,8 +937,9 @@ export function CaseDetailPage() {
           </div>
         </article>
 
-        <aside className="detail-card detail-card--aside">
-          {canAccessAdmin ? (
+        {(canManageOperatorActions || !canAccessAdmin) && (
+          <aside className="detail-card detail-card--aside">
+            {canManageOperatorActions ? (
             <>
               <h2>Ações do operador</h2>
 
@@ -1184,20 +1191,21 @@ export function CaseDetailPage() {
                 {movementFeedback && <p className="success-text">{movementFeedback}</p>}
                 {movementError && <p className="error-text">{movementError}</p>}
               </div>
-            </>
-          ) : (
-            <>
-              <h2>Notificações do caso</h2>
-              <ul className="timeline-list">
-                <li>Acompanhe nesta página cada atualização pública registrada pelo operador.</li>
-                <li>As etapas de conciliação e proposta de solução serão exibidas no histórico.</li>
-                <li>Novos documentos disponibilizados no caso podem ser baixados diretamente no histórico.</li>
-                <li>Use a área de mensagens no menu lateral para enviar respostas ao operador.</li>
-                <li>Você também recebe e-mail quando houver nova movimentação pública.</li>
-              </ul>
-            </>
-          )}
-        </aside>
+              </>
+            ) : (
+              <>
+                <h2>Notificações do caso</h2>
+                <ul className="timeline-list">
+                  <li>Acompanhe nesta página cada atualização pública registrada pelo operador.</li>
+                  <li>As etapas de conciliação e proposta de solução serão exibidas no histórico.</li>
+                  <li>Novos documentos disponibilizados no caso podem ser baixados diretamente no histórico.</li>
+                  <li>Use a área de mensagens no menu lateral para enviar respostas ao operador.</li>
+                  <li>Você também recebe e-mail quando houver nova movimentação pública.</li>
+                </ul>
+              </>
+            )}
+          </aside>
+        )}
       </div>
     </section>
   );
