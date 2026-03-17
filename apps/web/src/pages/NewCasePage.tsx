@@ -3,7 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
 import { formatCpf, isValidCpf, normalizeCpf } from "../lib/cpf";
-import type { CaseRecord, CpfConsultaResult, PetitionDefendantType, VaraOption } from "../types";
+import type {
+  AccountProfile,
+  CaseRecord,
+  CpfConsultaResult,
+  PetitionDefendantType,
+  PetitionPretensionType,
+  VaraOption
+} from "../types";
 
 const CPF_STATUS_LABELS: Record<CpfConsultaResult["situacao"], string> = {
   regular: "Regular",
@@ -22,6 +29,87 @@ interface ViaCepResponse {
   localidade?: string;
   uf?: string;
   erro?: boolean;
+}
+
+interface AccountProfileResponse {
+  user: AccountProfile;
+}
+
+interface TimelineEventDraft {
+  eventDate: string;
+  description: string;
+}
+
+interface PretensionOptionConfig {
+  type: PetitionPretensionType;
+  label: string;
+  requiresAmount?: boolean;
+  requiresDetails?: boolean;
+  amountLabel?: string;
+  detailsLabel?: string;
+  detailsPlaceholder?: string;
+}
+
+interface PretensionDraft {
+  type: PetitionPretensionType;
+  selected: boolean;
+  amountInput: string;
+  details: string;
+}
+
+const PRETENSION_OPTIONS: PretensionOptionConfig[] = [
+  {
+    type: "ressarcimento_valor",
+    label: "Ressarcimento de valor",
+    requiresAmount: true,
+    amountLabel: "Valor pretendido",
+    detailsLabel: "Detalhes",
+    detailsPlaceholder: "Explique o valor e o motivo do ressarcimento."
+  },
+  {
+    type: "indenizacao_danos",
+    label: "Indenização por danos morais ou materiais",
+    requiresAmount: true,
+    amountLabel: "Valor sugerido",
+    detailsLabel: "Detalhes",
+    detailsPlaceholder: "Descreva os danos sofridos."
+  },
+  {
+    type: "cumprimento_compromisso",
+    label: "Cumprimento de compromisso acordado",
+    requiresDetails: true,
+    detailsLabel: "Compromisso acordado",
+    detailsPlaceholder: "Descreva o compromisso que não foi cumprido."
+  },
+  {
+    type: "retratacao",
+    label: "Retratação",
+    requiresDetails: true,
+    detailsLabel: "Tipo de retratação",
+    detailsPlaceholder: "Descreva a forma de retratação solicitada."
+  },
+  {
+    type: "devolucao_produto",
+    label: "Devolução do produto com ressarcimento",
+    detailsLabel: "Detalhes",
+    detailsPlaceholder: "Informe produto, condição de devolução e forma de reembolso."
+  },
+  {
+    type: "outro",
+    label: "Outro pedido",
+    requiresDetails: true,
+    detailsLabel: "Descrição do pedido",
+    detailsPlaceholder: "Especifique objetivamente o pedido desejado."
+  }
+];
+
+function createInitialPretensionDrafts(): PretensionDraft[] {
+  return PRETENSION_OPTIONS.map((item) => ({
+    type: item.type,
+    selected: false,
+    amountInput: "",
+    details: ""
+  }));
 }
 
 function normalizeDigits(value: string): string {
@@ -102,6 +190,37 @@ function parseClaimValue(value: string): number | null {
   return parsed;
 }
 
+function isIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime());
+}
+
+function getPretensionOption(type: PetitionPretensionType): PretensionOptionConfig {
+  return PRETENSION_OPTIONS.find((item) => item.type === type) ?? PRETENSION_OPTIONS[0];
+}
+
+function formatPretensionAsRequest(input: {
+  type: PetitionPretensionType;
+  amount: number | null;
+  details: string | null;
+}): string {
+  const option = getPretensionOption(input.type);
+  const amountLabel =
+    typeof input.amount === "number" && Number.isFinite(input.amount)
+      ? ` (valor sugerido: ${new Intl.NumberFormat("pt-BR", {
+          style: "currency",
+          currency: "BRL"
+        }).format(input.amount)})`
+      : "";
+  const details = input.details ? `: ${input.details}` : "";
+
+  return `${option.label}${details}${amountLabel}.`;
+}
+
 function formatAttachmentSize(sizeBytes: number): string {
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
     return "0 B";
@@ -171,6 +290,10 @@ export function NewCasePage() {
 
   const [facts, setFacts] = useState("");
   const [legalGrounds, setLegalGrounds] = useState("");
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEventDraft[]>([
+    { eventDate: "", description: "" }
+  ]);
+  const [pretensionDrafts, setPretensionDrafts] = useState<PretensionDraft[]>(() => createInitialPretensionDrafts());
   const [requestsText, setRequestsText] = useState("");
   const [evidence, setEvidence] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -178,6 +301,8 @@ export function NewCasePage() {
   const [claimValueInput, setClaimValueInput] = useState("");
   const [hearingInterest, setHearingInterest] = useState(true);
   const [cpfData, setCpfData] = useState<CpfConsultaResult | null>(null);
+  const [cpfLockedByProfile, setCpfLockedByProfile] = useState(false);
+  const [claimantAddressLockedByProfile, setClaimantAddressLockedByProfile] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
 
   const hasVaras = varas.length > 0;
@@ -319,6 +444,67 @@ export function NewCasePage() {
     });
   }
 
+  function handleTimelineEventChange(
+    index: number,
+    field: "eventDate" | "description",
+    value: string
+  ) {
+    setTimelineEvents((current) =>
+      current.map((item, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...item,
+              [field]: value
+            }
+          : item
+      )
+    );
+  }
+
+  function handleAddTimelineEvent() {
+    setTimelineEvents((current) => [...current, { eventDate: "", description: "" }]);
+  }
+
+  function handleRemoveTimelineEvent(index: number) {
+    setTimelineEvents((current) => {
+      if (current.length <= 1) {
+        return [{ eventDate: "", description: "" }];
+      }
+
+      return current.filter((_, itemIndex) => itemIndex !== index);
+    });
+  }
+
+  function handlePretensionSelection(type: PetitionPretensionType, selected: boolean) {
+    setPretensionDrafts((current) =>
+      current.map((item) =>
+        item.type === type
+          ? {
+              ...item,
+              selected
+            }
+          : item
+      )
+    );
+  }
+
+  function handlePretensionFieldChange(
+    type: PetitionPretensionType,
+    field: "amountInput" | "details",
+    value: string
+  ) {
+    setPretensionDrafts((current) =>
+      current.map((item) =>
+        item.type === type
+          ? {
+              ...item,
+              [field]: value
+            }
+          : item
+      )
+    );
+  }
+
   useEffect(() => {
     async function loadVaras() {
       setLoadingVaras(true);
@@ -341,6 +527,72 @@ export function NewCasePage() {
     }
 
     void loadVaras();
+  }, []);
+
+  useEffect(() => {
+    async function loadProfilePrefill() {
+      try {
+        const profileResponse = await requestWithAuthRetry<AccountProfileResponse>("/v1/users/me", {});
+        const profile = profileResponse.user;
+
+        if (profile.cpf) {
+          setCpf((current) => (current.trim().length === 0 ? formatCpf(profile.cpf ?? "") : current));
+          setCpfLockedByProfile(true);
+        }
+
+        const profileAddress = profile.address;
+        const hasProfileAddress = Boolean(
+          profileAddress &&
+            (
+              profileAddress.cep ||
+              profileAddress.street ||
+              profileAddress.number ||
+              profileAddress.complement ||
+              profileAddress.neighborhood ||
+              profileAddress.city ||
+              profileAddress.state
+            )
+        );
+
+        if (hasProfileAddress && profileAddress) {
+          if (profileAddress.cep) {
+            setClaimantZipCode((current) =>
+              current.trim().length === 0 ? formatZipCode(profileAddress.cep ?? "") : current
+            );
+          }
+          if (profileAddress.street) {
+            setClaimantStreet((current) => (current.trim().length === 0 ? profileAddress.street ?? "" : current));
+          }
+          if (profileAddress.number) {
+            setClaimantNumber((current) => (current.trim().length === 0 ? profileAddress.number ?? "" : current));
+          }
+          if (profileAddress.complement) {
+            setClaimantComplement((current) =>
+              current.trim().length === 0 ? profileAddress.complement ?? "" : current
+            );
+          }
+          if (profileAddress.neighborhood) {
+            setClaimantNeighborhood((current) =>
+              current.trim().length === 0 ? profileAddress.neighborhood ?? "" : current
+            );
+          }
+          if (profileAddress.city) {
+            setClaimantCity((current) => (current.trim().length === 0 ? profileAddress.city ?? "" : current));
+          }
+          if (profileAddress.state) {
+            setClaimantState((current) =>
+              current.trim().length === 0 ? (profileAddress.state ?? "").toUpperCase() : current
+            );
+          }
+
+          setClaimantAddressLockedByProfile(true);
+        }
+      } catch {
+        // Sem bloqueio: usuário pode preencher manualmente caso perfil não esteja disponível.
+      }
+    }
+
+    void loadProfilePrefill();
   }, []);
 
   useEffect(() => {
@@ -500,6 +752,91 @@ export function NewCasePage() {
       return;
     }
 
+    const normalizedDefendantDocument = normalizeDigits(defendantDocument);
+    if (!normalizedDefendantDocument) {
+      setError("Informe CPF ou CNPJ da parte reclamada.");
+      return;
+    }
+
+    if (defendantType === "pessoa_fisica" && normalizedDefendantDocument.length !== 11) {
+      setError("Para pessoa física, informe CPF com 11 dígitos.");
+      return;
+    }
+
+    if (defendantType === "pessoa_juridica" && normalizedDefendantDocument.length !== 14) {
+      setError("Para pessoa jurídica, informe CNPJ com 14 dígitos.");
+      return;
+    }
+
+    if (defendantType === "nao_informado" && ![11, 14].includes(normalizedDefendantDocument.length)) {
+      setError("Documento da reclamada deve conter 11 ou 14 dígitos.");
+      return;
+    }
+
+    const normalizedTimelineEvents = timelineEvents
+      .map((item) => ({
+        eventDate: item.eventDate.trim(),
+        description: item.description.trim()
+      }))
+      .filter((item) => item.eventDate.length > 0 || item.description.length > 0);
+
+    if (normalizedTimelineEvents.length === 0) {
+      setError("Informe pelo menos um evento na cronologia do caso.");
+      return;
+    }
+
+    for (const [index, item] of normalizedTimelineEvents.entries()) {
+      if (!isIsoDate(item.eventDate)) {
+        setError(`Data inválida no evento ${index + 1}. Use o formato AAAA-MM-DD.`);
+        return;
+      }
+
+      if (item.description.length < 5) {
+        setError(`Descrição muito curta no evento ${index + 1}.`);
+        return;
+      }
+    }
+
+    const normalizedPretensions: Array<{
+      type: PetitionPretensionType;
+      amount: number | null;
+      details: string | null;
+    }> = [];
+    for (const item of pretensionDrafts.filter((draft) => draft.selected)) {
+      const config = getPretensionOption(item.type);
+      const details = item.details.trim();
+      const amount = parseClaimValue(item.amountInput);
+
+      if (config.requiresAmount && amount === null) {
+        setError(`Informe um valor válido em "${config.label}".`);
+        return;
+      }
+
+      if (item.amountInput.trim() && amount === null) {
+        setError(`Valor inválido em "${config.label}".`);
+        return;
+      }
+
+      if (config.requiresDetails && details.length < 3) {
+        setError(`Detalhe melhor "${config.label}".`);
+        return;
+      }
+
+      normalizedPretensions.push({
+        type: item.type,
+        amount,
+        details: details || null
+      });
+    }
+
+    const structuredRequests = normalizedPretensions.map((item) => formatPretensionAsRequest(item));
+    const freeRequests = parseRequests(requestsText);
+    const requests = [...structuredRequests, ...freeRequests];
+    if (requests.length === 0) {
+      setError("Informe ao menos uma pretensão ou um pedido complementar.");
+      return;
+    }
+
     const trimmedFacts = facts.trim();
     if (trimmedFacts.length < 30) {
       setError("Descreva os fatos com pelo menos 30 caracteres.");
@@ -510,30 +847,6 @@ export function NewCasePage() {
     if (trimmedLegalGrounds.length < 30) {
       setError("Informe os fundamentos da reclamação com pelo menos 30 caracteres.");
       return;
-    }
-
-    const requests = parseRequests(requestsText);
-    if (requests.length === 0) {
-      setError("Informe ao menos um pedido, um por linha.");
-      return;
-    }
-
-    const normalizedDefendantDocument = normalizeDigits(defendantDocument);
-    if (normalizedDefendantDocument) {
-      if (defendantType === "pessoa_fisica" && normalizedDefendantDocument.length !== 11) {
-        setError("Para pessoa física, informe CPF com 11 dígitos.");
-        return;
-      }
-
-      if (defendantType === "pessoa_juridica" && normalizedDefendantDocument.length !== 14) {
-        setError("Para pessoa jurídica, informe CNPJ com 14 dígitos.");
-        return;
-      }
-
-      if (defendantType === "nao_informado" && ![11, 14].includes(normalizedDefendantDocument.length)) {
-        setError("Documento da reclamada deve conter 11 ou 14 dígitos.");
-        return;
-      }
     }
 
     const parsedClaimValue = parseClaimValue(claimValueInput);
@@ -555,11 +868,13 @@ export function NewCasePage() {
             claimSubject: trimmedClaimSubject,
             defendantType,
             defendantName: trimmedDefendantName,
-            defendantDocument: normalizedDefendantDocument || null,
+            defendantDocument: normalizedDefendantDocument,
             defendantAddress: defendantAddress.trim() || null,
             facts: trimmedFacts,
             legalGrounds: trimmedLegalGrounds,
             requests,
+            timelineEvents: normalizedTimelineEvents,
+            pretensions: normalizedPretensions,
             evidence: evidence.trim() || null,
             attachments: [],
             claimValue: parsedClaimValue,
@@ -638,8 +953,14 @@ export function NewCasePage() {
                   type="text"
                   value={cpf}
                   onChange={(event) => setCpf(formatCpf(event.target.value))}
+                  onFocus={() => {
+                    if (cpfLockedByProfile) {
+                      setCpfLockedByProfile(false);
+                    }
+                  }}
                   placeholder="000.000.000-00"
                   inputMode="numeric"
+                  readOnly={cpfLockedByProfile}
                   required
                 />
                 <button
@@ -651,6 +972,9 @@ export function NewCasePage() {
                   {consultingCpf ? "Consultando..." : "Consultar CPF"}
                 </button>
               </div>
+              {cpfLockedByProfile && (
+                <span className="field-help">CPF preenchido com base no seu perfil. Clique no campo para editar.</span>
+              )}
             </label>
 
             {cpfData && (
@@ -693,6 +1017,11 @@ export function NewCasePage() {
                   type="text"
                   value={claimantZipCode}
                   onChange={(event) => setClaimantZipCode(formatZipCode(event.target.value))}
+                  onFocus={() => {
+                    if (claimantAddressLockedByProfile) {
+                      setClaimantAddressLockedByProfile(false);
+                    }
+                  }}
                   onBlur={() => {
                     if (normalizeZipCode(claimantZipCode).length === 8 && !claimantStreet.trim()) {
                       void handleZipCodeLookup();
@@ -700,17 +1029,23 @@ export function NewCasePage() {
                   }}
                   placeholder="00000-000"
                   inputMode="numeric"
+                  readOnly={claimantAddressLockedByProfile}
                   required
                 />
                 <button
                   type="button"
                   className="secondary-button"
                   onClick={() => void handleZipCodeLookup()}
-                  disabled={lookingUpZipCode}
+                  disabled={lookingUpZipCode || claimantAddressLockedByProfile}
                 >
                   {lookingUpZipCode ? "Buscando..." : "Buscar CEP"}
                 </button>
               </div>
+              {claimantAddressLockedByProfile && (
+                <span className="field-help">
+                  Endereço preenchido com base no seu perfil. Clique em qualquer campo para editar.
+                </span>
+              )}
             </label>
 
             <div className="address-grid">
@@ -720,7 +1055,13 @@ export function NewCasePage() {
                   type="text"
                   value={claimantStreet}
                   onChange={(event) => setClaimantStreet(event.target.value)}
+                  onFocus={() => {
+                    if (claimantAddressLockedByProfile) {
+                      setClaimantAddressLockedByProfile(false);
+                    }
+                  }}
                   placeholder="Rua, avenida, travessa..."
+                  readOnly={claimantAddressLockedByProfile}
                   required
                 />
               </label>
@@ -731,7 +1072,13 @@ export function NewCasePage() {
                   type="text"
                   value={claimantNumber}
                   onChange={(event) => setClaimantNumber(event.target.value)}
+                  onFocus={() => {
+                    if (claimantAddressLockedByProfile) {
+                      setClaimantAddressLockedByProfile(false);
+                    }
+                  }}
                   placeholder="123"
+                  readOnly={claimantAddressLockedByProfile}
                   required
                 />
               </label>
@@ -742,7 +1089,13 @@ export function NewCasePage() {
                   type="text"
                   value={claimantComplement}
                   onChange={(event) => setClaimantComplement(event.target.value)}
+                  onFocus={() => {
+                    if (claimantAddressLockedByProfile) {
+                      setClaimantAddressLockedByProfile(false);
+                    }
+                  }}
                   placeholder="Apartamento, bloco, referência (opcional)"
+                  readOnly={claimantAddressLockedByProfile}
                 />
               </label>
 
@@ -752,6 +1105,12 @@ export function NewCasePage() {
                   type="text"
                   value={claimantNeighborhood}
                   onChange={(event) => setClaimantNeighborhood(event.target.value)}
+                  onFocus={() => {
+                    if (claimantAddressLockedByProfile) {
+                      setClaimantAddressLockedByProfile(false);
+                    }
+                  }}
+                  readOnly={claimantAddressLockedByProfile}
                   required
                 />
               </label>
@@ -762,6 +1121,12 @@ export function NewCasePage() {
                   type="text"
                   value={claimantCity}
                   onChange={(event) => setClaimantCity(event.target.value)}
+                  onFocus={() => {
+                    if (claimantAddressLockedByProfile) {
+                      setClaimantAddressLockedByProfile(false);
+                    }
+                  }}
+                  readOnly={claimantAddressLockedByProfile}
                   required
                 />
               </label>
@@ -772,7 +1137,13 @@ export function NewCasePage() {
                   type="text"
                   value={claimantState}
                   onChange={(event) => setClaimantState(event.target.value.replace(/[^a-zA-Z]/g, "").slice(0, 2).toUpperCase())}
+                  onFocus={() => {
+                    if (claimantAddressLockedByProfile) {
+                      setClaimantAddressLockedByProfile(false);
+                    }
+                  }}
                   placeholder="SP"
+                  readOnly={claimantAddressLockedByProfile}
                   required
                 />
               </label>
@@ -790,7 +1161,6 @@ export function NewCasePage() {
               >
                 <option value="pessoa_juridica">Pessoa jurídica</option>
                 <option value="pessoa_fisica">Pessoa física</option>
-                <option value="nao_informado">Não informado</option>
               </select>
             </label>
 
@@ -806,7 +1176,7 @@ export function NewCasePage() {
             </label>
 
             <label>
-              {defendantType === "pessoa_fisica" ? "CPF da reclamada" : defendantType === "pessoa_juridica" ? "CNPJ da reclamada" : "CPF ou CNPJ da reclamada"}
+              {defendantType === "pessoa_fisica" ? "CPF da reclamada" : "CNPJ da reclamada"}
               <input
                 type="text"
                 value={defendantDocument}
@@ -814,12 +1184,12 @@ export function NewCasePage() {
                 placeholder={
                   defendantType === "pessoa_fisica"
                     ? "000.000.000-00"
-                    : defendantType === "pessoa_juridica"
-                      ? "00.000.000/0000-00"
-                      : "CPF ou CNPJ"
+                    : "00.000.000/0000-00"
                 }
                 inputMode="numeric"
+                required
               />
+              <span className="field-help">Preencha apenas os números que o campo aplica a máscara automaticamente.</span>
             </label>
 
             <label>
@@ -833,6 +1203,106 @@ export function NewCasePage() {
             </label>
 
             <h2>Conteúdo da petição</h2>
+            <div className="petition-section">
+              <div className="petition-section-head">
+                <h3>Cronologia dos eventos</h3>
+                <p>Registre os fatos em ordem de data para facilitar análise e geração da petição.</p>
+              </div>
+              <div className="timeline-event-list">
+                {timelineEvents.map((eventItem, index) => (
+                  <div key={`timeline-event-${index}`} className="timeline-event-row">
+                    <label>
+                      Data
+                      <input
+                        type="date"
+                        value={eventItem.eventDate}
+                        onChange={(event) => handleTimelineEventChange(index, "eventDate", event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Descrição do evento
+                      <textarea
+                        value={eventItem.description}
+                        onChange={(event) =>
+                          handleTimelineEventChange(index, "description", event.target.value)
+                        }
+                        rows={2}
+                        placeholder="Descreva o que aconteceu nessa data."
+                      />
+                    </label>
+                    <div className="timeline-event-actions">
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => handleRemoveTimelineEvent(index)}
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className="secondary-button timeline-add-button" onClick={handleAddTimelineEvent}>
+                Adicionar evento
+              </button>
+            </div>
+
+            <div className="petition-section">
+              <div className="petition-section-head">
+                <h3>Pretensão do cliente</h3>
+                <p>Selecione os pedidos desejados e detalhe valor ou condições quando necessário.</p>
+              </div>
+
+              <div className="pretension-grid">
+                {pretensionDrafts.map((draft) => {
+                  const option = getPretensionOption(draft.type);
+
+                  return (
+                    <div key={draft.type} className="pretension-card">
+                      <label className="pretension-check">
+                        <input
+                          type="checkbox"
+                          checked={draft.selected}
+                          onChange={(event) => handlePretensionSelection(draft.type, event.target.checked)}
+                        />
+                        <span>{option.label}</span>
+                      </label>
+
+                      {draft.selected && (
+                        <div className="pretension-fields">
+                          {option.requiresAmount && (
+                            <label>
+                              {option.amountLabel ?? "Valor"}
+                              <input
+                                type="text"
+                                value={draft.amountInput}
+                                onChange={(event) =>
+                                  handlePretensionFieldChange(draft.type, "amountInput", event.target.value)
+                                }
+                                placeholder="Ex: 1500,00"
+                              />
+                            </label>
+                          )}
+
+                          <label>
+                            {option.detailsLabel ?? "Detalhes"}
+                            <textarea
+                              value={draft.details}
+                              onChange={(event) =>
+                                handlePretensionFieldChange(draft.type, "details", event.target.value)
+                              }
+                              rows={2}
+                              placeholder={option.detailsPlaceholder ?? "Descreva objetivamente o pedido."}
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             <label>
               Fatos
               <textarea
@@ -856,13 +1326,12 @@ export function NewCasePage() {
             </label>
 
             <label>
-              Pedidos (um por linha)
+              Pedidos complementares (opcional, um por linha)
               <textarea
                 value={requestsText}
                 onChange={(event) => setRequestsText(event.target.value)}
                 rows={6}
                 placeholder={"- Restituição em dobro dos valores cobrados indevidamente.\n- Indenização por danos morais.\n- Inversão do ônus da prova."}
-                required
               />
             </label>
 
@@ -949,9 +1418,10 @@ export function NewCasePage() {
             <ul className="tips-checklist" aria-label="Checklist da petição">
               <li>Confirme vara e CPF do requerente.</li>
               <li>Preencha CEP e complete número/complemento.</li>
-              <li>Informe a parte reclamada com CPF ou CNPJ formatado.</li>
-              <li>Descreva fatos e fundamentos com clareza objetiva.</li>
-              <li>Liste pedidos em linhas separadas para o PDF.</li>
+              <li>Identifique a parte reclamada com nome e CPF/CNPJ obrigatórios.</li>
+              <li>Preencha a cronologia com data e descrição objetiva dos eventos.</li>
+              <li>Selecione as pretensões e detalhe valores quando houver.</li>
+              <li>Descreva fatos e fundamentos com clareza jurídica.</li>
               <li>Use o clipe para anexar documentos da reclamação.</li>
             </ul>
             <div className="tips-footer">

@@ -963,6 +963,11 @@ button.sidebar-item {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
   gap: clamp(0.7rem, 1.2vw, 1rem);
+  align-items: start;
+}
+
+.card-grid--list {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .case-card {
@@ -975,6 +980,7 @@ button.sidebar-item {
   box-shadow: 0 12px 28px rgba(10, 32, 60, 0.08);
   padding: 1.05rem;
   transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+  align-self: start;
 }
 
 .case-card:hover {
@@ -986,7 +992,8 @@ button.sidebar-item {
 .case-card-top {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 0.7rem;
 }
 
@@ -994,6 +1001,32 @@ button.sidebar-item {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.case-card-title-wrap {
+  min-width: 0;
+  display: grid;
+  gap: 0.14rem;
+}
+
+.case-card-title-link {
+  color: #17395d;
+  font-weight: 700;
+  text-decoration: none;
+  line-height: 1.2;
+}
+
+.case-card-title-link:hover {
+  text-decoration: underline;
+}
+
+.case-card-code {
+  color: #6b798b;
+  font-size: 0.76rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .case-card span {
@@ -1029,6 +1062,19 @@ button.sidebar-item {
   align-items: center;
   gap: 0.55rem;
   flex-wrap: wrap;
+}
+
+.case-card-detail-button {
+  min-height: 34px;
+  padding: 0.42rem 0.72rem;
+  font-size: 0.84rem;
+}
+
+.case-card-operator-inline {
+  margin: 0;
+  color: #55687a;
+  font-size: 0.84rem;
+  font-weight: 600;
 }
 
 .case-expand-toggle {
@@ -1121,6 +1167,8 @@ button.sidebar-item {
   font-size: 0.75rem;
   font-weight: 700;
   border: 1px solid transparent;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .status-badge--recebido {
@@ -1141,6 +1189,24 @@ button.sidebar-item {
   color: #1f6a3d;
 }
 
+.status-badge--review-pending {
+  background: #eef4fc;
+  border-color: #d3e1f2;
+  color: #4d6177;
+}
+
+.status-badge--review-accepted {
+  background: #e9f8ee;
+  border-color: #bde5ca;
+  color: #1f6a3d;
+}
+
+.status-badge--review-rejected {
+  background: #fff1f1;
+  border-color: #efc4c4;
+  color: #9b1c1c;
+}
+
 .case-form {
   background: var(--surface);
   border: 1px solid #d7e3f2;
@@ -1154,6 +1220,103 @@ button.sidebar-item {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 0.7rem;
+}
+
+.petition-section {
+  border: 1px solid #d9e5f2;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.petition-section-head {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.petition-section-head h3,
+.petition-section-head p {
+  margin: 0;
+}
+
+.petition-section-head h3 {
+  color: #1f3550;
+  font-size: 1rem;
+}
+
+.petition-section-head p {
+  color: #5a6a7b;
+  font-size: 0.87rem;
+}
+
+.timeline-event-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.timeline-event-row {
+  border: 1px solid #d4e2f1;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.55rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.timeline-event-row label {
+  display: grid;
+  gap: 0.3rem;
+  font-weight: 600;
+}
+
+.timeline-event-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.timeline-add-button {
+  width: fit-content;
+}
+
+.pretension-grid {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.pretension-card {
+  border: 1px solid #d4e2f1;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.58rem;
+  display: grid;
+  gap: 0.52rem;
+}
+
+.pretension-check {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-weight: 600;
+  color: #274567;
+}
+
+.pretension-check input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.pretension-fields {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.pretension-fields label {
+  display: grid;
+  gap: 0.28rem;
+  font-weight: 600;
 }
 
 .evidence-field {
@@ -1464,6 +1627,14 @@ button.sidebar-item {
   gap: 0.9rem;
 }
 
+.workspace-panel--muted {
+  background: #f8fbff;
+}
+
+.page-stack--tight {
+  gap: 0.75rem;
+}
+
 .workspace-panel .page-header {
   margin-bottom: 0.25rem;
 }
@@ -1720,6 +1891,15 @@ button.sidebar-item {
   border: 1px solid #c5d4e6;
   background: #fff;
   color: #1f3041;
+}
+
+.profile-form-grid select {
+  border-radius: 10px;
+  border: 1px solid #c5d4e6;
+  background: #fff;
+  color: #1f3041;
+  min-height: 44px;
+  padding: 0 0.7rem;
 }
 
 .profile-form-grid input[readonly] {
@@ -2130,6 +2310,10 @@ button.sidebar-item {
   gap: 1rem;
 }
 
+.detail-grid--operator {
+  grid-template-columns: minmax(520px, 1fr) minmax(320px, 0.5fr);
+}
+
 .detail-list {
   display: grid;
   gap: 0.5rem;
@@ -2161,6 +2345,276 @@ button.sidebar-item {
   color: #4f5a69;
   display: grid;
   gap: 0.45rem;
+}
+
+.detail-card--aside {
+  align-self: start;
+  position: sticky;
+  top: clamp(86px, 10vh, 120px);
+  max-height: calc(100vh - 132px);
+  overflow: auto;
+}
+
+.operator-action-box {
+  border: 1px solid #d8e3f1;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.62rem;
+}
+
+.operator-action-box h3 {
+  margin: 0;
+  color: #1f3550;
+}
+
+.operator-action-box p {
+  margin: 0;
+  color: #55687b;
+  font-size: 0.9rem;
+}
+
+.operator-action-box label {
+  display: grid;
+  gap: 0.3rem;
+  color: #3d5166;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #3d5166;
+}
+
+.checkbox-inline input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.operator-action-buttons {
+  display: flex;
+  gap: 0.52rem;
+  flex-wrap: wrap;
+}
+
+.movement-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.movement-list li {
+  border: 1px solid #d7e4f2;
+  border-radius: 12px;
+  background: #f9fbff;
+  padding: 0.72rem;
+  display: grid;
+  gap: 0.46rem;
+}
+
+.movement-list li p {
+  margin: 0;
+  color: #2f4357;
+  line-height: 1.5;
+}
+
+.movement-list-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.movement-list-date {
+  color: #607286;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.movement-list-meta {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.movement-list-meta span {
+  border: 1px solid #d6e2f1;
+  border-radius: 999px;
+  padding: 0.22rem 0.55rem;
+  color: #4b6177;
+  font-size: 0.76rem;
+  background: #f1f6fc;
+}
+
+.movement-attachment-list {
+  margin-top: 0.22rem;
+}
+
+.messages-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.36fr) minmax(0, 1fr);
+  gap: 0.9rem;
+}
+
+.messages-cases {
+  border: 1px solid #d8e3f2;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.messages-cases h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.messages-case-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.messages-case-button {
+  width: 100%;
+  border: 1px solid #d6e2f1;
+  border-radius: 10px;
+  background: #fff;
+  color: #2e4157;
+  padding: 0.52rem;
+  text-align: left;
+  display: grid;
+  gap: 0.14rem;
+  box-shadow: none;
+  transform: none;
+}
+
+.messages-case-button:hover {
+  background: #eef4fb;
+  border-color: #c5d7ec;
+  box-shadow: none;
+  transform: none;
+}
+
+.messages-case-button--active {
+  border-color: #9fbedf;
+  background: #edf4fc;
+}
+
+.messages-case-button strong {
+  color: var(--primary-color);
+}
+
+.messages-case-button span {
+  color: #6a7788;
+  font-size: 0.78rem;
+}
+
+.messages-case-button small {
+  color: #55687d;
+  font-size: 0.82rem;
+}
+
+.messages-thread-card {
+  border: 1px solid #d8e3f2;
+  border-radius: 12px;
+  background: #fff;
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.messages-thread-header {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.messages-thread-header h2,
+.messages-thread-header span {
+  margin: 0;
+}
+
+.messages-thread-header span {
+  color: #5f7186;
+  font-size: 0.84rem;
+}
+
+.messages-thread-list {
+  border: 1px solid #d8e3f2;
+  border-radius: 12px;
+  background: #f8fbff;
+  min-height: 240px;
+  max-height: 52vh;
+  overflow: auto;
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.message-bubble {
+  border: 1px solid #d6e2f1;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.55rem;
+  display: grid;
+  gap: 0.28rem;
+}
+
+.message-bubble--mine {
+  background: #edf4fc;
+  border-color: #b8cde8;
+}
+
+.message-bubble-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.message-bubble-head strong {
+  color: #1f3550;
+  font-size: 0.86rem;
+}
+
+.message-bubble-head small {
+  color: #68798e;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.message-bubble p {
+  margin: 0;
+  color: #2f4357;
+}
+
+.message-bubble span {
+  color: #6a7c90;
+  font-size: 0.74rem;
+}
+
+.messages-compose {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.messages-compose label {
+  display: grid;
+  gap: 0.3rem;
+  font-weight: 600;
 }
 
 .workspace-hero--module .workspace-hero-media img {
@@ -3240,6 +3694,21 @@ button.sidebar-item {
     grid-template-columns: 1fr;
   }
 
+  .messages-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .messages-thread-list {
+    max-height: none;
+  }
+
+  .detail-card--aside {
+    position: static;
+    top: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
   .address-grid {
     grid-template-columns: 1fr;
   }
@@ -3286,6 +3755,15 @@ button.sidebar-item {
 
   .inline-input {
     grid-template-columns: 1fr;
+  }
+
+  .timeline-event-actions {
+    justify-content: stretch;
+  }
+
+  .timeline-event-actions button,
+  .timeline-add-button {
+    width: 100%;
   }
 
   .evidence-field-header {

@@ -25,11 +25,65 @@ interface AccountProfileResponse {
 interface AccountProfilePatchPayload {
   name?: string | null;
   avatarUrl?: string | null;
+  cpf?: string | null;
+  rg?: string | null;
+  rgIssuer?: string | null;
+  birthDate?: string | null;
+  maritalStatus?: string | null;
+  profession?: string | null;
+  address?: {
+    cep: string | null;
+    street: string | null;
+    number: string | null;
+    complement: string | null;
+    neighborhood: string | null;
+    city: string | null;
+    state: string | null;
+  } | null;
+}
+
+interface ProfileAddressInput {
+  cep: string;
+  street: string;
+  number: string;
+  complement: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+}
+
+interface ProfileExtraInput {
+  cpf: string;
+  rg: string;
+  rgIssuer: string;
+  birthDate: string;
+  maritalStatus: string;
+  profession: string;
+  address: ProfileAddressInput;
+}
+
+interface NormalizedProfileSnapshotExtra {
+  cpf: string | null;
+  rg: string | null;
+  rgIssuer: string | null;
+  birthDate: string | null;
+  maritalStatus: string | null;
+  profession: string | null;
+  address: {
+    cep: string | null;
+    street: string | null;
+    number: string | null;
+    complement: string | null;
+    neighborhood: string | null;
+    city: string | null;
+    state: string | null;
+  };
 }
 
 interface ProfileSnapshot {
   name: string | null;
   avatarUrl: string | null;
+  extra: NormalizedProfileSnapshotExtra;
 }
 
 interface ProfileToast {
@@ -49,6 +103,16 @@ interface AvatarCropModalProps {
   onApply: (avatarUrl: string) => void;
 }
 
+interface ViaCepResponse {
+  cep?: string;
+  logradouro?: string;
+  complemento?: string;
+  bairro?: string;
+  localidade?: string;
+  uf?: string;
+  erro?: boolean;
+}
+
 function normalizeOptionalText(value: string | null | undefined): string | null {
   if (typeof value !== "string") {
     return null;
@@ -58,15 +122,136 @@ function normalizeOptionalText(value: string | null | undefined): string | null 
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function buildProfileSnapshot(nameInput: string, avatarUrl: string | null): ProfileSnapshot {
+function normalizeCpfDigits(value: string): string | null {
+  const digits = value.replace(/\D/g, "");
+  return digits.length > 0 ? digits : null;
+}
+
+function normalizeCepDigits(value: string): string | null {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  return digits.length > 0 ? digits : null;
+}
+
+function formatCpfInput(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 3) {
+    return digits;
+  }
+
+  if (digits.length <= 6) {
+    return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  }
+
+  if (digits.length <= 9) {
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  }
+
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9, 11)}`;
+}
+
+function formatCepInput(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 5) {
+    return digits;
+  }
+
+  return `${digits.slice(0, 5)}-${digits.slice(5, 8)}`;
+}
+
+function emptyProfileExtraInput(): ProfileExtraInput {
+  return {
+    cpf: "",
+    rg: "",
+    rgIssuer: "",
+    birthDate: "",
+    maritalStatus: "",
+    profession: "",
+    address: {
+      cep: "",
+      street: "",
+      number: "",
+      complement: "",
+      neighborhood: "",
+      city: "",
+      state: ""
+    }
+  };
+}
+
+function buildProfileExtraInput(profile: AccountProfile): ProfileExtraInput {
+  return {
+    cpf: profile.cpf ? formatCpfInput(profile.cpf) : "",
+    rg: profile.rg ?? "",
+    rgIssuer: profile.rgIssuer ?? "",
+    birthDate: profile.birthDate ?? "",
+    maritalStatus: profile.maritalStatus ?? "",
+    profession: profile.profession ?? "",
+    address: {
+      cep: profile.address?.cep ? formatCepInput(profile.address.cep) : "",
+      street: profile.address?.street ?? "",
+      number: profile.address?.number ?? "",
+      complement: profile.address?.complement ?? "",
+      neighborhood: profile.address?.neighborhood ?? "",
+      city: profile.address?.city ?? "",
+      state: profile.address?.state ?? ""
+    }
+  };
+}
+
+function normalizeProfileExtraInput(extraInput: ProfileExtraInput): NormalizedProfileSnapshotExtra {
+  return {
+    cpf: normalizeCpfDigits(extraInput.cpf),
+    rg: normalizeOptionalText(extraInput.rg),
+    rgIssuer: normalizeOptionalText(extraInput.rgIssuer),
+    birthDate: normalizeOptionalText(extraInput.birthDate),
+    maritalStatus: normalizeOptionalText(extraInput.maritalStatus),
+    profession: normalizeOptionalText(extraInput.profession),
+    address: {
+      cep: normalizeCepDigits(extraInput.address.cep),
+      street: normalizeOptionalText(extraInput.address.street),
+      number: normalizeOptionalText(extraInput.address.number),
+      complement: normalizeOptionalText(extraInput.address.complement),
+      neighborhood: normalizeOptionalText(extraInput.address.neighborhood),
+      city: normalizeOptionalText(extraInput.address.city),
+      state: normalizeOptionalText(extraInput.address.state)?.toUpperCase() ?? null
+    }
+  };
+}
+
+function profileExtraInputFromSnapshot(extra: NormalizedProfileSnapshotExtra): ProfileExtraInput {
+  return {
+    cpf: extra.cpf ? formatCpfInput(extra.cpf) : "",
+    rg: extra.rg ?? "",
+    rgIssuer: extra.rgIssuer ?? "",
+    birthDate: extra.birthDate ?? "",
+    maritalStatus: extra.maritalStatus ?? "",
+    profession: extra.profession ?? "",
+    address: {
+      cep: extra.address.cep ? formatCepInput(extra.address.cep) : "",
+      street: extra.address.street ?? "",
+      number: extra.address.number ?? "",
+      complement: extra.address.complement ?? "",
+      neighborhood: extra.address.neighborhood ?? "",
+      city: extra.address.city ?? "",
+      state: extra.address.state ?? ""
+    }
+  };
+}
+
+function buildProfileSnapshot(
+  nameInput: string,
+  avatarUrl: string | null,
+  extraInput: ProfileExtraInput
+): ProfileSnapshot {
   return {
     name: normalizeOptionalText(nameInput),
-    avatarUrl: normalizeOptionalText(avatarUrl)
+    avatarUrl: normalizeOptionalText(avatarUrl),
+    extra: normalizeProfileExtraInput(extraInput)
   };
 }
 
 function snapshotsMatch(a: ProfileSnapshot, b: ProfileSnapshot): boolean {
-  return a.name === b.name && a.avatarUrl === b.avatarUrl;
+  return a.name === b.name && a.avatarUrl === b.avatarUrl && JSON.stringify(a.extra) === JSON.stringify(b.extra);
 }
 
 function computeInitials(name: string | null | undefined, email: string | null | undefined): string {
@@ -436,12 +621,19 @@ export function ProfileSettingsPage() {
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [nameInput, setNameInput] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [initialSnapshot, setInitialSnapshot] = useState<ProfileSnapshot>({ name: null, avatarUrl: null });
+  const [extraInput, setExtraInput] = useState<ProfileExtraInput>(() => emptyProfileExtraInput());
+  const [initialSnapshot, setInitialSnapshot] = useState<ProfileSnapshot>(() =>
+    buildProfileSnapshot("", null, emptyProfileExtraInput())
+  );
+  const [cepLoading, setCepLoading] = useState(false);
 
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [cropOpen, setCropOpen] = useState(false);
 
-  const currentSnapshot = useMemo(() => buildProfileSnapshot(nameInput, avatarUrl), [avatarUrl, nameInput]);
+  const currentSnapshot = useMemo(
+    () => buildProfileSnapshot(nameInput, avatarUrl, extraInput),
+    [avatarUrl, extraInput, nameInput]
+  );
   const hasChanges = !snapshotsMatch(initialSnapshot, currentSnapshot);
 
   useEffect(() => {
@@ -472,10 +664,12 @@ export function ProfileSettingsPage() {
           return;
         }
 
+        const nextExtra = buildProfileExtraInput(response.user);
         setProfile(response.user);
         setNameInput(response.user.name ?? "");
         setAvatarUrl(response.user.avatarUrl ?? null);
-        setInitialSnapshot(buildProfileSnapshot(response.user.name ?? "", response.user.avatarUrl ?? null));
+        setExtraInput(nextExtra);
+        setInitialSnapshot(buildProfileSnapshot(response.user.name ?? "", response.user.avatarUrl ?? null, nextExtra));
       } catch (nextError) {
         if (!mounted) {
           return;
@@ -488,12 +682,21 @@ export function ProfileSettingsPage() {
             firebaseUid: user?.uid ?? "",
             email: user?.email ?? null,
             name: fallback.name ?? accessProfile?.name ?? user?.displayName ?? null,
-            avatarUrl: fallback.avatarUrl ?? accessProfile?.avatarUrl ?? null
+            avatarUrl: fallback.avatarUrl ?? accessProfile?.avatarUrl ?? null,
+            cpf: null,
+            rg: null,
+            rgIssuer: null,
+            birthDate: null,
+            maritalStatus: null,
+            profession: null,
+            address: null
           };
+          const nextExtra = buildProfileExtraInput(fallbackProfile);
           setProfile(fallbackProfile);
           setNameInput(fallbackProfile.name ?? "");
           setAvatarUrl(fallbackProfile.avatarUrl ?? null);
-          setInitialSnapshot(buildProfileSnapshot(fallbackProfile.name ?? "", fallbackProfile.avatarUrl ?? null));
+          setExtraInput(nextExtra);
+          setInitialSnapshot(buildProfileSnapshot(fallbackProfile.name ?? "", fallbackProfile.avatarUrl ?? null, nextExtra));
           setToast({
             type: "success",
             message: "Modo local ativo: perfil carregado do armazenamento local."
@@ -572,18 +775,12 @@ export function ProfileSettingsPage() {
 
   const applyProfilePatch = useCallback(
     async (payload: AccountProfilePatchPayload, successMessage: string): Promise<boolean> => {
-      if (
-        !Object.prototype.hasOwnProperty.call(payload, "name") &&
-        !Object.prototype.hasOwnProperty.call(payload, "avatarUrl")
-      ) {
+      if (Object.keys(payload).length === 0) {
         return true;
       }
 
       setSaving(true);
       setError(null);
-
-      const updatesName = Object.prototype.hasOwnProperty.call(payload, "name");
-      const updatesAvatar = Object.prototype.hasOwnProperty.call(payload, "avatarUrl");
 
       try {
         const token = await getToken();
@@ -593,22 +790,14 @@ export function ProfileSettingsPage() {
           body: payload
         });
 
+        const nextExtra = buildProfileExtraInput(response.user);
         setProfile(response.user);
         persistAuthOnlyStorage(response.user);
         await refreshAccessProfile();
-
-        setInitialSnapshot((current) => ({
-          name: updatesName ? normalizeOptionalText(response.user.name) : current.name,
-          avatarUrl: updatesAvatar ? normalizeOptionalText(response.user.avatarUrl) : current.avatarUrl
-        }));
-
-        if (updatesName) {
-          setNameInput(response.user.name ?? "");
-        }
-
-        if (updatesAvatar) {
-          setAvatarUrl(response.user.avatarUrl ?? null);
-        }
+        setNameInput(response.user.name ?? "");
+        setAvatarUrl(response.user.avatarUrl ?? null);
+        setExtraInput(nextExtra);
+        setInitialSnapshot(buildProfileSnapshot(response.user.name ?? "", response.user.avatarUrl ?? null, nextExtra));
 
         setToast({
           type: "success",
@@ -666,22 +855,97 @@ export function ProfileSettingsPage() {
     setCropImageSrc(null);
   }, []);
 
-  async function handleSaveProfile() {
+  async function handleLookupCep() {
+    const cepDigits = normalizeCepDigits(extraInput.address.cep);
+    if (!cepDigits || cepDigits.length !== 8) {
+      setError("Informe um CEP válido com 8 dígitos para consulta.");
+      return;
+    }
+
+    setCepLoading(true);
     setError(null);
 
-    const normalizedName = normalizeOptionalText(nameInput);
-    const normalizedAvatarUrl = normalizeOptionalText(avatarUrl);
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`);
+      if (!response.ok) {
+        throw new Error("Falha ao consultar CEP.");
+      }
+
+      const data = (await response.json()) as ViaCepResponse;
+      if (data.erro) {
+        throw new Error("CEP não encontrado.");
+      }
+
+      setExtraInput((current) => ({
+        ...current,
+        address: {
+          ...current.address,
+          cep: formatCepInput(cepDigits),
+          street: data.logradouro?.trim() || current.address.street,
+          neighborhood: data.bairro?.trim() || current.address.neighborhood,
+          city: data.localidade?.trim() || current.address.city,
+          state: data.uf?.trim().toUpperCase() || current.address.state
+        }
+      }));
+
+      setToast({
+        type: "success",
+        message: "CEP encontrado. Complete número e complemento."
+      });
+    } catch (nextError) {
+      const message =
+        nextError instanceof Error ? nextError.message : "Não foi possível consultar este CEP agora.";
+      setError(message);
+      setToast({
+        type: "error",
+        message
+      });
+    } finally {
+      setCepLoading(false);
+    }
+  }
+
+  async function handleSaveProfile() {
+    setError(null);
     const payload: AccountProfilePatchPayload = {};
 
-    if (normalizedName !== initialSnapshot.name) {
-      payload.name = normalizedName;
+    if (currentSnapshot.name !== initialSnapshot.name) {
+      payload.name = currentSnapshot.name;
     }
 
-    if (normalizedAvatarUrl !== initialSnapshot.avatarUrl) {
-      payload.avatarUrl = normalizedAvatarUrl;
+    if (currentSnapshot.avatarUrl !== initialSnapshot.avatarUrl) {
+      payload.avatarUrl = currentSnapshot.avatarUrl;
     }
 
-    if (!Object.prototype.hasOwnProperty.call(payload, "name") && !Object.prototype.hasOwnProperty.call(payload, "avatarUrl")) {
+    if (currentSnapshot.extra.cpf !== initialSnapshot.extra.cpf) {
+      payload.cpf = currentSnapshot.extra.cpf;
+    }
+
+    if (currentSnapshot.extra.rg !== initialSnapshot.extra.rg) {
+      payload.rg = currentSnapshot.extra.rg;
+    }
+
+    if (currentSnapshot.extra.rgIssuer !== initialSnapshot.extra.rgIssuer) {
+      payload.rgIssuer = currentSnapshot.extra.rgIssuer;
+    }
+
+    if (currentSnapshot.extra.birthDate !== initialSnapshot.extra.birthDate) {
+      payload.birthDate = currentSnapshot.extra.birthDate;
+    }
+
+    if (currentSnapshot.extra.maritalStatus !== initialSnapshot.extra.maritalStatus) {
+      payload.maritalStatus = currentSnapshot.extra.maritalStatus;
+    }
+
+    if (currentSnapshot.extra.profession !== initialSnapshot.extra.profession) {
+      payload.profession = currentSnapshot.extra.profession;
+    }
+
+    if (JSON.stringify(currentSnapshot.extra.address) !== JSON.stringify(initialSnapshot.extra.address)) {
+      payload.address = currentSnapshot.extra.address;
+    }
+
+    if (Object.keys(payload).length === 0) {
       return;
     }
 
@@ -811,6 +1075,242 @@ export function ProfileSettingsPage() {
                 <input type="text" value={profile.firebaseUid} readOnly />
               </label>
 
+              <div className="resumo-box">
+                <strong>Dados complementares (opcional)</strong>
+                <p>Complete seu cadastro para agilizar a preparação da petição e o protocolo.</p>
+              </div>
+
+              <div className="address-grid">
+                <label>
+                  CPF
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="000.000.000-00"
+                    value={extraInput.cpf}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        cpf: formatCpfInput(event.target.value)
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Data de nascimento
+                  <input
+                    type="date"
+                    value={extraInput.birthDate}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        birthDate: event.target.value
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  RG
+                  <input
+                    type="text"
+                    placeholder="Número do RG"
+                    value={extraInput.rg}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        rg: event.target.value
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Órgão emissor
+                  <input
+                    type="text"
+                    placeholder="Ex.: SSP/SP"
+                    value={extraInput.rgIssuer}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        rgIssuer: event.target.value
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Estado civil
+                  <select
+                    value={extraInput.maritalStatus}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        maritalStatus: event.target.value
+                      }))
+                    }
+                  >
+                    <option value="">Selecione</option>
+                    <option value="Solteiro(a)">Solteiro(a)</option>
+                    <option value="Casado(a)">Casado(a)</option>
+                    <option value="União estável">União estável</option>
+                    <option value="Divorciado(a)">Divorciado(a)</option>
+                    <option value="Viúvo(a)">Viúvo(a)</option>
+                  </select>
+                </label>
+
+                <label>
+                  Profissão
+                  <input
+                    type="text"
+                    placeholder="Sua profissão"
+                    value={extraInput.profession}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        profession: event.target.value
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+
+              <div className="resumo-box">
+                <strong>Endereço completo</strong>
+                <p>Informe o CEP para preencher rua/bairro/cidade/UF automaticamente.</p>
+              </div>
+
+              <div className="address-grid">
+                <label className="address-grid-span">
+                  CEP
+                  <div className="inline-input">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="00000-000"
+                      value={extraInput.address.cep}
+                      onChange={(event) =>
+                        setExtraInput((current) => ({
+                          ...current,
+                          address: {
+                            ...current.address,
+                            cep: formatCepInput(event.target.value)
+                          }
+                        }))
+                      }
+                    />
+                    <button type="button" className="secondary-button" onClick={() => void handleLookupCep()} disabled={cepLoading}>
+                      {cepLoading ? "Buscando..." : "Buscar CEP"}
+                    </button>
+                  </div>
+                </label>
+
+                <label className="address-grid-span">
+                  Logradouro
+                  <input
+                    type="text"
+                    value={extraInput.address.street}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        address: {
+                          ...current.address,
+                          street: event.target.value
+                        }
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Número
+                  <input
+                    type="text"
+                    value={extraInput.address.number}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        address: {
+                          ...current.address,
+                          number: event.target.value
+                        }
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Complemento
+                  <input
+                    type="text"
+                    value={extraInput.address.complement}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        address: {
+                          ...current.address,
+                          complement: event.target.value
+                        }
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Bairro
+                  <input
+                    type="text"
+                    value={extraInput.address.neighborhood}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        address: {
+                          ...current.address,
+                          neighborhood: event.target.value
+                        }
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Cidade
+                  <input
+                    type="text"
+                    value={extraInput.address.city}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        address: {
+                          ...current.address,
+                          city: event.target.value
+                        }
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  UF
+                  <input
+                    type="text"
+                    maxLength={2}
+                    value={extraInput.address.state}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        address: {
+                          ...current.address,
+                          state: event.target.value.toUpperCase()
+                        }
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+
               <div className="profile-actions">
                 <button type="button" onClick={() => void handleSaveProfile()} disabled={!hasChanges || saving}>
                   {saving ? "Salvando..." : "Salvar perfil"}
@@ -822,6 +1322,7 @@ export function ProfileSettingsPage() {
                   onClick={() => {
                     setNameInput(initialSnapshot.name ?? "");
                     setAvatarUrl(initialSnapshot.avatarUrl);
+                    setExtraInput(profileExtraInputFromSnapshot(initialSnapshot.extra));
                     setError(null);
                   }}
                 >

@@ -11,6 +11,7 @@ import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MasterDashboardPage } from "./pages/MasterDashboardPage";
 import { MasterLoginPage } from "./pages/MasterLoginPage";
+import { MessagesPage } from "./pages/MessagesPage";
 import { NewCasePage } from "./pages/NewCasePage";
 import { Pagina1Page } from "./pages/Pagina1Page";
 import { Pagina2Page } from "./pages/Pagina2Page";
@@ -89,6 +90,7 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/cases/new" element={<NewCasePage />} />
             <Route path="/cases/:id" element={<CaseDetailPage />} />
+            <Route path="/messages" element={<MessagesPage />} />
             <Route path="/pagina-1" element={<Pagina1Page />} />
             <Route path="/pagina-2" element={<Pagina2Page />} />
             <Route path="/pagina-3" element={<Pagina3Page />} />

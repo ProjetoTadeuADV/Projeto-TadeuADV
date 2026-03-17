@@ -210,6 +210,9 @@ describe("v1 routes", () => {
 
     expect(createCaseA.status).toBe(201);
     expect(createCaseB.status).toBe(201);
+    expect(createCaseA.body.result.caseCode).toMatch(/^CASO-\d{8}-[A-F0-9]{8}$/);
+    expect(createCaseB.body.result.caseCode).toMatch(/^CASO-\d{8}-[A-F0-9]{8}$/);
+    expect(createCaseA.body.result.caseCode).not.toBe(createCaseB.body.result.caseCode);
 
     const listA = await request(app)
       .get("/v1/cases")
@@ -252,6 +255,28 @@ describe("v1 routes", () => {
             "Restituicao em dobro dos valores cobrados indevidamente.",
             "Condenacao ao pagamento de danos morais."
           ],
+          timelineEvents: [
+            {
+              eventDate: "2026-02-01",
+              description: "Compra concluida pela plataforma da reclamada."
+            },
+            {
+              eventDate: "2026-02-06",
+              description: "Reclamacao administrativa registrada sem solucao."
+            }
+          ],
+          pretensions: [
+            {
+              type: "ressarcimento_valor",
+              amount: 3800,
+              details: "Reembolso dos valores pagos indevidamente."
+            },
+            {
+              type: "indenizacao_danos",
+              amount: 2500,
+              details: "Compensacao pelos danos morais."
+            }
+          ],
           evidence: "Faturas e protocolos de atendimento anexos.",
           claimValue: 3800,
           hearingInterest: true
@@ -259,7 +284,15 @@ describe("v1 routes", () => {
       });
 
     expect(createCase.status).toBe(201);
-    expect(createCase.body.result.petitionInitial).toMatchObject({
+    const createdPetitionInitial = createCase.body.result.petitionInitial as {
+      claimSubject: string;
+      defendantName: string;
+      defendantDocument: string;
+      timelineEvents: Array<{ eventDate: string }>;
+      pretensions: Array<{ type: string }>;
+      requests: string[];
+    };
+    expect(createdPetitionInitial).toMatchObject({
       claimSubject: "Cobranca indevida",
       defendantName: "Empresa XYZ",
       defendantDocument: "12345678000190",
@@ -268,6 +301,20 @@ describe("v1 routes", () => {
         "Condenacao ao pagamento de danos morais."
       ]
     });
+    expect(createdPetitionInitial.timelineEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventDate: "2026-02-01"
+        })
+      ])
+    );
+    expect(createdPetitionInitial.pretensions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "ressarcimento_valor"
+        })
+      ])
+    );
 
     const caseId = createCase.body.result.id as string;
     const getCase = await request(app)
@@ -305,6 +352,23 @@ describe("v1 routes", () => {
           legalGrounds:
             "Ha falha na prestacao do servico e responsabilidade objetiva do fornecedor pelos danos causados.",
           requests: ["Entrega imediata do produto ou devolucao integral do valor pago."],
+          timelineEvents: [
+            {
+              eventDate: "2026-01-25",
+              description: "Pedido confirmado com prazo de entrega informado."
+            },
+            {
+              eventDate: "2026-02-03",
+              description: "Prazo encerrado sem entrega do produto."
+            }
+          ],
+          pretensions: [
+            {
+              type: "devolucao_produto",
+              amount: 1299.9,
+              details: "Devolucao do valor e cancelamento da compra."
+            }
+          ],
           evidence: "Conversas e comprovantes do pedido.",
           claimValue: 1299.9,
           hearingInterest: true
@@ -528,6 +592,50 @@ describe("v1 routes", () => {
     });
   });
 
+  it("deve permitir salvar dados opcionais do perfil da conta", async () => {
+    const app = buildTestApp();
+
+    const patchResponse = await request(app)
+      .patch("/v1/users/me")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        cpf: "935.411.347-80",
+        rg: "12.345.678-9",
+        rgIssuer: "SSP/SP",
+        birthDate: "1990-05-17",
+        maritalStatus: "Casado(a)",
+        profession: "Analista de sistemas",
+        address: {
+          cep: "01001-000",
+          street: "Praca da Se",
+          number: "100",
+          complement: "Sala 12",
+          neighborhood: "Se",
+          city: "Sao Paulo",
+          state: "SP"
+        }
+      });
+
+    expect(patchResponse.status).toBe(200);
+    expect(patchResponse.body.result.user).toMatchObject({
+      cpf: "93541134780",
+      rg: "12.345.678-9",
+      rgIssuer: "SSP/SP",
+      birthDate: "1990-05-17",
+      maritalStatus: "Casado(a)",
+      profession: "Analista de sistemas",
+      address: {
+        cep: "01001000",
+        street: "Praca da Se",
+        number: "100",
+        complement: "Sala 12",
+        neighborhood: "Se",
+        city: "Sao Paulo",
+        state: "SP"
+      }
+    });
+  });
+
   it("deve validar payload vazio na atualizacao de perfil da conta", async () => {
     const app = buildTestApp();
 
@@ -691,6 +799,255 @@ describe("v1 routes", () => {
       });
 
     expect(cpfLookupAsOperator.status).toBe(200);
+  });
+
+  it("deve permitir alocar caso para operador e registrar movimentacao publica", async () => {
+    const app = buildTestApp();
+
+    const createCase = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Caso para validar alocacao e movimentacao por operador."
+      });
+
+    expect(createCase.status).toBe(201);
+    const caseId = createCase.body.result.id as string;
+
+    await request(app)
+      .get("/v1/auth/session")
+      .set("Authorization", "Bearer token-operator");
+
+    const assignResponse = await request(app)
+      .post(`/v1/cases/${caseId}/assign-operator`)
+      .set("Authorization", "Bearer token-master")
+      .send({
+        operatorUserId: "operator-user"
+      });
+
+    expect(assignResponse.status).toBe(200);
+    expect(assignResponse.body.result).toMatchObject({
+      id: caseId,
+      assignedOperatorId: "operator-user"
+    });
+
+    const movementResponse = await request(app)
+      .post(`/v1/cases/${caseId}/movements`)
+      .set("Authorization", "Bearer token-operator")
+      .send({
+        stage: "conciliacao",
+        description: "Proposta de acordo enviada para a parte reclamada com prazo de cinco dias.",
+        visibility: "public",
+        status: "em_analise"
+      });
+
+    expect(movementResponse.status).toBe(201);
+    expect(movementResponse.body.result.movement).toMatchObject({
+      stage: "conciliacao",
+      visibility: "public",
+      statusAfter: "em_analise"
+    });
+
+    const userGetCase = await request(app)
+      .get(`/v1/cases/${caseId}`)
+      .set("Authorization", "Bearer token-user-a");
+
+    expect(userGetCase.status).toBe(200);
+    expect(userGetCase.body.result.movements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stage: "conciliacao",
+          visibility: "public"
+        })
+      ])
+    );
+  });
+
+  it("deve permitir parecer do operador, mensagens e configuracao de taxa inicial", async () => {
+    const app = buildTestApp();
+
+    const createCase = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Caso para validar fluxo de parecer, mensagens e taxa inicial."
+      });
+
+    expect(createCase.status).toBe(201);
+    const caseId = createCase.body.result.id as string;
+
+    const reviewResponse = await request(app)
+      .post(`/v1/cases/${caseId}/review`)
+      .set("Authorization", "Bearer token-operator")
+      .send({
+        decision: "accepted",
+        reason: "Caso com elementos suficientes para prosseguir nesta etapa.",
+        requestClientData: true,
+        clientDataRequest: "Enviar comprovante de pagamento e nota fiscal."
+      });
+
+    expect(reviewResponse.status).toBe(200);
+    expect(reviewResponse.body.result).toMatchObject({
+      id: caseId,
+      reviewDecision: "accepted",
+      workflowStep: "awaiting_client_data",
+      clientDataRequest: "Enviar comprovante de pagamento e nota fiscal."
+    });
+
+    const clientMessageResponse = await request(app)
+      .post(`/v1/cases/${caseId}/messages`)
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        message: "Segue os documentos solicitados para continuidade."
+      });
+
+    expect(clientMessageResponse.status).toBe(201);
+    expect(clientMessageResponse.body.result.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          senderRole: "client"
+        })
+      ])
+    );
+
+    const feeResponse = await request(app)
+      .post(`/v1/cases/${caseId}/service-fee`)
+      .set("Authorization", "Bearer token-operator")
+      .send({
+        amount: 180,
+        dueDate: "2026-03-25"
+      });
+
+    expect(feeResponse.status).toBe(200);
+    expect(feeResponse.body.result).toMatchObject({
+      workflowStep: "awaiting_initial_fee",
+      serviceFee: {
+        amount: 180,
+        dueDate: "2026-03-25",
+        provider: "asaas",
+        status: "awaiting_payment"
+      }
+    });
+  });
+
+  it("deve ocultar movimentacao interna para o cliente e permitir download de anexo publico", async () => {
+    const app = buildTestApp();
+
+    const createCase = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Caso para validar visibilidade de movimentacoes e anexos."
+      });
+
+    expect(createCase.status).toBe(201);
+    const caseId = createCase.body.result.id as string;
+
+    const internalMovement = await request(app)
+      .post(`/v1/cases/${caseId}/movements`)
+      .set("Authorization", "Bearer token-operator")
+      .send({
+        stage: "andamento",
+        description: "Anotacao interna de estrategia para audiencia de conciliacao.",
+        visibility: "internal",
+        status: "em_analise"
+      });
+
+    expect(internalMovement.status).toBe(201);
+
+    const publicMovement = await request(app)
+      .post(`/v1/cases/${caseId}/movements`)
+      .set("Authorization", "Bearer token-operator")
+      .send({
+        stage: "protocolo",
+        description: "Documento de protocolo juntado ao caso para consulta da parte autora.",
+        visibility: "public",
+        status: "em_analise"
+      });
+
+    expect(publicMovement.status).toBe(201);
+    const publicMovementId = publicMovement.body.result.movement.id as string;
+
+    const uploadMovementAttachment = await request(app)
+      .post(`/v1/cases/${caseId}/movements/${publicMovementId}/attachments`)
+      .set("Authorization", "Bearer token-operator")
+      .attach("attachments", Buffer.from("arquivo publico do movimento"), "movimento-publico.txt");
+
+    expect(uploadMovementAttachment.status).toBe(200);
+
+    const userGetCase = await request(app)
+      .get(`/v1/cases/${caseId}`)
+      .set("Authorization", "Bearer token-user-a");
+
+    expect(userGetCase.status).toBe(200);
+    expect(userGetCase.body.result.movements).toEqual(
+      expect.not.arrayContaining([
+        expect.objectContaining({
+          visibility: "internal"
+        })
+      ])
+    );
+    expect(userGetCase.body.result.movements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: publicMovementId,
+          visibility: "public"
+        })
+      ])
+    );
+
+    const movementFromUserView = userGetCase.body.result.movements.find(
+      (item: { id: string }) => item.id === publicMovementId
+    ) as { attachments: Array<{ id: string }> } | undefined;
+    if (!movementFromUserView || movementFromUserView.attachments.length === 0) {
+      throw new Error("Movimentação pública sem anexos para download.");
+    }
+    const movementAttachmentId = movementFromUserView.attachments[0].id;
+
+    const downloadMovementAttachment = await request(app)
+      .get(`/v1/cases/${caseId}/movements/${publicMovementId}/attachments/${movementAttachmentId}`)
+      .set("Authorization", "Bearer token-user-a")
+      .buffer(true)
+      .parse(parseBinaryResponse);
+
+    expect(downloadMovementAttachment.status).toBe(200);
+    expect(downloadMovementAttachment.body.toString("utf-8")).toContain("arquivo publico do movimento");
+  });
+
+  it("deve listar operadores para alocacao manual no painel", async () => {
+    const app = buildTestApp();
+
+    await request(app)
+      .get("/v1/auth/session")
+      .set("Authorization", "Bearer token-master");
+
+    await request(app)
+      .get("/v1/auth/session")
+      .set("Authorization", "Bearer token-operator");
+
+    const response = await request(app)
+      .get("/v1/admin/operators")
+      .set("Authorization", "Bearer token-master");
+
+    expect(response.status).toBe(200);
+    expect(response.body.result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "master-user",
+          isMaster: true
+        }),
+        expect.objectContaining({
+          id: "operator-user",
+          isOperator: true
+        })
+      ])
+    );
   });
 
   it("deve permitir usuario excluir a propria conta e casos", async () => {

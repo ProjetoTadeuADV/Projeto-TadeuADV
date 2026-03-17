@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { validateCreateCaseInput, validateRegisterAvailabilityPayload } from "./caseInput.js";
+import {
+  validateAccountProfilePatchPayload,
+  validateAssignOperatorPayload,
+  validateCaseMessagePayload,
+  validateCaseMovementPayload,
+  validateCaseReviewPayload,
+  validateCaseServiceFeePayload,
+  validateCreateCaseInput,
+  validateRegisterAvailabilityPayload
+} from "./caseInput.js";
 import { CASE_STATUS_LABELS, isCaseStatus } from "../types/case.js";
 
 describe("validateCreateCaseInput", () => {
@@ -34,6 +43,23 @@ describe("validateCreateCaseInput", () => {
           "Restituicao em dobro dos valores cobrados indevidamente.",
           "Condenacao em danos morais em valor a ser arbitrado."
         ],
+        timelineEvents: [
+          {
+            eventDate: "2026-02-01",
+            description: "Compra realizada no site da reclamada."
+          },
+          {
+            eventDate: "2026-02-05",
+            description: "Produto entregue de forma divergente da oferta."
+          }
+        ],
+        pretensions: [
+          {
+            type: "ressarcimento_valor",
+            amount: 2500.5,
+            details: "Reembolso integral do valor pago."
+          }
+        ],
         evidence: "Faturas, comprovantes de pagamento e protocolos de atendimento.",
         claimValue: 2500.5,
         hearingInterest: true
@@ -45,6 +71,23 @@ describe("validateCreateCaseInput", () => {
       defendantDocument: "12345678000190",
       claimSubject: "Cobranca indevida",
       attachments: [],
+      timelineEvents: [
+        {
+          eventDate: "2026-02-01",
+          description: "Compra realizada no site da reclamada."
+        },
+        {
+          eventDate: "2026-02-05",
+          description: "Produto entregue de forma divergente da oferta."
+        }
+      ],
+      pretensions: [
+        {
+          type: "ressarcimento_valor",
+          amount: 2500.5,
+          details: "Reembolso integral do valor pago."
+        }
+      ],
       requests: [
         "Restituicao em dobro dos valores cobrados indevidamente.",
         "Condenacao em danos morais em valor a ser arbitrado."
@@ -79,6 +122,12 @@ describe("validateCreateCaseInput", () => {
           legalGrounds:
             "A pratica configura cobranca indevida e violacao aos deveres de boa-fe objetiva e informacao.",
           requests: ["Restituicao em dobro dos valores cobrados indevidamente."],
+          timelineEvents: [
+            {
+              eventDate: "2026-02-01",
+              description: "Compra realizada no site da reclamada."
+            }
+          ],
           hearingInterest: true
         }
       })
@@ -105,5 +154,123 @@ describe("validateRegisterAvailabilityPayload", () => {
       cpf: "93541134780",
       email: "usuario@exemplo.com"
     });
+  });
+});
+
+describe("validateAssignOperatorPayload", () => {
+  it("deve validar o operador informado para alocação", () => {
+    const parsed = validateAssignOperatorPayload({
+      operatorUserId: "operator-user"
+    });
+
+    expect(parsed.operatorUserId).toBe("operator-user");
+  });
+});
+
+describe("validateCaseMovementPayload", () => {
+  it("deve validar movimentação pública com atualização de status", () => {
+    const parsed = validateCaseMovementPayload({
+      stage: "conciliacao",
+      description: "Contato inicial realizado e proposta enviada para a parte reclamada.",
+      visibility: "public",
+      status: "em_analise"
+    });
+
+    expect(parsed).toEqual({
+      stage: "conciliacao",
+      description: "Contato inicial realizado e proposta enviada para a parte reclamada.",
+      visibility: "public",
+      status: "em_analise"
+    });
+  });
+});
+
+describe("validateCaseReviewPayload", () => {
+  it("deve validar parecer aceito com solicitacao de dados", () => {
+    const parsed = validateCaseReviewPayload({
+      decision: "accepted",
+      reason: "Ha viabilidade juridica para seguir com o caso nesta etapa.",
+      requestClientData: true,
+      clientDataRequest: "Enviar nota fiscal e comprovante de tentativa de solucao administrativa."
+    });
+
+    expect(parsed).toEqual({
+      decision: "accepted",
+      reason: "Ha viabilidade juridica para seguir com o caso nesta etapa.",
+      requestClientData: true,
+      clientDataRequest: "Enviar nota fiscal e comprovante de tentativa de solucao administrativa."
+    });
+  });
+});
+
+describe("validateCaseMessagePayload", () => {
+  it("deve validar mensagem simples do caso", () => {
+    const parsed = validateCaseMessagePayload({
+      message: "Segue comprovante atualizado conforme solicitado."
+    });
+
+    expect(parsed.message).toBe("Segue comprovante atualizado conforme solicitado.");
+  });
+});
+
+describe("validateCaseServiceFeePayload", () => {
+  it("deve validar valor e vencimento da taxa inicial", () => {
+    const parsed = validateCaseServiceFeePayload({
+      amount: 180.5,
+      dueDate: "2026-03-25"
+    });
+
+    expect(parsed).toEqual({
+      amount: 180.5,
+      dueDate: "2026-03-25"
+    });
+  });
+});
+
+describe("validateAccountProfilePatchPayload", () => {
+  it("deve normalizar campos opcionais do perfil", () => {
+    const parsed = validateAccountProfilePatchPayload({
+      cpf: "935.411.347-80",
+      rg: "12.345.678-9",
+      rgIssuer: "SSP/SP",
+      birthDate: "1990-05-17",
+      maritalStatus: "Casado(a)",
+      profession: "Analista de sistemas",
+      address: {
+        cep: "01001-000",
+        street: "Praça da Sé",
+        number: "100",
+        complement: "Sala 12",
+        neighborhood: "Sé",
+        city: "São Paulo",
+        state: "SP"
+      }
+    });
+
+    expect(parsed).toEqual({
+      cpf: "93541134780",
+      rg: "12.345.678-9",
+      rgIssuer: "SSP/SP",
+      birthDate: "1990-05-17",
+      maritalStatus: "Casado(a)",
+      profession: "Analista de sistemas",
+      address: {
+        cep: "01001000",
+        street: "Praça da Sé",
+        number: "100",
+        complement: "Sala 12",
+        neighborhood: "Sé",
+        city: "São Paulo",
+        state: "SP"
+      }
+    });
+  });
+
+  it("deve rejeitar CPF invalido no patch de perfil", () => {
+    expect(() =>
+      validateAccountProfilePatchPayload({
+        cpf: "111.111.111-11"
+      })
+    ).toThrowError(/CPF inválido/);
   });
 });

@@ -26,6 +26,12 @@ const baseSidebarMenu: SidebarMenuItem[] = [
     icon: "N"
   },
   {
+    id: "mensagens",
+    path: "/messages",
+    label: "Mensagens",
+    icon: "MS"
+  },
+  {
     id: "pagina-1",
     label: "Página 1",
     icon: "1",

@@ -1,5 +1,11 @@
 ﻿import { PDFDocument, StandardFonts, type PDFFont, type PDFPage } from "pdf-lib";
-import type { CaseRecord, PetitionAttachment, UserRecord } from "../types/case.js";
+import type {
+  CaseRecord,
+  PetitionAttachment,
+  PetitionPretension,
+  PetitionTimelineEvent,
+  UserRecord
+} from "../types/case.js";
 import { isValidCpf, normalizeCpf } from "../utils/cpf.js";
 import { HttpError } from "../utils/httpError.js";
 
@@ -17,6 +23,7 @@ interface PetitionPdfContext {
 
 interface PetitionData {
   caseId: string;
+  caseCode: string;
   varaNome: string;
   authorName: string;
   authorCpf: string;
@@ -28,8 +35,10 @@ interface PetitionData {
   defendantAddress: string | null;
   summary: string;
   facts: string;
+  timelineEvents: PetitionTimelineEvent[];
   legalGrounds: string;
   requests: string[];
+  pretensions: PetitionPretension[];
   evidence: string | null;
   attachments: PetitionAttachment[];
   claimValue: number | null;
@@ -281,6 +290,53 @@ function formatCurrencyBr(value: number | null): string {
   }).format(value);
 }
 
+function formatEventDateBr(value: string): string {
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
+  }).format(parsed);
+}
+
+function formatPretensionLabel(value: PetitionPretension["type"]): string {
+  switch (value) {
+    case "ressarcimento_valor":
+      return "Ressarcimento de valor";
+    case "indenizacao_danos":
+      return "Indenização por danos morais ou materiais";
+    case "cumprimento_compromisso":
+      return "Cumprimento de compromisso acordado";
+    case "retratacao":
+      return "Retratação";
+    case "devolucao_produto":
+      return "Devolução do produto com ressarcimento";
+    case "outro":
+      return "Outro pedido";
+    default:
+      return "Pedido";
+  }
+}
+
+function formatPretensionSummary(item: PetitionPretension): string {
+  const label = formatPretensionLabel(item.type);
+  const details = normalizeOptionalText(item.details);
+  const amount =
+    typeof item.amount === "number" && Number.isFinite(item.amount)
+      ? ` (valor sugerido: ${formatCurrencyBr(item.amount)})`
+      : "";
+
+  if (details) {
+    return `${label}: ${details}${amount}`;
+  }
+
+  return `${label}${amount}`;
+}
+
 function formatAttachmentSize(sizeBytes: number): string {
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
     return "0 B";
@@ -320,6 +376,7 @@ function resolveLocalDateLine(claimantAddress: string | null): string {
 
 function buildPetitionData(context: PetitionPdfContext): PetitionData {
   const caseId = normalizeText(context.caseItem.id);
+  const caseCode = normalizeText(context.caseItem.caseCode);
   const varaNome = normalizeText(context.caseItem.varaNome);
   const authorCpf = normalizeCpf(context.caseItem.cpf);
   const summary = normalizeText(context.caseItem.resumo);
@@ -332,6 +389,10 @@ function buildPetitionData(context: PetitionPdfContext): PetitionData {
   const validationErrors: string[] = [];
   if (!caseId) {
     validationErrors.push("Identificador do caso não encontrado.");
+  }
+
+  if (!caseCode) {
+    validationErrors.push("Código do caso não encontrado.");
   }
 
   if (varaNome.length < 3) {
@@ -369,6 +430,7 @@ function buildPetitionData(context: PetitionPdfContext): PetitionData {
 
   return {
     caseId,
+    caseCode,
     varaNome,
     authorName,
     authorCpf,
@@ -380,10 +442,12 @@ function buildPetitionData(context: PetitionPdfContext): PetitionData {
     defendantAddress: petitionInitial?.defendantAddress ?? null,
     summary,
     facts: petitionInitial?.facts ?? summary,
+    timelineEvents: petitionInitial?.timelineEvents ?? [],
     legalGrounds:
       petitionInitial?.legalGrounds ??
       "Os fatos narrados indicam violação de direito material, com necessidade de tutela jurisdicional para recomposição integral do dano suportado.",
     requests: petitionInitial?.requests.length ? petitionInitial.requests : fallbackRequests,
+    pretensions: petitionInitial?.pretensions ?? [],
     evidence: petitionInitial?.evidence ?? null,
     attachments: petitionInitial?.attachments ?? [],
     claimValue: petitionInitial?.claimValue ?? null,
@@ -467,6 +531,21 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
   });
 
   writer.writeSectionTitle("II - DOS FATOS");
+  if (data.timelineEvents.length > 0) {
+    writer.writeParagraph("Cronologia dos eventos narrados:", {
+      font: regularFont,
+      fontSize: 11,
+      lineHeight: 17,
+      firstLineIndent: 22
+    });
+    writer.writeNumberedList(
+      data.timelineEvents.map(
+        (item) => `${formatEventDateBr(item.eventDate)} - ${item.description}`
+      ),
+      10.8,
+      16.5
+    );
+  }
   writer.writeParagraph(data.facts, {
     font: regularFont,
     fontSize: 11,
@@ -484,6 +563,15 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
 
   writer.writeSectionTitle("IV - DOS PEDIDOS");
   writer.writeNumberedList(data.requests, 11, 17);
+  if (data.pretensions.length > 0) {
+    writer.writeParagraph("Pretensões declaradas na triagem:", {
+      font: regularFont,
+      fontSize: 11,
+      lineHeight: 17,
+      firstLineIndent: 22
+    });
+    writer.writeNumberedList(data.pretensions.map((item) => formatPretensionSummary(item)), 10.8, 16.5);
+  }
 
   writer.writeSectionTitle("V - DO VALOR DA CAUSA");
   writer.writeParagraph(`Dá-se à causa o valor de ${formatCurrencyBr(data.claimValue)}.`, {
@@ -537,7 +625,7 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
 
   writer.addSpace(10);
   writer.writeParagraph(
-    `Referência interna do caso: ${data.caseId}. Cliente identificado na triagem: ${data.clientName ?? "não informado"}. E-mail para contato: ${data.authorEmail ?? "não informado"}.`,
+    `Referência interna do caso: ${data.caseCode} (id ${data.caseId}). Cliente identificado na triagem: ${data.clientName ?? "não informado"}. E-mail para contato: ${data.authorEmail ?? "não informado"}.`,
     {
       font: regularFont,
       fontSize: 10.5,
@@ -566,7 +654,8 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
   addPageNumbers(pdf, regularFont);
 
   const bytes = await pdf.save();
-  const fileName = `peticao-inicial-${data.caseId}.pdf`;
+  const normalizedCode = data.caseCode.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+  const fileName = `peticao-inicial-${normalizedCode}.pdf`;
   return { fileName, bytes };
 }
 

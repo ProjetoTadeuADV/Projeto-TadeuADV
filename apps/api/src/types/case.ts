@@ -1,4 +1,4 @@
-export const CASE_STATUSES = ["recebido", "em_analise", "encerrado"] as const;
+﻿export const CASE_STATUSES = ["recebido", "em_analise", "encerrado"] as const;
 
 export type CaseStatus = (typeof CASE_STATUSES)[number];
 
@@ -12,6 +12,35 @@ export function isCaseStatus(value: string): value is CaseStatus {
   return CASE_STATUSES.includes(value as CaseStatus);
 }
 
+export type CaseMovementStage =
+  | "triagem"
+  | "conciliacao"
+  | "peticao"
+  | "protocolo"
+  | "andamento"
+  | "solucao"
+  | "outro";
+
+export const CASE_MOVEMENT_STAGES: CaseMovementStage[] = [
+  "triagem",
+  "conciliacao",
+  "peticao",
+  "protocolo",
+  "andamento",
+  "solucao",
+  "outro"
+];
+
+export const CASE_MOVEMENT_STAGE_LABELS: Record<CaseMovementStage, string> = {
+  triagem: "Triagem",
+  conciliacao: "Conciliação",
+  peticao: "Petição",
+  protocolo: "Protocolo",
+  andamento: "Andamento",
+  solucao: "Solução",
+  outro: "Outro"
+};
+
 export interface CpfConsultaResult {
   cpf: string;
   nome: string;
@@ -22,6 +51,25 @@ export interface CpfConsultaResult {
 
 export type PetitionDefendantType = "pessoa_fisica" | "pessoa_juridica" | "nao_informado";
 
+export interface PetitionTimelineEvent {
+  eventDate: string;
+  description: string;
+}
+
+export type PetitionPretensionType =
+  | "ressarcimento_valor"
+  | "indenizacao_danos"
+  | "cumprimento_compromisso"
+  | "retratacao"
+  | "devolucao_produto"
+  | "outro";
+
+export interface PetitionPretension {
+  type: PetitionPretensionType;
+  amount: number | null;
+  details: string | null;
+}
+
 export interface PetitionAttachment {
   id: string;
   originalName: string;
@@ -29,6 +77,51 @@ export interface PetitionAttachment {
   mimeType: string;
   sizeBytes: number;
   uploadedAt: string;
+}
+
+export type CaseMovementVisibility = "public" | "internal";
+
+export type CaseReviewDecision = "pending" | "accepted" | "rejected";
+
+export type CaseWorkflowStep =
+  | "triage"
+  | "awaiting_client_data"
+  | "awaiting_initial_fee"
+  | "in_progress"
+  | "closed";
+
+export type CaseMessageSenderRole = "client" | "operator" | "master" | "system";
+
+export interface CaseServiceFee {
+  amount: number;
+  dueDate: string;
+  provider: "asaas";
+  status: "draft" | "awaiting_payment" | "paid" | "canceled";
+  externalReference: string | null;
+  paymentUrl: string | null;
+  updatedAt: string;
+}
+
+export interface CaseMessageRecord {
+  id: string;
+  caseId: string;
+  senderUserId: string;
+  senderName: string | null;
+  senderRole: CaseMessageSenderRole;
+  message: string;
+  createdAt: string;
+}
+
+export interface CaseMovementRecord {
+  id: string;
+  stage: CaseMovementStage;
+  description: string;
+  visibility: CaseMovementVisibility;
+  createdAt: string;
+  createdByUserId: string;
+  createdByName: string | null;
+  statusAfter: CaseStatus;
+  attachments: PetitionAttachment[];
 }
 
 export interface PetitionInitialData {
@@ -41,6 +134,8 @@ export interface PetitionInitialData {
   facts: string;
   legalGrounds: string;
   requests: string[];
+  timelineEvents: PetitionTimelineEvent[];
+  pretensions: PetitionPretension[];
   evidence: string | null;
   attachments: PetitionAttachment[];
   claimValue: number | null;
@@ -49,6 +144,7 @@ export interface PetitionInitialData {
 
 export interface CaseRecord {
   id: string;
+  caseCode: string;
   userId: string;
   varaId: string;
   varaNome: string;
@@ -56,6 +152,20 @@ export interface CaseRecord {
   resumo: string;
   cpfConsulta: CpfConsultaResult | null;
   petitionInitial?: PetitionInitialData | null;
+  assignedOperatorId: string | null;
+  assignedOperatorName: string | null;
+  assignedAt: string | null;
+  reviewDecision: CaseReviewDecision;
+  reviewReason: string | null;
+  reviewedAt: string | null;
+  reviewedByUserId: string | null;
+  reviewedByName: string | null;
+  clientDataRequest: string | null;
+  clientDataRequestedAt: string | null;
+  workflowStep: CaseWorkflowStep;
+  serviceFee: CaseServiceFee | null;
+  messages: CaseMessageRecord[];
+  movements: CaseMovementRecord[];
   status: CaseStatus;
   createdAt: string;
   updatedAt: string;
@@ -79,6 +189,20 @@ export interface UserRecord {
   nameCustomized?: boolean;
   avatarUrlCustomized?: boolean;
   cpf?: string | null;
+  rg?: string | null;
+  rgIssuer?: string | null;
+  birthDate?: string | null;
+  maritalStatus?: string | null;
+  profession?: string | null;
+  address?: {
+    cep: string | null;
+    street: string | null;
+    number: string | null;
+    complement: string | null;
+    neighborhood: string | null;
+    city: string | null;
+    state: string | null;
+  } | null;
   emailVerified: boolean;
   isMaster: boolean;
   isOperator?: boolean;

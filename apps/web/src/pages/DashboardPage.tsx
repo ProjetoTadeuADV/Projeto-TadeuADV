@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
-import type { CaseRecord } from "../types";
+import type { CaseMovementRecord, CaseRecord } from "../types";
 
 const STATUS_LABEL: Record<CaseRecord["status"], string> = {
   recebido: "Recebido",
@@ -16,8 +16,36 @@ const CPF_STATUS_LABEL: Record<NonNullable<CaseRecord["cpfConsulta"]>["situacao"
   indisponivel: "Indisponível"
 };
 
+const MOVEMENT_STAGE_LABEL: Record<CaseMovementRecord["stage"], string> = {
+  triagem: "Triagem",
+  conciliacao: "Conciliação",
+  peticao: "Petição",
+  protocolo: "Protocolo",
+  andamento: "Andamento",
+  solucao: "Solução",
+  outro: "Outro"
+};
+
+const REVIEW_LABEL: Record<CaseRecord["reviewDecision"], string> = {
+  pending: "Em triagem",
+  accepted: "Aceito",
+  rejected: "Rejeitado"
+};
+
+const WORKFLOW_LABEL: Record<CaseRecord["workflowStep"], string> = {
+  triage: "Triagem",
+  awaiting_client_data: "Aguardando dados do cliente",
+  awaiting_initial_fee: "Aguardando pagamento inicial",
+  in_progress: "Em andamento",
+  closed: "Encerrado"
+};
+
 type StatusFilter = "todos" | CaseRecord["status"];
 type SortOption = "updated_desc" | "updated_asc" | "created_desc" | "created_asc";
+
+function formatDate(dateIso: string): string {
+  return new Date(dateIso).toLocaleString("pt-BR");
+}
 
 function resolveClientName(item: CaseRecord): string {
   const byApiField = item.clienteNome?.trim();
@@ -47,8 +75,37 @@ function resolveCreatorName(item: CaseRecord): string {
   return "Não informado";
 }
 
+function resolveAssignedOperator(item: CaseRecord): string {
+  const name = item.assignedOperatorName?.trim();
+  if (name) {
+    return name;
+  }
+
+  const id = item.assignedOperatorId?.trim();
+  if (id) {
+    return id;
+  }
+
+  return "Sem operador";
+}
+
+function resolveLatestMovement(item: CaseRecord): CaseMovementRecord | null {
+  if (!item.movements || item.movements.length === 0) {
+    return null;
+  }
+
+  return item.movements.reduce((latest, current) => {
+    return latest.createdAt > current.createdAt ? latest : current;
+  }, item.movements[0]);
+}
+
+function countPublicUpdates(item: CaseRecord): number {
+  const publicMovements = (item.movements ?? []).filter((movement) => movement.visibility === "public");
+  return Math.max(0, publicMovements.length - 1);
+}
+
 export function DashboardPage() {
-  const { getToken, canCreateCases, canAccessAdmin } = useAuth();
+  const { getToken, canCreateCases, canAccessAdmin, user } = useAuth();
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -79,22 +136,34 @@ export function DashboardPage() {
 
   const totalCases = cases.length;
   const recebidos = useMemo(() => cases.filter((item) => item.status === "recebido").length, [cases]);
-  const emAnalise = useMemo(
-    () => cases.filter((item) => item.status === "em_analise").length,
+  const emAnalise = useMemo(() => cases.filter((item) => item.status === "em_analise").length, [cases]);
+  const encerrados = useMemo(() => cases.filter((item) => item.status === "encerrado").length, [cases]);
+  const publicUpdates = useMemo(
+    () => cases.reduce((total, item) => total + countPublicUpdates(item), 0),
     [cases]
   );
-  const encerrados = useMemo(() => cases.filter((item) => item.status === "encerrado").length, [cases]);
   const normalizedSearch = useMemo(() => search.trim().toLowerCase(), [search]);
 
   const filteredCases = useMemo(() => {
-    const byStatus =
-      statusFilter === "todos" ? cases : cases.filter((item) => item.status === statusFilter);
+    const byStatus = statusFilter === "todos" ? cases : cases.filter((item) => item.status === statusFilter);
 
     const bySearch =
       normalizedSearch.length === 0
         ? byStatus
         : byStatus.filter((item) => {
-            const content = `${item.varaNome} ${item.cpf} ${item.resumo} ${resolveClientName(item)} ${resolveCreatorName(item)}`.toLowerCase();
+            const latestMovement = resolveLatestMovement(item);
+            const content = [
+              item.varaNome,
+              item.caseCode,
+              item.cpf,
+              item.resumo,
+              resolveClientName(item),
+              resolveCreatorName(item),
+              resolveAssignedOperator(item),
+              latestMovement?.description ?? ""
+            ]
+              .join(" ")
+              .toLowerCase();
             return content.includes(normalizedSearch);
           });
 
@@ -116,7 +185,36 @@ export function DashboardPage() {
   }, [cases, normalizedSearch, sortBy, statusFilter]);
 
   const hasCases = cases.length > 0;
-  const hasFilteredCases = filteredCases.length > 0;
+  const myAssignedCases = useMemo(() => {
+    if (!canAccessAdmin) {
+      return filteredCases;
+    }
+
+    if (!user?.uid) {
+      return [];
+    }
+
+    return filteredCases.filter((item) => item.assignedOperatorId === user.uid);
+  }, [canAccessAdmin, filteredCases, user?.uid]);
+
+  const openOtherCases = useMemo(() => {
+    if (!canAccessAdmin) {
+      return [];
+    }
+
+    if (!user?.uid) {
+      return filteredCases;
+    }
+
+    return filteredCases.filter((item) => item.assignedOperatorId !== user.uid && item.status !== "encerrado");
+  }, [canAccessAdmin, filteredCases, user?.uid]);
+
+  const hasFilteredCases = canAccessAdmin
+    ? myAssignedCases.length > 0 || openOtherCases.length > 0
+    : filteredCases.length > 0;
+  const displayedCasesCount = canAccessAdmin
+    ? myAssignedCases.length + openOtherCases.length
+    : filteredCases.length;
   const hasActiveFilters = normalizedSearch.length > 0 || statusFilter !== "todos" || sortBy !== "updated_desc";
 
   function resetFilters() {
@@ -129,6 +227,124 @@ export function DashboardPage() {
     setExpandedCaseId((current) => (current === caseId ? null : caseId));
   }
 
+  function renderCaseCards(items: CaseRecord[], layout: "grid" | "list" = "grid") {
+    return (
+      <div className={layout === "list" ? "card-grid card-grid--list" : "card-grid"}>
+        {items.map((item) => {
+          const clientName = resolveClientName(item);
+          const creatorName = resolveCreatorName(item);
+          const latestMovement = resolveLatestMovement(item);
+          const isExpanded = expandedCaseId === item.id;
+
+          return (
+            <article key={item.id} className={`case-card ${isExpanded ? "case-card--expanded" : ""}`}>
+              <div className="case-card-top">
+                <div className="case-card-title-wrap">
+                  <Link to={`/cases/${item.id}`} className="case-card-title-link">
+                    {item.varaNome}
+                  </Link>
+                  <small className="case-card-code">{item.caseCode}</small>
+                </div>
+                <div className="case-card-top-actions">
+                  <span className={`status-badge status-badge--review-${item.reviewDecision}`}>
+                    {REVIEW_LABEL[item.reviewDecision]}
+                  </span>
+                  <span className={`status-badge status-badge--${item.status}`}>{STATUS_LABEL[item.status]}</span>
+                </div>
+              </div>
+
+              <div className="case-card-meta case-card-meta--three">
+                <span>
+                  <small>Nome</small>
+                  {canAccessAdmin ? creatorName : clientName}
+                </span>
+                <span>
+                  <small>CPF</small>
+                  {item.cpf}
+                </span>
+                <span>
+                  <small>Abertura</small>
+                  {formatDate(item.createdAt)}
+                </span>
+              </div>
+
+              {!canAccessAdmin && (
+                <p className="case-card-operator-inline">Operador: {resolveAssignedOperator(item)}</p>
+              )}
+
+              <div className="case-card-actions">
+                <button
+                  type="button"
+                  className="secondary-button case-card-detail-button"
+                  onClick={() => toggleExpanded(item.id)}
+                >
+                  {isExpanded ? "Ocultar detalhes" : "Ver detalhes"}
+                </button>
+              </div>
+
+              {isExpanded && (
+                <div className="case-card-details">
+                  <div className="case-card-detail-grid">
+                    <div>
+                      <small>Código do caso</small>
+                      <p>{item.caseCode}</p>
+                    </div>
+                    <div>
+                      <small>Vara</small>
+                      <p>{item.varaNome}</p>
+                    </div>
+                    <div>
+                      <small>Status do CPF</small>
+                      <p>{item.cpfConsulta ? CPF_STATUS_LABEL[item.cpfConsulta.situacao] : "Não informado"}</p>
+                    </div>
+                    <div>
+                      <small>Parecer</small>
+                      <p>{REVIEW_LABEL[item.reviewDecision]}</p>
+                    </div>
+                    <div>
+                      <small>Atualizado em</small>
+                      <p>{formatDate(item.updatedAt)}</p>
+                    </div>
+                    <div>
+                      <small>Fase do fluxo</small>
+                      <p>{WORKFLOW_LABEL[item.workflowStep]}</p>
+                    </div>
+                    <div>
+                      <small>Operador alocado</small>
+                      <p>{resolveAssignedOperator(item)}</p>
+                    </div>
+                    {canAccessAdmin && (
+                      <div>
+                        <small>Conta responsável</small>
+                        <p>{item.responsavelNome ?? item.responsavelEmail ?? "Não informado"}</p>
+                      </div>
+                    )}
+                    <div>
+                      <small>Última movimentação</small>
+                      <p>{latestMovement ? formatDate(latestMovement.createdAt) : "Sem movimentações"}</p>
+                    </div>
+                  </div>
+
+                  {latestMovement && (
+                    <div className="case-card-description">
+                      <small>{MOVEMENT_STAGE_LABEL[latestMovement.stage]}</small>
+                      <p>{latestMovement.description}</p>
+                    </div>
+                  )}
+
+                  <div className="case-card-description">
+                    <small>Descrição do pedido</small>
+                    <p>{item.resumo}</p>
+                  </div>
+                </div>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <section className="page-stack">
       <section className="workspace-hero workspace-hero--simple">
@@ -138,10 +354,10 @@ export function DashboardPage() {
             <h1>{canAccessAdmin ? "Todos os casos" : "Meus casos"}</h1>
             <p>
               {canAccessAdmin
-                ? "Visualize todos os casos cadastrados pelos clientes e acompanhe o andamento completo."
+                ? "Visualize todos os casos cadastrados, faça alocações e acompanhe as movimentações."
                 : canCreateCases
-                  ? "Veja seus atendimentos, acompanhe o andamento e abra um novo caso quando precisar."
-                  : "Veja os atendimentos e acompanhe o andamento em modo somente leitura."}
+                  ? "Acompanhe as atualizações do caso, respostas da conciliação e próximos passos."
+                  : "Visualize os atendimentos em modo somente leitura."}
             </p>
             {canCreateCases && (
               <div className="hero-cta">
@@ -171,6 +387,10 @@ export function DashboardPage() {
             <span>Encerrados</span>
           </li>
         </ul>
+
+        {!canAccessAdmin && publicUpdates > 0 && (
+          <p className="helper-text">Você recebeu {publicUpdates} atualização(ões) públicas em seus casos.</p>
+        )}
       </section>
 
       <section className="workspace-panel">
@@ -179,8 +399,8 @@ export function DashboardPage() {
             <h2>Lista de casos</h2>
             <p>
               {canAccessAdmin
-                ? "Expanda os blocos para ver detalhes da requisição, vara e descrição do pedido."
-                : "Expanda os blocos para ver detalhes da requisição, vara e descrição do pedido."}
+                ? "Expanda para consultar operador alocado, movimentações e documentos do caso."
+                : "Expanda para acompanhar status, movimentações públicas e documentos anexados."}
             </p>
           </div>
           {canCreateCases && (
@@ -195,7 +415,7 @@ export function DashboardPage() {
             <span>Busca</span>
             <input
               type="search"
-              placeholder="Buscar por nome, CPF, vara ou resumo"
+              placeholder="Buscar por nome, CPF, vara, operador ou resumo"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
@@ -203,10 +423,7 @@ export function DashboardPage() {
 
           <label>
             <span>Status</span>
-            <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-            >
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}>
               <option value="todos">Todos</option>
               <option value="recebido">Recebido</option>
               <option value="em_analise">Em análise</option>
@@ -216,10 +433,7 @@ export function DashboardPage() {
 
           <label>
             <span>Ordenar</span>
-            <select
-              value={sortBy}
-              onChange={(event) => setSortBy(event.target.value as SortOption)}
-            >
+            <select value={sortBy} onChange={(event) => setSortBy(event.target.value as SortOption)}>
               <option value="updated_desc">Atualização mais recente</option>
               <option value="updated_asc">Atualização mais antiga</option>
               <option value="created_desc">Abertura mais recente</option>
@@ -236,7 +450,7 @@ export function DashboardPage() {
 
         {hasCases && (
           <p className="case-filters-count">
-            Mostrando {filteredCases.length} de {cases.length} casos.
+            Mostrando {displayedCasesCount} de {cases.length} casos.
           </p>
         )}
 
@@ -271,86 +485,40 @@ export function DashboardPage() {
           </div>
         )}
 
-        {hasFilteredCases && (
-          <div className="card-grid">
-            {filteredCases.map((item) => {
-              const clientName = resolveClientName(item);
-              const creatorName = resolveCreatorName(item);
-              const isExpanded = expandedCaseId === item.id;
-
-              return (
-                <article key={item.id} className={`case-card ${isExpanded ? "case-card--expanded" : ""}`}>
-                  <div className="case-card-top">
-                    <strong>{item.varaNome}</strong>
-                    <div className="case-card-top-actions">
-                      <span className={`status-badge status-badge--${item.status}`}>
-                        {STATUS_LABEL[item.status]}
-                      </span>
-                      <button
-                        type="button"
-                        className={isExpanded ? "case-expand-toggle case-expand-toggle--open" : "case-expand-toggle"}
-                        aria-label={isExpanded ? "Recolher detalhes" : "Expandir detalhes"}
-                        onClick={() => toggleExpanded(item.id)}
-                      >
-                        <span aria-hidden="true">▾</span>
-                      </button>
-                    </div>
+        {hasFilteredCases &&
+          (canAccessAdmin ? (
+            <div className="page-stack page-stack--tight">
+              <section className="workspace-panel workspace-panel--muted">
+                <header className="page-header">
+                  <div>
+                    <h2>Meus Casos</h2>
+                    <p>Casos atualmente designados para você.</p>
                   </div>
+                </header>
+                {myAssignedCases.length === 0 ? (
+                  <p className="helper-text">Nenhum caso designado para você no momento.</p>
+                ) : (
+                  renderCaseCards(myAssignedCases, "list")
+                )}
+              </section>
 
-                  <div className="case-card-meta case-card-meta--three">
-                    <span>
-                      <small>Nome</small>
-                      {canAccessAdmin ? creatorName : clientName}
-                    </span>
-                    <span>
-                      <small>CPF</small>
-                      {item.cpf}
-                    </span>
-                    <span>
-                      <small>Abertura</small>
-                      {new Date(item.createdAt).toLocaleString("pt-BR")}
-                    </span>
+              <section className="workspace-panel workspace-panel--muted">
+                <header className="page-header">
+                  <div>
+                    <h2>Lista de Casos</h2>
+                    <p>Demais casos em aberto não designados para você.</p>
                   </div>
-
-                  <div className="case-card-actions">
-                    <Link to={`/cases/${item.id}`} className="hero-secondary case-card-link">
-                      Ver página completa
-                    </Link>
-                  </div>
-
-                  {isExpanded && (
-                    <div className="case-card-details">
-                      <div className="case-card-detail-grid">
-                        <div>
-                          <small>Vara</small>
-                          <p>{item.varaNome}</p>
-                        </div>
-                        <div>
-                          <small>Status do CPF</small>
-                          <p>{item.cpfConsulta ? CPF_STATUS_LABEL[item.cpfConsulta.situacao] : "Não informado"}</p>
-                        </div>
-                        <div>
-                          <small>Atualizado em</small>
-                          <p>{new Date(item.updatedAt).toLocaleString("pt-BR")}</p>
-                        </div>
-                        {canAccessAdmin && (
-                          <div>
-                            <small>Conta responsável</small>
-                            <p>{item.responsavelNome ?? item.responsavelEmail ?? "Não informado"}</p>
-                          </div>
-                        )}
-                      </div>
-                      <div className="case-card-description">
-                        <small>Descrição do pedido</small>
-                        <p>{item.resumo}</p>
-                      </div>
-                    </div>
-                  )}
-                </article>
-              );
-            })}
-          </div>
-        )}
+                </header>
+                {openOtherCases.length === 0 ? (
+                  <p className="helper-text">Não há outros casos em aberto fora da sua fila.</p>
+                ) : (
+                  renderCaseCards(openOtherCases, "list")
+                )}
+              </section>
+            </div>
+          ) : (
+            renderCaseCards(filteredCases)
+          ))}
       </section>
     </section>
   );

@@ -7,10 +7,21 @@ import { VARAS } from "../constants/varas.js";
 import type { AppDependencies } from "../dependencies.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { FirestoreCaseRepository } from "../repositories/firestoreCaseRepository.js";
-import type { CaseRecord, UserRecord } from "../types/case.js";
+import {
+  CASE_MOVEMENT_STAGE_LABELS,
+  CASE_STATUS_LABELS,
+  type CaseMovementRecord,
+  type CaseRecord,
+  type UserRecord
+} from "../types/case.js";
 import {
   validateAccountProfilePatchPayload,
   validateAccessLevelPayload,
+  validateAssignOperatorPayload,
+  validateCaseMessagePayload,
+  validateCaseMovementPayload,
+  validateCaseReviewPayload,
+  validateCaseServiceFeePayload,
   validateCreateCaseInput,
   validateCpfLookupPayload,
   validateLoginIdentifierPayload,
@@ -22,6 +33,10 @@ import {
   isCustomVerificationEmailEnabled,
   sendCustomVerificationEmail
 } from "../services/verificationEmailSender.js";
+import {
+  isCaseNotificationEmailEnabled,
+  sendCaseNotificationEmail
+} from "../services/caseNotificationSender.js";
 import { generateInitialPetitionPdf } from "../services/petitionPdf.js";
 import {
   MAX_ATTACHMENTS_PER_CASE,
@@ -127,6 +142,44 @@ function enrichCaseWithOwner(
   };
 }
 
+function toPublicCaseView(caseItem: CaseRecord): CaseRecord {
+  return {
+    ...caseItem,
+    movements: (caseItem.movements ?? []).filter((movement) => movement.visibility === "public")
+  };
+}
+
+function findMovementById(caseItem: CaseRecord, movementId: string): CaseMovementRecord | null {
+  return (caseItem.movements ?? []).find((item) => item.id === movementId) ?? null;
+}
+
+async function resolveCaseByAccess(
+  deps: AppDependencies,
+  user: { uid: string; isMaster: boolean; isOperator?: boolean },
+  caseId: string
+): Promise<CaseRecord | null> {
+  if (canAccessAdminPanel(user)) {
+    const allCases = await deps.repository.listAllCases();
+    return allCases.find((item) => item.id === caseId) ?? null;
+  }
+
+  return deps.repository.getCaseByIdForUser(caseId, user.uid);
+}
+
+function resolveSenderRole(
+  user: { isMaster: boolean; isOperator?: boolean } | null | undefined
+): "client" | "operator" | "master" {
+  if (user?.isMaster) {
+    return "master";
+  }
+
+  if (user?.isOperator) {
+    return "operator";
+  }
+
+  return "client";
+}
+
 function summarizeAdminUser(user: UserRecord, userCases: CaseRecord[]) {
   const activeCases = userCases.filter((item) => item.status !== "encerrado").length;
   const bootstrapMaster = isMasterEmail(user.email);
@@ -166,7 +219,14 @@ function buildCurrentUserProfile(
     email: resolvedEmail,
     firebaseUid: fallback.uid,
     name: resolvedName,
-    avatarUrl: resolvedAvatarUrl
+    avatarUrl: resolvedAvatarUrl,
+    cpf: userRecord?.cpf ?? null,
+    rg: userRecord?.rg ?? null,
+    rgIssuer: userRecord?.rgIssuer ?? null,
+    birthDate: userRecord?.birthDate ?? null,
+    maritalStatus: userRecord?.maritalStatus ?? null,
+    profession: userRecord?.profession ?? null,
+    address: userRecord?.address ?? null
   };
 }
 
@@ -274,6 +334,70 @@ function normalizeEmail(value: string | null | undefined): string | null {
 
   const trimmed = value.trim().toLowerCase();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+async function notifyCaseOwnerByEmail(
+  deps: AppDependencies,
+  caseItem: CaseRecord,
+  movement: CaseMovementRecord
+): Promise<void> {
+  if (!isCaseNotificationEmailEnabled()) {
+    return;
+  }
+
+  const owner = await deps.repository.getUserById(caseItem.userId);
+  const ownerEmail = normalizeEmail(owner?.email);
+  if (!ownerEmail) {
+    return;
+  }
+
+  const isInternal = movement.visibility === "internal";
+  const description = isInternal
+    ? "Houve uma atualização interna no seu caso. A equipe responsável já registrou o andamento."
+    : movement.description;
+  const stageLabel = isInternal
+    ? `${CASE_MOVEMENT_STAGE_LABELS[movement.stage]} (interna)`
+    : CASE_MOVEMENT_STAGE_LABELS[movement.stage];
+
+  await sendCaseNotificationEmail({
+    toEmail: ownerEmail,
+    toName: owner?.name ?? caseItem.cpfConsulta?.nome ?? null,
+    caseId: caseItem.id,
+    varaNome: caseItem.varaNome,
+    stageLabel,
+    description,
+    statusLabel: CASE_STATUS_LABELS[movement.statusAfter]
+  });
+}
+
+async function notifyCaseOwnerByCustomUpdate(
+  deps: AppDependencies,
+  caseItem: CaseRecord,
+  input: {
+    stageLabel: string;
+    description: string;
+    statusAfter: CaseRecord["status"];
+  }
+): Promise<void> {
+  if (!isCaseNotificationEmailEnabled()) {
+    return;
+  }
+
+  const owner = await deps.repository.getUserById(caseItem.userId);
+  const ownerEmail = normalizeEmail(owner?.email);
+  if (!ownerEmail) {
+    return;
+  }
+
+  await sendCaseNotificationEmail({
+    toEmail: ownerEmail,
+    toName: owner?.name ?? caseItem.cpfConsulta?.nome ?? null,
+    caseId: caseItem.id,
+    varaNome: caseItem.varaNome,
+    stageLabel: input.stageLabel,
+    description: input.description,
+    statusLabel: CASE_STATUS_LABELS[input.statusAfter]
+  });
 }
 
 async function emailExistsInFirebaseAuth(email: string): Promise<boolean> {
@@ -659,6 +783,17 @@ export function createV1Router(deps: AppDependencies) {
       }
 
       const payload = validateAccountProfilePatchPayload(req.body);
+
+      if (Object.prototype.hasOwnProperty.call(payload, "cpf") && payload.cpf) {
+        const existingCpfUser = await deps.repository.findUserByCpf(payload.cpf);
+        if (existingCpfUser && existingCpfUser.id !== req.user.uid) {
+          throw new HttpError(
+            409,
+            'Já existe uma conta com este CPF. Faça login ou use "Esqueci minha senha".'
+          );
+        }
+      }
+
       const updated = await deps.repository.updateAccountProfile(req.user.uid, payload);
 
       res.status(200).json({
@@ -754,7 +889,7 @@ export function createV1Router(deps: AppDependencies) {
       const cases = await deps.repository.listCasesByUserId(req.user.uid);
       res.status(200).json({
         status: "ok",
-        result: cases
+        result: cases.map((item) => toPublicCaseView(item))
       });
     } catch (error) {
       next(error);
@@ -792,7 +927,7 @@ export function createV1Router(deps: AppDependencies) {
 
       res.status(200).json({
         status: "ok",
-        result: found
+        result: toPublicCaseView(found)
       });
     } catch (error) {
       next(error);
@@ -837,6 +972,418 @@ export function createV1Router(deps: AppDependencies) {
         const updated = await deps.repository.appendCaseAttachments(caseItem.id, req.user.uid, storedAttachments);
         if (!updated) {
           throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        res.status(200).json({
+          status: "ok",
+          result: updated
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/assign-operator",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        ensureAdminPanelAccess(req.user);
+
+        const payload = validateAssignOperatorPayload(req.body);
+        const operator = await deps.repository.getUserById(payload.operatorUserId);
+        if (!operator) {
+          throw new HttpError(404, "Operador não encontrado.");
+        }
+
+        if (!operator.isMaster && operator.isOperator !== true) {
+          throw new HttpError(400, "Selecione um usuário com perfil operador ou master para alocação.");
+        }
+
+        const updated = await deps.repository.assignCaseOperator(
+          req.params.id,
+          {
+            id: operator.id,
+            name: operator.name ?? operator.email ?? null
+          },
+          {
+            id: req.user.uid,
+            name: req.user.name ?? req.user.email ?? null
+          }
+        );
+
+        if (!updated) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const latestMovement = updated.movements[updated.movements.length - 1] ?? null;
+        if (latestMovement) {
+          void notifyCaseOwnerByEmail(deps, updated, latestMovement).catch((error) => {
+            const details = error instanceof Error ? error.message : "unknown";
+            console.error("case-notification-email-failed", {
+              caseId: updated.id,
+              movementId: latestMovement.id,
+              details
+            });
+          });
+        }
+
+        res.status(200).json({
+          status: "ok",
+          result: updated
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/movements",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        ensureAdminPanelAccess(req.user);
+
+        const payload = validateCaseMovementPayload(req.body);
+        const allCases = await deps.repository.listAllCases();
+        const currentCase = allCases.find((item) => item.id === req.params.id);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const appended = await deps.repository.appendCaseMovement(req.params.id, {
+          stage: payload.stage,
+          description: payload.description,
+          visibility: payload.visibility,
+          createdByUserId: req.user.uid,
+          createdByName: req.user.name ?? req.user.email ?? null,
+          statusAfter: payload.status ?? currentCase.status
+        });
+
+        if (!appended) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        void notifyCaseOwnerByEmail(deps, appended.caseItem, appended.movement).catch((error) => {
+          const details = error instanceof Error ? error.message : "unknown";
+          console.error("case-notification-email-failed", {
+            caseId: appended.caseItem.id,
+            movementId: appended.movement.id,
+            details
+          });
+        });
+
+        res.status(201).json({
+          status: "ok",
+          result: appended
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/review",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        ensureAdminPanelAccess(req.user);
+
+        const payload = validateCaseReviewPayload(req.body);
+        const allCases = await deps.repository.listAllCases();
+        const currentCase = allCases.find((item) => item.id === req.params.id);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const now = new Date().toISOString();
+        const actorName = req.user.name ?? req.user.email ?? null;
+        const senderRole = resolveSenderRole(req.user);
+
+        const isRejected = payload.decision === "rejected";
+        const nextStatus: CaseRecord["status"] = isRejected ? "encerrado" : "em_analise";
+        const nextWorkflow: CaseRecord["workflowStep"] = isRejected
+          ? "closed"
+          : payload.requestClientData
+            ? "awaiting_client_data"
+            : "awaiting_initial_fee";
+
+        const movementDescription = isRejected
+          ? `Caso rejeitado na análise inicial. Motivo: ${payload.reason}`
+          : payload.requestClientData
+            ? `Caso aceito na análise inicial. Dados adicionais solicitados ao cliente. ${payload.reason}`
+            : `Caso aceito na análise inicial. Segue para etapa de cobrança da taxa inicial. ${payload.reason}`;
+
+        const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
+          stage: "triagem",
+          description: movementDescription,
+          visibility: "public",
+          createdByUserId: req.user.uid,
+          createdByName: actorName,
+          statusAfter: nextStatus
+        });
+        if (!appendedMovement) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const reviewed = await deps.repository.updateCaseWorkflow(req.params.id, {
+          status: nextStatus,
+          reviewDecision: payload.decision,
+          reviewReason: payload.reason,
+          reviewedAt: now,
+          reviewedByUserId: req.user.uid,
+          reviewedByName: actorName,
+          clientDataRequest: payload.requestClientData ? payload.clientDataRequest : null,
+          clientDataRequestedAt: payload.requestClientData ? now : null,
+          workflowStep: nextWorkflow
+        });
+        if (!reviewed) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const clientMessage = isRejected
+          ? `Seu caso foi rejeitado na análise inicial. Motivo: ${payload.reason}`
+          : payload.requestClientData
+            ? `Seu caso foi aceito. Para continuar, envie os dados solicitados: ${payload.clientDataRequest ?? ""}`
+            : "Seu caso foi aceito e seguirá para andamento após o pagamento da taxa inicial de serviço.";
+
+        const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
+          senderUserId: req.user.uid,
+          senderName: actorName,
+          senderRole,
+          message: clientMessage
+        });
+
+        const latestCase = withMessage ?? reviewed;
+
+        void notifyCaseOwnerByCustomUpdate(deps, latestCase, {
+          stageLabel: "Análise inicial",
+          description: clientMessage,
+          statusAfter: latestCase.status
+        }).catch((error) => {
+          const details = error instanceof Error ? error.message : "unknown";
+          console.error("case-notification-email-failed", {
+            caseId: latestCase.id,
+            details
+          });
+        });
+
+        res.status(200).json({
+          status: "ok",
+          result: latestCase
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/service-fee",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        ensureAdminPanelAccess(req.user);
+
+        const payload = validateCaseServiceFeePayload(req.body);
+        const allCases = await deps.repository.listAllCases();
+        const currentCase = allCases.find((item) => item.id === req.params.id);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        if (currentCase.reviewDecision === "rejected") {
+          throw new HttpError(400, "Não é possível cadastrar cobrança para caso rejeitado.");
+        }
+
+        const now = new Date().toISOString();
+        const actorName = req.user.name ?? req.user.email ?? null;
+        const senderRole = resolveSenderRole(req.user);
+
+        const withFee = await deps.repository.updateCaseWorkflow(req.params.id, {
+          status: "em_analise",
+          workflowStep: "awaiting_initial_fee",
+          serviceFee: {
+            amount: payload.amount,
+            dueDate: payload.dueDate,
+            provider: "asaas",
+            status: "awaiting_payment",
+            externalReference: null,
+            paymentUrl: null,
+            updatedAt: now
+          }
+        });
+        if (!withFee) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const movementDescription = `Taxa inicial de serviço configurada em ${new Intl.NumberFormat("pt-BR", {
+          style: "currency",
+          currency: "BRL"
+        }).format(payload.amount)} com vencimento em ${payload.dueDate}.`;
+
+        const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
+          stage: "andamento",
+          description: movementDescription,
+          visibility: "public",
+          createdByUserId: req.user.uid,
+          createdByName: actorName,
+          statusAfter: "em_analise"
+        });
+        if (!appendedMovement) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const paymentMessage =
+          "Para o andamento do caso, é necessário o pagamento da taxa inicial de serviço. Confira o valor e vencimento no detalhamento do caso.";
+        const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
+          senderUserId: req.user.uid,
+          senderName: actorName,
+          senderRole,
+          message: paymentMessage
+        });
+
+        const latestCase = withMessage ?? appendedMovement.caseItem;
+
+        void notifyCaseOwnerByCustomUpdate(deps, latestCase, {
+          stageLabel: "Pagamento inicial",
+          description: paymentMessage,
+          statusAfter: latestCase.status
+        }).catch((error) => {
+          const details = error instanceof Error ? error.message : "unknown";
+          console.error("case-notification-email-failed", {
+            caseId: latestCase.id,
+            details
+          });
+        });
+
+        res.status(200).json({
+          status: "ok",
+          result: latestCase
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/messages",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        const payload = validateCaseMessagePayload(req.body);
+        const caseItem = await resolveCaseByAccess(deps, req.user, req.params.id);
+        if (!caseItem) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const senderRole = resolveSenderRole(req.user);
+        const senderName = req.user.name ?? req.user.email ?? null;
+        const updated = await deps.repository.appendCaseMessage(req.params.id, {
+          senderUserId: req.user.uid,
+          senderName,
+          senderRole,
+          message: payload.message
+        });
+        if (!updated) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        if (senderRole === "operator" || senderRole === "master") {
+          void notifyCaseOwnerByCustomUpdate(deps, updated, {
+            stageLabel: "Mensagens do caso",
+            description: payload.message,
+            statusAfter: updated.status
+          }).catch((error) => {
+            const details = error instanceof Error ? error.message : "unknown";
+            console.error("case-notification-email-failed", {
+              caseId: updated.id,
+              details
+            });
+          });
+        }
+
+        res.status(201).json({
+          status: "ok",
+          result: canAccessAdminPanel(req.user) ? updated : toPublicCaseView(updated)
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/movements/:movementId/attachments",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        ensureAdminPanelAccess(req.user);
+
+        let files: Express.Multer.File[] = [];
+        try {
+          files = await runCaseAttachmentUpload(req, res);
+        } catch (uploadError) {
+          throw toAttachmentUploadError(uploadError);
+        }
+
+        if (files.length === 0) {
+          throw new HttpError(400, "Selecione ao menos um anexo para envio.");
+        }
+
+        const allCases = await deps.repository.listAllCases();
+        const caseItem = allCases.find((item) => item.id === req.params.id);
+        if (!caseItem) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const movement = findMovementById(caseItem, req.params.movementId);
+        if (!movement) {
+          throw new HttpError(404, "Movimentação não encontrada para este caso.");
+        }
+
+        const existingAttachments = movement.attachments ?? [];
+        if (existingAttachments.length + files.length > MAX_ATTACHMENTS_PER_CASE) {
+          throw new HttpError(400, `Limite de ${MAX_ATTACHMENTS_PER_CASE} anexos por movimentação.`);
+        }
+
+        const storedAttachments = await storeCaseAttachments(caseItem.id, files);
+        const updated = await deps.repository.appendMovementAttachments(
+          caseItem.id,
+          req.params.movementId,
+          storedAttachments
+        );
+
+        if (!updated) {
+          throw new HttpError(404, "Caso ou movimentação não encontrados.");
         }
 
         res.status(200).json({
@@ -896,6 +1443,63 @@ export function createV1Router(deps: AppDependencies) {
   );
 
   router.get(
+    "/cases/:id/movements/:movementId/attachments/:attachmentId",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        let caseItem: CaseRecord | null = null;
+        const isAdminUser = canAccessAdminPanel(req.user);
+
+        if (isAdminUser) {
+          const allCases = await deps.repository.listAllCases();
+          caseItem = allCases.find((item) => item.id === req.params.id) ?? null;
+        } else {
+          caseItem = await deps.repository.getCaseByIdForUser(req.params.id, req.user.uid);
+        }
+
+        if (!caseItem) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const movement = findMovementById(caseItem, req.params.movementId);
+        if (!movement) {
+          throw new HttpError(404, "Movimentação não encontrada para este caso.");
+        }
+
+        if (!isAdminUser && movement.visibility !== "public") {
+          throw new HttpError(404, "Movimentação não encontrada para este caso.");
+        }
+
+        const selectedAttachment =
+          (movement.attachments ?? []).find((item) => item.id === req.params.attachmentId) ?? null;
+        if (!selectedAttachment) {
+          throw new HttpError(404, "Anexo não encontrado para esta movimentação.");
+        }
+
+        const filePath = resolveCaseAttachmentPath(caseItem.id, selectedAttachment.storedName);
+        let fileBuffer: Buffer;
+        try {
+          fileBuffer = await fs.readFile(filePath);
+        } catch {
+          throw new HttpError(404, "Arquivo de anexo não encontrado no armazenamento.");
+        }
+
+        const safeDownloadName = selectedAttachment.originalName.replace(/[\"\\]/g, "_");
+        res.setHeader("Content-Type", selectedAttachment.mimeType || "application/octet-stream");
+        res.setHeader("Content-Length", String(fileBuffer.length));
+        res.setHeader("Content-Disposition", `attachment; filename=\"${safeDownloadName}\"`);
+        res.status(200).send(fileBuffer);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.get(
     "/cases/:id/peticao-inicial.pdf",
     authMiddleware(deps.authVerifier, deps.repository),
     async (req, res, next) => {
@@ -931,6 +1535,43 @@ export function createV1Router(deps: AppDependencies) {
       }
     }
   );
+
+  router.get("/admin/operators", authMiddleware(deps.authVerifier, deps.repository), async (req, res, next) => {
+    try {
+      if (!req.user) {
+        throw new HttpError(401, "Usuário não autenticado.");
+      }
+
+      ensureAdminPanelAccess(req.user);
+
+      const users = await deps.repository.listUsers();
+      const operators = users
+        .filter((item) => item.isMaster || item.isOperator)
+        .map((item) => ({
+          id: item.id,
+          name: item.name ?? null,
+          email: item.email ?? null,
+          isMaster: item.isMaster,
+          isOperator: item.isOperator ?? false
+        }))
+        .sort((a, b) => {
+          if (a.isMaster !== b.isMaster) {
+            return a.isMaster ? -1 : 1;
+          }
+
+          const nameA = (a.name ?? a.email ?? a.id).toLowerCase();
+          const nameB = (b.name ?? b.email ?? b.id).toLowerCase();
+          return nameA.localeCompare(nameB, "pt-BR");
+        });
+
+      res.status(200).json({
+        status: "ok",
+        result: operators
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
 
   router.get("/admin/overview", authMiddleware(deps.authVerifier, deps.repository), async (req, res, next) => {
     try {
