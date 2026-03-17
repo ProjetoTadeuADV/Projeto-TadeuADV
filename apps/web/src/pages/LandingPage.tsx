@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest } from "../lib/api";
@@ -41,6 +41,11 @@ export function LandingPage() {
   const [activeReview, setActiveReview] = useState(0);
   const [varas, setVaras] = useState<VaraOption[]>([]);
   const [loadingVaras, setLoadingVaras] = useState(true);
+  const [isInlineCtaVisible, setIsInlineCtaVisible] = useState(false);
+  const [isFloatingCtaDismissed, setIsFloatingCtaDismissed] = useState(false);
+  const [isFloatingCtaClosing, setIsFloatingCtaClosing] = useState(false);
+  const inlineCtaRef = useRef<HTMLElement | null>(null);
+  const dismissTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     async function loadVaras() {
@@ -66,7 +71,63 @@ export function LandingPage() {
     return () => window.clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const target = inlineCtaRef.current;
+    if (!target) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (!entry) {
+          return;
+        }
+
+        const fullyVisible = entry.isIntersecting && entry.intersectionRatio >= 0.92;
+        setIsInlineCtaVisible(fullyVisible);
+      },
+      {
+        threshold: [0, 0.25, 0.5, 0.75, 0.92, 1]
+      }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!isInlineCtaVisible) {
+      return;
+    }
+
+    setIsFloatingCtaDismissed(false);
+    setIsFloatingCtaClosing(false);
+  }, [isInlineCtaVisible]);
+
+  useEffect(() => {
+    return () => {
+      if (dismissTimerRef.current !== null) {
+        window.clearTimeout(dismissTimerRef.current);
+      }
+    };
+  }, []);
+
   const currentReview = useMemo(() => REVIEWS[activeReview], [activeReview]);
+  const showFloatingCta = !isInlineCtaVisible && (!isFloatingCtaDismissed || isFloatingCtaClosing);
+
+  function handleDismissFloatingCta() {
+    if (isFloatingCtaClosing) {
+      return;
+    }
+
+    setIsFloatingCtaClosing(true);
+    dismissTimerRef.current = window.setTimeout(() => {
+      setIsFloatingCtaDismissed(true);
+      setIsFloatingCtaClosing(false);
+      dismissTimerRef.current = null;
+    }, 320);
+  }
 
   return (
     <div className="landing-pro landing-pro--light">
@@ -80,8 +141,8 @@ export function LandingPage() {
             </h1>
             <p className="hero-signature">"O Doutor da Sua Causa é Você."</p>
             <p>
-              Estrutura profissional para abrir demandas, registrar informações com clareza e
-              acompanhar cada caso em um painel simples e direto.
+              Estrutura profissional para abrir demandas, registrar informações com clareza e acompanhar cada caso em
+              um painel simples e direto.
             </p>
 
             <div className="hero-cta">
@@ -109,11 +170,7 @@ export function LandingPage() {
           </div>
 
           <div className="landing-hero-media landing-hero-media--principal">
-            <img
-              src="/images/Langing.png"
-              alt="Ilustração principal da plataforma DoutorEu"
-              loading="lazy"
-            />
+            <img src="/images/Langing.png" alt="Ilustração principal da plataforma DoutorEu" loading="lazy" />
           </div>
         </div>
 
@@ -175,7 +232,7 @@ export function LandingPage() {
           <div className="landing-tab-panel">
             <section className="review-carousel" aria-live="polite">
               <article key={currentReview.id} className="review-card review-card--animated">
-                <p className="review-quote">“{currentReview.texto}”</p>
+                <p className="review-quote">"{currentReview.texto}"</p>
                 <div className="review-meta">
                   <strong>{currentReview.autor}</strong>
                   <span>{currentReview.perfil}</span>
@@ -296,14 +353,12 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section className="landing-block landing-block-dark">
+      <section ref={inlineCtaRef} className="landing-block landing-block-dark landing-block-dark--inline">
         <div className="landing-container cta-band cta-band--active">
           <div>
             <p className="hero-kicker">Últimas vagas do piloto</p>
             <h2>Crie sua conta hoje e publique seu primeiro caso em minutos</h2>
-            <p>
-              Entre agora, valide o fluxo com clientes reais e ganhe tração antes dos concorrentes.
-            </p>
+            <p>Entre agora, valide o fluxo com clientes reais e ganhe tração antes dos concorrentes.</p>
             <div className="cta-band-points">
               <span>Acesso imediato</span>
               <span>Sem cartão no plano Free</span>
@@ -322,6 +377,45 @@ export function LandingPage() {
           </div>
         </div>
       </section>
+
+      {showFloatingCta && (
+        <section
+          className={
+            isFloatingCtaClosing ? "landing-floating-cta landing-floating-cta--closing" : "landing-floating-cta"
+          }
+        >
+          <button
+            type="button"
+            className="cta-band-close"
+            aria-label="Ocultar faixa de chamada"
+            onClick={handleDismissFloatingCta}
+          >
+            {"\u00D7"}
+          </button>
+          <div className="landing-container cta-band cta-band--active">
+            <div>
+              <p className="hero-kicker">Últimas vagas do piloto</p>
+              <h2>Crie sua conta hoje e publique seu primeiro caso em minutos</h2>
+              <p>Entre agora, valide o fluxo com clientes reais e ganhe tração antes dos concorrentes.</p>
+              <div className="cta-band-points">
+                <span>Acesso imediato</span>
+                <span>Sem cartão no plano Free</span>
+                <span>Upgrade para premium quando quiser</span>
+              </div>
+            </div>
+            <div className="hero-cta">
+              <Link to={user ? "/cases/new" : "/register"} className="hero-primary">
+                {user ? "Abrir caso agora" : "Quero criar minha conta agora"}
+              </Link>
+              {!user && (
+                <Link to="/login" className="hero-secondary">
+                  Já tenho conta, entrar
+                </Link>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

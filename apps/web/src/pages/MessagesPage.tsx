@@ -1,4 +1,4 @@
-import { type ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
@@ -102,6 +102,26 @@ export function MessagesPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
 
+  const loadSelectedCase = useCallback(async () => {
+    if (!selectedCaseId || !cases.some((item) => item.id === selectedCaseId)) {
+      setSelectedCase(null);
+      return;
+    }
+
+    setLoadingThread(true);
+    setError(null);
+    try {
+      const token = await getToken();
+      const result = await apiRequest<CaseRecord>(`/v1/cases/${selectedCaseId}`, { token });
+      setSelectedCase(result);
+    } catch (nextError) {
+      const message = nextError instanceof ApiError ? nextError.message : "Falha ao carregar mensagens do caso.";
+      setError(message);
+    } finally {
+      setLoadingThread(false);
+    }
+  }, [cases, getToken, selectedCaseId]);
+
   useEffect(() => {
     async function loadCases() {
       setLoading(true);
@@ -131,28 +151,22 @@ export function MessagesPage() {
   }, [getToken, isMasterUser, isOperatorUser, requestedCaseId, user?.uid]);
 
   useEffect(() => {
-    async function loadSelectedCase() {
-      if (!selectedCaseId || !cases.some((item) => item.id === selectedCaseId)) {
-        setSelectedCase(null);
-        return;
-      }
+    void loadSelectedCase();
+  }, [loadSelectedCase]);
 
-      setLoadingThread(true);
-      setError(null);
-      try {
-        const token = await getToken();
-        const result = await apiRequest<CaseRecord>(`/v1/cases/${selectedCaseId}`, { token });
-        setSelectedCase(result);
-      } catch (nextError) {
-        const message = nextError instanceof ApiError ? nextError.message : "Falha ao carregar mensagens do caso.";
-        setError(message);
-      } finally {
-        setLoadingThread(false);
-      }
+  useEffect(() => {
+    if (!selectedCaseId) {
+      return;
     }
 
-    void loadSelectedCase();
-  }, [cases, getToken, selectedCaseId]);
+    const timer = window.setInterval(() => {
+      void loadSelectedCase();
+    }, 5000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [loadSelectedCase, selectedCaseId]);
 
   const orderedMessages = useMemo(() => {
     if (!selectedCase?.messages) {
