@@ -20,6 +20,8 @@ import {
   validateAssignOperatorPayload,
   validateCaseMessagePayload,
   validateCaseMovementPayload,
+  validateCaseCloseRequestDecisionPayload,
+  validateCaseCloseRequestPayload,
   validateCaseReviewPayload,
   validateCaseServiceFeePayload,
   validateCreateCaseInput,
@@ -222,6 +224,36 @@ function ensureCaseIsEditable(caseItem: CaseRecord): void {
   ) {
     throw new HttpError(409, "Caso rejeitado/encerrado. Não é possível editar no momento.");
   }
+}
+
+function filterAdminVisibleCases(
+  cases: CaseRecord[],
+  user: { uid: string; isMaster: boolean; isOperator?: boolean }
+): CaseRecord[] {
+  if (user.isMaster) {
+    return cases;
+  }
+
+  if (user.isOperator) {
+    return cases.filter((item) => item.assignedOperatorId === user.uid);
+  }
+
+  return [];
+}
+
+function ensureAdminCanViewCase(
+  user: { uid: string; isMaster: boolean; isOperator?: boolean },
+  caseItem: CaseRecord
+): void {
+  if (user.isMaster) {
+    return;
+  }
+
+  if (user.isOperator && caseItem.assignedOperatorId === user.uid) {
+    return;
+  }
+
+  throw new HttpError(404, "Caso não encontrado.");
 }
 
 function resolveSenderRole(
@@ -1119,8 +1151,9 @@ export function createV1Router(deps: AppDependencies) {
           deps.repository.listAllCases(),
           deps.repository.listUsers()
         ]);
+        const visibleCases = filterAdminVisibleCases(allCases, req.user);
         const usersById = new Map(users.map((item) => [item.id, item]));
-        const enrichedCases = allCases.map((item) => enrichCaseWithOwner(item, usersById));
+        const enrichedCases = visibleCases.map((item) => enrichCaseWithOwner(item, usersById));
 
         res.status(200).json({
           status: "ok",
@@ -1154,6 +1187,7 @@ export function createV1Router(deps: AppDependencies) {
         if (!found) {
           throw new HttpError(404, "Caso não encontrado.");
         }
+        ensureAdminCanViewCase(req.user, found);
 
         const usersById = new Map(users.map((item) => [item.id, item]));
         res.status(200).json({
@@ -1450,6 +1484,268 @@ export function createV1Router(deps: AppDependencies) {
   );
 
   router.post(
+    "/cases/:id/close-request",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        if (canAccessAdminPanel(req.user)) {
+          throw new HttpError(403, "A solicitação de encerramento deve ser feita pelo cliente responsável.");
+        }
+
+        const payload = validateCaseCloseRequestPayload(req.body);
+        const currentCase = await deps.repository.getCaseByIdForUser(req.params.id, req.user.uid);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        if (currentCase.status === "encerrado" || currentCase.workflowStep === "closed") {
+          throw new HttpError(409, "Este caso já está encerrado.");
+        }
+
+        if (currentCase.closeRequest.status === "pending") {
+          throw new HttpError(409, "Já existe uma solicitação de encerramento pendente para este caso.");
+        }
+
+        const now = new Date().toISOString();
+        const requesterName = req.user.name ?? req.user.email ?? null;
+        const movementDescription = `Cliente solicitou encerramento do caso. Justificativa: ${payload.reason}`;
+
+        const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
+          stage: "andamento",
+          description: movementDescription,
+          visibility: "public",
+          createdByUserId: req.user.uid,
+          createdByName: requesterName,
+          statusAfter: currentCase.status
+        });
+        if (!appendedMovement) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const withCloseRequest = await deps.repository.updateCaseWorkflow(req.params.id, {
+          closeRequest: {
+            status: "pending",
+            reason: payload.reason,
+            requestedAt: now,
+            requestedByUserId: req.user.uid,
+            requestedByName: requesterName,
+            decisionAt: null,
+            decidedByUserId: null,
+            decidedByName: null,
+            decisionReason: null
+          }
+        });
+        if (!withCloseRequest) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
+          senderUserId: req.user.uid,
+          senderName: requesterName,
+          senderRole: "client",
+          message: `Solicito o encerramento do caso. Justificativa: ${payload.reason}`
+        });
+
+        const latestCase = withMessage ?? withCloseRequest;
+
+        res.status(200).json({
+          status: "ok",
+          result: toPublicCaseView(latestCase)
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/close-request/decision",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        ensureAdminPanelAccess(req.user);
+
+        const payload = validateCaseCloseRequestDecisionPayload(req.body);
+        const allCases = await deps.repository.listAllCases();
+        const currentCase = allCases.find((item) => item.id === req.params.id);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+        ensureOperatorCanManageCase(req.user, currentCase);
+
+        if (currentCase.closeRequest.status !== "pending") {
+          throw new HttpError(409, "Não há solicitação de encerramento pendente para este caso.");
+        }
+
+        const now = new Date().toISOString();
+        const actorName = req.user.name ?? req.user.email ?? null;
+        const senderRole = resolveSenderRole(req.user);
+        const isApproved = payload.decision === "approved";
+
+        const movementDescription = isApproved
+          ? "Solicitação de encerramento do cliente aprovada pela equipe responsável."
+          : `Solicitação de encerramento do cliente recusada. Motivo: ${payload.reason}`;
+        const movementStatusAfter: CaseRecord["status"] = isApproved ? "encerrado" : currentCase.status;
+
+        const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
+          stage: isApproved ? "solucao" : "andamento",
+          description: movementDescription,
+          visibility: "public",
+          createdByUserId: req.user.uid,
+          createdByName: actorName,
+          statusAfter: movementStatusAfter
+        });
+        if (!appendedMovement) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const withDecision = await deps.repository.updateCaseWorkflow(req.params.id, {
+          ...(isApproved ? { status: "encerrado" as const, workflowStep: "closed" as const } : {}),
+          closeRequest: {
+            ...currentCase.closeRequest,
+            status: isApproved ? "approved" : "denied",
+            decisionAt: now,
+            decidedByUserId: req.user.uid,
+            decidedByName: actorName,
+            decisionReason: payload.reason
+          }
+        });
+        if (!withDecision) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const decisionMessage = isApproved
+          ? "Sua solicitação de encerramento foi aprovada. O caso foi encerrado."
+          : `Sua solicitação de encerramento foi recusada. Motivo: ${payload.reason}`;
+        const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
+          senderUserId: req.user.uid,
+          senderName: actorName,
+          senderRole,
+          message: decisionMessage
+        });
+
+        const latestCase = withMessage ?? withDecision;
+
+        void notifyCaseOwnerByCustomUpdate(deps, latestCase, {
+          stageLabel: "Solicitação de encerramento",
+          description: decisionMessage,
+          statusAfter: latestCase.status
+        }).catch((error) => {
+          const details = error instanceof Error ? error.message : "unknown";
+          console.error("case-notification-email-failed", {
+            caseId: latestCase.id,
+            details
+          });
+        });
+
+        res.status(200).json({
+          status: "ok",
+          result: canAccessAdminPanel(req.user) ? latestCase : toPublicCaseView(latestCase)
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/close",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        ensureAdminPanelAccess(req.user);
+
+        const allCases = await deps.repository.listAllCases();
+        const currentCase = allCases.find((item) => item.id === req.params.id);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+        ensureOperatorCanManageCase(req.user, currentCase);
+        ensureCaseIsEditable(currentCase);
+
+        const actorName = req.user.name ?? req.user.email ?? null;
+        const senderRole = resolveSenderRole(req.user);
+        const now = new Date().toISOString();
+
+        const movementDescription =
+          "Caso encerrado pela equipe responsável. Não há novas ações operacionais pendentes no momento.";
+        const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
+          stage: "solucao",
+          description: movementDescription,
+          visibility: "public",
+          createdByUserId: req.user.uid,
+          createdByName: actorName,
+          statusAfter: "encerrado"
+        });
+        if (!appendedMovement) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const closedCase = await deps.repository.updateCaseWorkflow(req.params.id, {
+          status: "encerrado",
+          workflowStep: "closed",
+          closeRequest:
+            currentCase.closeRequest.status === "pending"
+              ? {
+                  ...currentCase.closeRequest,
+                  status: "approved",
+                  decisionAt: now,
+                  decidedByUserId: req.user.uid,
+                  decidedByName: actorName,
+                  decisionReason: "Encerrado diretamente pela equipe responsável."
+                }
+              : currentCase.closeRequest
+        });
+        if (!closedCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const closeMessage =
+          "Seu caso foi encerrado pela equipe responsável. Você pode consultar o histórico e os anexos no painel.";
+        const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
+          senderUserId: req.user.uid,
+          senderName: actorName,
+          senderRole,
+          message: closeMessage
+        });
+
+        const latestCase = withMessage ?? closedCase;
+
+        void notifyCaseOwnerByCustomUpdate(deps, latestCase, {
+          stageLabel: "Encerramento do caso",
+          description: closeMessage,
+          statusAfter: latestCase.status
+        }).catch((error) => {
+          const details = error instanceof Error ? error.message : "unknown";
+          console.error("case-notification-email-failed", {
+            caseId: latestCase.id,
+            details
+          });
+        });
+
+        res.status(200).json({
+          status: "ok",
+          result: latestCase
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
     "/cases/:id/service-fee",
     authMiddleware(deps.authVerifier, deps.repository),
     async (req, res, next) => {
@@ -1676,6 +1972,9 @@ export function createV1Router(deps: AppDependencies) {
         if (!caseItem) {
           throw new HttpError(404, "Caso não encontrado.");
         }
+        if (canAccessAdminPanel(req.user)) {
+          ensureAdminCanViewCase(req.user, caseItem);
+        }
         ensureOperatorCanManageCase(req.user, caseItem);
         ensureCaseIsEditable(caseItem);
 
@@ -1768,6 +2067,9 @@ export function createV1Router(deps: AppDependencies) {
         if (!caseItem) {
           throw new HttpError(404, "Caso não encontrado.");
         }
+        if (canAccessAdminPanel(req.user)) {
+          ensureAdminCanViewCase(req.user, caseItem);
+        }
 
         const petitionAttachments = caseItem.petitionInitial?.attachments ?? [];
         const messageAttachments = (caseItem.messages ?? []).flatMap((message) => message.attachments ?? []);
@@ -1812,6 +2114,9 @@ export function createV1Router(deps: AppDependencies) {
         if (!caseItem) {
           throw new HttpError(404, "Caso não encontrado.");
         }
+        if (isAdminUser) {
+          ensureAdminCanViewCase(req.user, caseItem);
+        }
 
         const movement = findMovementById(caseItem, req.params.movementId);
         if (!movement) {
@@ -1841,6 +2146,79 @@ export function createV1Router(deps: AppDependencies) {
     }
   );
 
+  router.post(
+    "/cases/:id/peticao-inicial/attachment",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        let caseItem: CaseRecord | null = null;
+
+        if (canAccessAdminPanel(req.user)) {
+          const allCases = await deps.repository.listAllCases();
+          caseItem = allCases.find((item) => item.id === req.params.id) ?? null;
+          if (caseItem) {
+            ensureAdminCanViewCase(req.user, caseItem);
+          }
+        } else {
+          caseItem = await deps.repository.getCaseByIdForUser(req.params.id, req.user.uid);
+        }
+
+        if (!caseItem) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        if (!caseItem.petitionInitial) {
+          throw new HttpError(400, "Este caso ainda não possui petição estruturada para geração do PDF.");
+        }
+
+        const hasExistingGeneratedAttachment = (caseItem.petitionInitial.attachments ?? []).some((attachment) =>
+          attachment.originalName.toLowerCase().startsWith("peticao-inicial-")
+        );
+
+        if (hasExistingGeneratedAttachment) {
+          res.status(200).json({
+            status: "ok",
+            result: canAccessAdminPanel(req.user) ? caseItem : toPublicCaseView(caseItem)
+          });
+          return;
+        }
+
+        const currentPetitionAttachmentCount = caseItem.petitionInitial.attachments?.length ?? 0;
+        if (currentPetitionAttachmentCount >= MAX_ATTACHMENTS_PER_CASE) {
+          throw new HttpError(400, `Limite de ${MAX_ATTACHMENTS_PER_CASE} anexos por petição.`);
+        }
+
+        const owner = await deps.repository.getUserById(caseItem.userId);
+        const pdf = await generateInitialPetitionPdf({
+          caseItem,
+          owner
+        });
+
+        const generatedAttachment = await storeGeneratedCaseAttachment(caseItem.id, {
+          fileName: pdf.fileName,
+          mimeType: "application/pdf",
+          bytes: Buffer.from(pdf.bytes)
+        });
+
+        const updated = await deps.repository.appendCaseAttachments(caseItem.id, caseItem.userId, [generatedAttachment]);
+        if (!updated) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        res.status(200).json({
+          status: "ok",
+          result: canAccessAdminPanel(req.user) ? updated : toPublicCaseView(updated)
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
   router.get(
     "/cases/:id/peticao-inicial.pdf",
     authMiddleware(deps.authVerifier, deps.repository),
@@ -1861,6 +2239,9 @@ export function createV1Router(deps: AppDependencies) {
 
         if (!caseItem) {
           throw new HttpError(404, "Caso não encontrado.");
+        }
+        if (canAccessAdminPanel(req.user)) {
+          ensureAdminCanViewCase(req.user, caseItem);
         }
 
         const owner = await deps.repository.getUserById(caseItem.userId);

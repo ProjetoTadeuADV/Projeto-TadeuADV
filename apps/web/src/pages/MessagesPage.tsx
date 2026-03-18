@@ -1,5 +1,5 @@
 import { type ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
 import type { CaseMessageRecord, CaseRecord, PetitionAttachment } from "../types";
@@ -398,7 +398,11 @@ export function MessagesPage() {
                 <>
                   <header className="messages-thread-header">
                     <div>
-                      <h2>{selectedCase.varaNome}</h2>
+                      <h2>
+                        <Link to={`/cases/${selectedCase.id}`} className="messages-case-title-link">
+                          {selectedCase.varaNome}
+                        </Link>
+                      </h2>
                       <span>{selectedCase.caseCode}</span>
                     </div>
                     {loadingThread && <small>Atualizando...</small>}

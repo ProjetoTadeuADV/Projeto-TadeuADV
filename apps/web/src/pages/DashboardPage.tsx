@@ -118,6 +118,10 @@ function isRejectedCase(item: CaseRecord): boolean {
   return item.reviewDecision === "rejected" || item.workflowStep === "closed";
 }
 
+function isClosedCase(item: CaseRecord): boolean {
+  return item.status === "encerrado" || item.workflowStep === "closed";
+}
+
 export function DashboardPage() {
   const { getToken, canCreateCases, canAccessAdmin, isMasterUser, user } = useAuth();
   const [cases, setCases] = useState<CaseRecord[]>([]);
@@ -225,44 +229,66 @@ export function DashboardPage() {
   const hasCases = cases.length > 0;
   const myAssignedCases = useMemo(() => {
     if (!canAccessAdmin) {
-      return filteredCases;
+      return [];
     }
 
     if (!user?.uid) {
       return [];
     }
 
-    return filteredCases.filter((item) => item.assignedOperatorId === user.uid && !isRejectedCase(item));
+    return filteredCases.filter((item) => item.assignedOperatorId === user.uid && !isClosedCase(item));
   }, [canAccessAdmin, filteredCases, user?.uid]);
 
   const openOtherCases = useMemo(() => {
-    if (!canAccessAdmin) {
+    if (!canAccessAdmin || !isMasterUser) {
       return [];
     }
 
     if (!user?.uid) {
-      return filteredCases;
+      return filteredCases.filter((item) => !isClosedCase(item));
     }
 
-    return filteredCases.filter(
-      (item) => item.assignedOperatorId !== user.uid && item.status !== "encerrado" && !isRejectedCase(item)
-    );
-  }, [canAccessAdmin, filteredCases, user?.uid]);
+    return filteredCases.filter((item) => item.assignedOperatorId !== user.uid && !isClosedCase(item));
+  }, [canAccessAdmin, filteredCases, isMasterUser, user?.uid]);
 
-  const rejectedCases = useMemo(() => {
+  const closedCases = useMemo(() => {
     if (!canAccessAdmin) {
       return [];
     }
 
-    return filteredCases.filter((item) => isRejectedCase(item));
+    if (isMasterUser) {
+      return filteredCases.filter((item) => isClosedCase(item));
+    }
+
+    if (!user?.uid) {
+      return [];
+    }
+
+    return filteredCases.filter((item) => item.assignedOperatorId === user.uid && isClosedCase(item));
+  }, [canAccessAdmin, filteredCases, isMasterUser, user?.uid]);
+
+  const clientOpenCases = useMemo(() => {
+    if (canAccessAdmin) {
+      return [];
+    }
+
+    return filteredCases.filter((item) => !isClosedCase(item));
+  }, [canAccessAdmin, filteredCases]);
+
+  const clientClosedCases = useMemo(() => {
+    if (canAccessAdmin) {
+      return [];
+    }
+
+    return filteredCases.filter((item) => isClosedCase(item));
   }, [canAccessAdmin, filteredCases]);
 
   const hasFilteredCases = canAccessAdmin
-    ? myAssignedCases.length > 0 || openOtherCases.length > 0 || rejectedCases.length > 0
-    : filteredCases.length > 0;
+    ? myAssignedCases.length > 0 || openOtherCases.length > 0 || closedCases.length > 0
+    : clientOpenCases.length > 0 || clientClosedCases.length > 0;
   const displayedCasesCount = canAccessAdmin
-    ? myAssignedCases.length + openOtherCases.length + rejectedCases.length
-    : filteredCases.length;
+    ? myAssignedCases.length + openOtherCases.length + closedCases.length
+    : clientOpenCases.length + clientClosedCases.length;
   const hasActiveFilters = normalizedSearch.length > 0 || statusFilter !== "todos" || sortBy !== "updated_desc";
   const operatorOptions = useMemo(() => operators.filter((item) => item.isOperator), [operators]);
 
@@ -362,6 +388,9 @@ export function DashboardPage() {
                   <small className="case-card-code">{item.caseCode}</small>
                 </div>
                 <div className="case-card-top-actions">
+                  {item.closeRequest.status === "pending" && (
+                    <span className="status-badge status-badge--close-request-pending">Encerramento solicitado</span>
+                  )}
                   <span className={`status-badge status-badge--review-${item.reviewDecision}`}>
                     {REVIEW_LABEL[item.reviewDecision]}
                   </span>
@@ -498,11 +527,15 @@ export function DashboardPage() {
       <section className="workspace-hero workspace-hero--simple">
         <div className="workspace-hero-grid">
           <div>
-            <p className="hero-kicker">{canAccessAdmin ? "Painel administrativo" : "Área do cliente"}</p>
-            <h1>{canAccessAdmin ? "Todos os casos" : "Meus casos"}</h1>
+            <p className="hero-kicker">
+              {canAccessAdmin ? (isMasterUser ? "Painel administrativo" : "Painel do operador") : "Área do cliente"}
+            </p>
+            <h1>{canAccessAdmin ? (isMasterUser ? "Todos os casos" : "Meus casos designados") : "Meus casos"}</h1>
             <p>
               {canAccessAdmin
-                ? "Visualize todos os casos cadastrados, faça alocações e acompanhe as movimentações."
+                ? isMasterUser
+                  ? "Visualize todos os casos cadastrados, faça alocações e acompanhe as movimentações."
+                  : "Acompanhe os casos designados para você e registre as movimentações operacionais."
                 : canCreateCases
                   ? "Acompanhe as atualizações do caso, respostas da conciliação e próximos passos."
                   : "Visualize os atendimentos em modo somente leitura."}
@@ -652,36 +685,70 @@ export function DashboardPage() {
                 )}
               </section>
 
+              {isMasterUser && (
+                <section className="workspace-panel workspace-panel--muted">
+                  <header className="page-header">
+                    <div>
+                      <h2>Lista de Casos</h2>
+                      <p>Demais casos em aberto não designados para você.</p>
+                    </div>
+                  </header>
+                  {openOtherCases.length === 0 ? (
+                    <p className="helper-text">Não há outros casos em aberto fora da sua fila.</p>
+                  ) : (
+                    renderCaseCards(openOtherCases, "list")
+                  )}
+                </section>
+              )}
+
               <section className="workspace-panel workspace-panel--muted">
                 <header className="page-header">
                   <div>
-                    <h2>Lista de Casos</h2>
-                    <p>Demais casos em aberto não designados para você.</p>
+                    <h2>Casos Encerrados</h2>
+                    <p>
+                      {isMasterUser
+                        ? "Casos encerrados por conclusão ou rejeição."
+                        : "Casos encerrados designados para você."}
+                    </p>
                   </div>
                 </header>
-                {openOtherCases.length === 0 ? (
-                  <p className="helper-text">Não há outros casos em aberto fora da sua fila.</p>
+                {closedCases.length === 0 ? (
+                  <p className="helper-text">Não há casos encerrados para os filtros atuais.</p>
                 ) : (
-                  renderCaseCards(openOtherCases, "list")
+                  renderCaseCards(closedCases, "list")
+                )}
+              </section>
+            </div>
+          ) : (
+            <div className="page-stack page-stack--tight">
+              <section className="workspace-panel workspace-panel--muted">
+                <header className="page-header">
+                  <div>
+                    <h2>Casos em andamento</h2>
+                    <p>Casos ativos relacionados ao seu cadastro.</p>
+                  </div>
+                </header>
+                {clientOpenCases.length === 0 ? (
+                  <p className="helper-text">Não há casos em andamento para os filtros atuais.</p>
+                ) : (
+                  renderCaseCards(clientOpenCases, "list")
                 )}
               </section>
 
               <section className="workspace-panel workspace-panel--muted">
                 <header className="page-header">
                   <div>
-                    <h2>Casos Rejeitados</h2>
-                    <p>Casos encerrados por rejeição na triagem inicial.</p>
+                    <h2>Casos Encerrados</h2>
+                    <p>Casos concluídos ou encerrados no seu histórico.</p>
                   </div>
                 </header>
-                {rejectedCases.length === 0 ? (
-                  <p className="helper-text">Não há casos rejeitados para os filtros atuais.</p>
+                {clientClosedCases.length === 0 ? (
+                  <p className="helper-text">Não há casos encerrados para os filtros atuais.</p>
                 ) : (
-                  renderCaseCards(rejectedCases, "list")
+                  renderCaseCards(clientClosedCases, "list")
                 )}
               </section>
             </div>
-          ) : (
-            renderCaseCards(filteredCases)
           ))}
       </section>
     </section>

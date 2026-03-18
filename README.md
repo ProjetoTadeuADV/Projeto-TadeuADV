@@ -109,8 +109,32 @@ API: `http://localhost:8080`
    - `ASAAS_API_KEY`
    - `ASAAS_BASE_URL` (`https://api.asaas.com/v3` producao ou `https://api-sandbox.asaas.com/v3` sandbox)
    - `ASAAS_USER_AGENT` (opcional)
+   - `EMAIL_FROM` (`DoutorEu <no-reply@mail.seudominio.com.br>`)
+   - `EMAIL_REPLY_TO` (`suporte@seudominio.com.br`)
+   - `SENDGRID_API_KEY`
+   - `EMAIL_BRAND_NAME` (opcional)
+   - `EMAIL_LOGO_URL` (opcional)
+   - `SENDGRID_TEMPLATE_ID` (opcional)
    - Se `ASAAS_BASE_URL` nao for informada, a API assume automaticamente producao quando a chave contem `_prod_`; caso contrario usa sandbox.
 6. Nao usar valores locais/placeholder em producao (`localhost`, `SEU_APP`, `SUA_API` etc).
+
+## Entregabilidade de e-mail (evitar spam)
+
+Para reduzir bloqueio em spam, o layout ajuda, mas o ponto principal e autenticacao de dominio no SendGrid:
+
+1. Usar remetente em dominio proprio
+   - Exemplo: `no-reply@mail.seudominio.com.br` (nao usar Gmail/Hotmail como remetente de sistema).
+2. Autenticar dominio no SendGrid (Sender Authentication)
+   - Publicar os CNAMEs de DKIM/Return-Path que o SendGrid fornecer.
+   - Manter SPF do dominio incluindo o provedor de envio.
+3. Publicar DMARC no DNS
+   - Comecar com `p=none` para monitorar e depois evoluir para `quarantine`/`reject`.
+4. Alinhar `EMAIL_FROM` e `EMAIL_REPLY_TO`
+   - Preferir ambos no mesmo dominio da marca.
+5. Revisar reputacao inicial
+   - Fazer envios graduais (aquecimento), evitar disparos em massa no primeiro dia.
+6. Validar conteudo transacional
+   - Assunto claro, motivo do contato, rodape com suporte, versao texto simples e link direto oficial.
 
 ## Alinhamento local x producao (obrigatorio)
 

@@ -97,6 +97,36 @@ function normalizeCaseServiceFee(value: CaseServiceFee | null | undefined): Case
   };
 }
 
+function normalizeCaseCloseRequest(
+  value: CaseRecord["closeRequest"] | null | undefined
+): CaseRecord["closeRequest"] {
+  if (!value) {
+    return {
+      status: "none",
+      reason: null,
+      requestedAt: null,
+      requestedByUserId: null,
+      requestedByName: null,
+      decisionAt: null,
+      decidedByUserId: null,
+      decidedByName: null,
+      decisionReason: null
+    };
+  }
+
+  return {
+    status: value.status ?? "none",
+    reason: normalizeOptionalText(value.reason),
+    requestedAt: value.requestedAt ?? null,
+    requestedByUserId: value.requestedByUserId ?? null,
+    requestedByName: normalizeOptionalText(value.requestedByName),
+    decisionAt: value.decisionAt ?? null,
+    decidedByUserId: value.decidedByUserId ?? null,
+    decidedByName: normalizeOptionalText(value.decidedByName),
+    decisionReason: normalizeOptionalText(value.decisionReason)
+  };
+}
+
 function normalizeCaseMessages(value: CaseMessageRecord[] | null | undefined): CaseMessageRecord[] {
   if (!Array.isArray(value)) {
     return [];
@@ -125,6 +155,7 @@ function normalizeCaseRecord(value: CaseRecord): CaseRecord {
     clientDataRequest: normalizeOptionalText(value.clientDataRequest),
     clientDataRequestedAt: value.clientDataRequestedAt ?? null,
     workflowStep: (value.workflowStep ?? "triage") as CaseWorkflowStep,
+    closeRequest: normalizeCaseCloseRequest(value.closeRequest),
     serviceFee: normalizeCaseServiceFee(value.serviceFee),
     messages: normalizeCaseMessages(value.messages)
   };
@@ -408,6 +439,17 @@ export class MemoryCaseRepository implements CaseRepository {
       clientDataRequest: null,
       clientDataRequestedAt: null,
       workflowStep: "triage",
+      closeRequest: {
+        status: "none",
+        reason: null,
+        requestedAt: null,
+        requestedByUserId: null,
+        requestedByName: null,
+        decisionAt: null,
+        decidedByUserId: null,
+        decidedByName: null,
+        decisionReason: null
+      },
       serviceFee: null,
       messages: [],
       movements: [initialMovement],
@@ -580,6 +622,7 @@ export class MemoryCaseRepository implements CaseRepository {
       clientDataRequestedAt?: string | null;
       workflowStep?: CaseRecord["workflowStep"];
       serviceFee?: CaseRecord["serviceFee"];
+      closeRequest?: CaseRecord["closeRequest"];
     }
   ): Promise<CaseRecord | null> {
     const existing = this.cases.get(caseId);
@@ -614,6 +657,9 @@ export class MemoryCaseRepository implements CaseRepository {
       ...(patch.workflowStep ? { workflowStep: patch.workflowStep } : {}),
       ...(Object.prototype.hasOwnProperty.call(patch, "serviceFee")
         ? { serviceFee: normalizeCaseServiceFee(patch.serviceFee) }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, "closeRequest")
+        ? { closeRequest: normalizeCaseCloseRequest(patch.closeRequest) }
         : {}),
       updatedAt: now
     };

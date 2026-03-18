@@ -148,6 +148,36 @@ function normalizeCaseServiceFee(value: Partial<CaseServiceFee> | null | undefin
   };
 }
 
+function normalizeCaseCloseRequest(
+  value: CaseRecord["closeRequest"] | null | undefined
+): CaseRecord["closeRequest"] {
+  if (!value) {
+    return {
+      status: "none",
+      reason: null,
+      requestedAt: null,
+      requestedByUserId: null,
+      requestedByName: null,
+      decisionAt: null,
+      decidedByUserId: null,
+      decidedByName: null,
+      decisionReason: null
+    };
+  }
+
+  return {
+    status: value.status ?? "none",
+    reason: normalizeOptionalText(value.reason),
+    requestedAt: value.requestedAt ?? null,
+    requestedByUserId: value.requestedByUserId ?? null,
+    requestedByName: normalizeOptionalText(value.requestedByName),
+    decisionAt: value.decisionAt ?? null,
+    decidedByUserId: value.decidedByUserId ?? null,
+    decidedByName: normalizeOptionalText(value.decidedByName),
+    decisionReason: normalizeOptionalText(value.decisionReason)
+  };
+}
+
 function normalizeCaseMessages(value: Partial<CaseMessageRecord>[] | null | undefined): CaseMessageRecord[] {
   if (!Array.isArray(value)) {
     return [];
@@ -190,6 +220,7 @@ function normalizeCaseRecord(data: Partial<CaseRecord>, fallbackId: string): Cas
     clientDataRequest: normalizeOptionalText(data.clientDataRequest),
     clientDataRequestedAt: data.clientDataRequestedAt ?? null,
     workflowStep: data.workflowStep ?? "triage",
+    closeRequest: normalizeCaseCloseRequest(data.closeRequest),
     serviceFee: normalizeCaseServiceFee(data.serviceFee),
     messages: normalizeCaseMessages(data.messages),
     movements: (data.movements ?? []).map((item) => normalizeMovementRecord(item)),
@@ -523,6 +554,17 @@ export class FirestoreCaseRepository implements CaseRepository {
       clientDataRequest: null,
       clientDataRequestedAt: null,
       workflowStep: "triage",
+      closeRequest: {
+        status: "none",
+        reason: null,
+        requestedAt: null,
+        requestedByUserId: null,
+        requestedByName: null,
+        decisionAt: null,
+        decidedByUserId: null,
+        decidedByName: null,
+        decisionReason: null
+      },
       serviceFee: null,
       messages: [],
       movements: [initialMovement],
@@ -586,6 +628,7 @@ export class FirestoreCaseRepository implements CaseRepository {
       clientDataRequestedAt?: string | null;
       workflowStep?: CaseRecord["workflowStep"];
       serviceFee?: CaseRecord["serviceFee"];
+      closeRequest?: CaseRecord["closeRequest"];
     }
   ): Promise<CaseRecord | null> {
     const ref = this.firestore.collection(CASES_COLLECTION).doc(caseId);
@@ -621,6 +664,9 @@ export class FirestoreCaseRepository implements CaseRepository {
       ...(patch.workflowStep ? { workflowStep: patch.workflowStep } : {}),
       ...(Object.prototype.hasOwnProperty.call(patch, "serviceFee")
         ? { serviceFee: normalizeCaseServiceFee(patch.serviceFee) }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, "closeRequest")
+        ? { closeRequest: normalizeCaseCloseRequest(patch.closeRequest) }
         : {}),
       updatedAt: now
     };

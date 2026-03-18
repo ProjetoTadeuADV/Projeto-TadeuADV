@@ -537,6 +537,88 @@ describe("v1 routes", () => {
     expect(bodyBuffer.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
   });
 
+  it("deve gerar a peticao inicial como anexo do caso", async () => {
+    const app = buildTestApp();
+
+    const createCase = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Caso para validar geracao da peticao em anexo.",
+        petitionInitial: {
+          claimantAddress: "Rua A, 100, Centro, Sao Paulo/SP",
+          claimSubject: "Entrega nao realizada",
+          defendantType: "pessoa_juridica",
+          defendantName: "Empresa XYZ",
+          defendantDocument: "12.345.678/0001-90",
+          defendantAddress: "Av. B, 200, Sao Paulo/SP",
+          facts:
+            "O consumidor nao recebeu o produto dentro do prazo e nao obteve solucao no atendimento administrativo.",
+          legalGrounds:
+            "Ha falha na prestacao do servico e responsabilidade objetiva do fornecedor pelos danos causados.",
+          requests: ["Entrega imediata do produto ou devolucao integral do valor pago."],
+          timelineEvents: [
+            {
+              eventDate: "2026-01-25",
+              description: "Pedido confirmado com prazo de entrega informado."
+            },
+            {
+              eventDate: "2026-02-03",
+              description: "Prazo encerrado sem entrega do produto."
+            }
+          ],
+          pretensions: [
+            {
+              type: "devolucao_produto",
+              amount: 1299.9,
+              details: "Devolucao do valor e cancelamento da compra."
+            }
+          ],
+          evidence: "Conversas e comprovantes do pedido.",
+          claimValue: 1299.9,
+          hearingInterest: true
+        }
+      });
+
+    expect(createCase.status).toBe(201);
+    const caseId = createCase.body.result.id as string;
+
+    const generateAttachment = await request(app)
+      .post(`/v1/cases/${caseId}/peticao-inicial/attachment`)
+      .set("Authorization", "Bearer token-user-a")
+      .send({});
+
+    expect(generateAttachment.status).toBe(200);
+    expect(generateAttachment.body.result.petitionInitial.attachments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          originalName: expect.stringMatching(/^peticao-inicial-/)
+        })
+      ])
+    );
+
+    const generatedAttachment = generateAttachment.body.result.petitionInitial.attachments.find(
+      (item: { originalName: string }) => item.originalName.startsWith("peticao-inicial-")
+    ) as { id: string } | undefined;
+
+    if (!generatedAttachment) {
+      throw new Error("Anexo da peticao inicial nao encontrado no retorno.");
+    }
+
+    const downloadGenerated = await request(app)
+      .get(`/v1/cases/${caseId}/attachments/${generatedAttachment.id}`)
+      .set("Authorization", "Bearer token-user-a")
+      .buffer(true)
+      .parse(parseBinaryResponse);
+
+    expect(downloadGenerated.status).toBe(200);
+    expect(downloadGenerated.headers["content-type"]).toContain("application/pdf");
+    expect(Buffer.isBuffer(downloadGenerated.body)).toBe(true);
+    expect(downloadGenerated.body.subarray(0, 5).toString("utf-8")).toBe("%PDF-");
+  });
+
   it("deve retornar contrato esperado na consulta CPF mock", async () => {
     const app = buildTestApp();
 
@@ -906,6 +988,186 @@ describe("v1 routes", () => {
         })
       ])
     );
+  });
+
+  it("deve exibir para operador apenas casos designados a ele", async () => {
+    const app = buildTestApp();
+
+    const caseA = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Caso designado para o operador."
+      });
+
+    const caseB = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-b")
+      .send({
+        varaId: "jec-campinas",
+        cpf: "111.444.777-35",
+        resumo: "Caso nao designado para o operador."
+      });
+
+    expect(caseA.status).toBe(201);
+    expect(caseB.status).toBe(201);
+
+    const caseAId = caseA.body.result.id as string;
+    const caseBId = caseB.body.result.id as string;
+
+    await request(app)
+      .get("/v1/auth/session")
+      .set("Authorization", "Bearer token-operator");
+
+    const assignA = await request(app)
+      .post(`/v1/cases/${caseAId}/assign-operator`)
+      .set("Authorization", "Bearer token-master")
+      .send({
+        operatorUserId: "operator-user"
+      });
+
+    expect(assignA.status).toBe(200);
+
+    const listAsOperator = await request(app)
+      .get("/v1/cases")
+      .set("Authorization", "Bearer token-operator");
+
+    expect(listAsOperator.status).toBe(200);
+    expect(listAsOperator.body.result).toHaveLength(1);
+    expect(listAsOperator.body.result[0]).toMatchObject({
+      id: caseAId,
+      assignedOperatorId: "operator-user"
+    });
+
+    const getAssigned = await request(app)
+      .get(`/v1/cases/${caseAId}`)
+      .set("Authorization", "Bearer token-operator");
+    expect(getAssigned.status).toBe(200);
+
+    const getNotAssigned = await request(app)
+      .get(`/v1/cases/${caseBId}`)
+      .set("Authorization", "Bearer token-operator");
+    expect(getNotAssigned.status).toBe(404);
+  });
+
+  it("deve encerrar caso com dupla validacao no frontend e bloqueio operacional no backend", async () => {
+    const app = buildTestApp();
+
+    const createCase = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Caso para validar encerramento manual pelo operador."
+      });
+
+    expect(createCase.status).toBe(201);
+    const caseId = createCase.body.result.id as string;
+
+    await request(app)
+      .get("/v1/auth/session")
+      .set("Authorization", "Bearer token-operator");
+
+    const assignResponse = await request(app)
+      .post(`/v1/cases/${caseId}/assign-operator`)
+      .set("Authorization", "Bearer token-master")
+      .send({
+        operatorUserId: "operator-user"
+      });
+
+    expect(assignResponse.status).toBe(200);
+
+    const closeResponse = await request(app)
+      .post(`/v1/cases/${caseId}/close`)
+      .set("Authorization", "Bearer token-operator")
+      .send({});
+
+    expect(closeResponse.status).toBe(200);
+    expect(closeResponse.body.result).toMatchObject({
+      status: "encerrado",
+      workflowStep: "closed"
+    });
+    expect(closeResponse.body.result.movements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stage: "solucao",
+          statusAfter: "encerrado"
+        })
+      ])
+    );
+
+    const movementAfterClose = await request(app)
+      .post(`/v1/cases/${caseId}/movements`)
+      .set("Authorization", "Bearer token-operator")
+      .send({
+        stage: "andamento",
+        description: "Tentativa de movimentacao apos encerramento manual.",
+        visibility: "public",
+        status: "em_analise"
+      });
+
+    expect(movementAfterClose.status).toBe(409);
+  });
+
+  it("deve permitir solicitacao de encerramento pelo cliente e decisao do operador", async () => {
+    const app = buildTestApp();
+
+    const createCase = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Caso para validar solicitacao de encerramento pelo cliente."
+      });
+
+    expect(createCase.status).toBe(201);
+    const caseId = createCase.body.result.id as string;
+
+    await request(app)
+      .get("/v1/auth/session")
+      .set("Authorization", "Bearer token-operator");
+
+    const assignResponse = await request(app)
+      .post(`/v1/cases/${caseId}/assign-operator`)
+      .set("Authorization", "Bearer token-master")
+      .send({
+        operatorUserId: "operator-user"
+      });
+
+    expect(assignResponse.status).toBe(200);
+
+    const requestClose = await request(app)
+      .post(`/v1/cases/${caseId}/close-request`)
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        reason: "Nao desejo prosseguir com o caso neste momento por decisao pessoal."
+      });
+
+    expect(requestClose.status).toBe(200);
+    expect(requestClose.body.result.closeRequest).toMatchObject({
+      status: "pending",
+      reason: "Nao desejo prosseguir com o caso neste momento por decisao pessoal."
+    });
+
+    const approveClose = await request(app)
+      .post(`/v1/cases/${caseId}/close-request/decision`)
+      .set("Authorization", "Bearer token-operator")
+      .send({
+        decision: "approved"
+      });
+
+    expect(approveClose.status).toBe(200);
+    expect(approveClose.body.result).toMatchObject({
+      status: "encerrado",
+      workflowStep: "closed",
+      closeRequest: {
+        status: "approved"
+      }
+    });
   });
 
   it("deve impedir operador de alocar caso quando nao for master", async () => {

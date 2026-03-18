@@ -161,4 +161,74 @@ export function isMasterEmail(email: string | null | undefined): boolean {
   return env.MASTER_EMAILS.includes(email.trim().toLowerCase());
 }
 
+function extractEmailAddress(raw: string): string | null {
+  const normalized = raw.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const withNameMatch = normalized.match(/^(.+?)\s*<([^>]+)>$/);
+  if (withNameMatch?.[2]) {
+    return withNameMatch[2].trim().toLowerCase();
+  }
+
+  return normalized.includes("@") ? normalized.toLowerCase() : null;
+}
+
+function extractEmailDomain(raw: string): string | null {
+  const email = extractEmailAddress(raw);
+  if (!email) {
+    return null;
+  }
+
+  const atIndex = email.lastIndexOf("@");
+  if (atIndex < 0 || atIndex === email.length - 1) {
+    return null;
+  }
+
+  return email.slice(atIndex + 1);
+}
+
+export function getEmailDeliverabilityWarnings(): string[] {
+  const warnings: string[] = [];
+  const hasSendGrid = Boolean(env.SENDGRID_API_KEY.trim());
+
+  if (!hasSendGrid) {
+    return warnings;
+  }
+
+  const senderDomain = extractEmailDomain(env.EMAIL_FROM);
+  const replyToDomain = extractEmailDomain(env.EMAIL_REPLY_TO);
+  const freeDomains = new Set([
+    "gmail.com",
+    "hotmail.com",
+    "outlook.com",
+    "live.com",
+    "yahoo.com",
+    "icloud.com",
+    "uol.com.br",
+    "bol.com.br"
+  ]);
+
+  if (!senderDomain) {
+    warnings.push("EMAIL_FROM invalido ou vazio. Defina remetente com dominio proprio autenticado no SendGrid.");
+  } else if (freeDomains.has(senderDomain)) {
+    warnings.push(
+      `EMAIL_FROM usa dominio gratuito (${senderDomain}). Prefira no-reply@seu-dominio para reduzir spam.`
+    );
+  }
+
+  if (!env.EMAIL_REPLY_TO.trim()) {
+    warnings.push("EMAIL_REPLY_TO nao definido. Configure um e-mail de suporte para aumentar confianca do remetente.");
+  }
+
+  if (senderDomain && replyToDomain && senderDomain !== replyToDomain) {
+    warnings.push(
+      `EMAIL_FROM (${senderDomain}) e EMAIL_REPLY_TO (${replyToDomain}) estao em dominios diferentes. Isso pode prejudicar entregabilidade.`
+    );
+  }
+
+  return warnings;
+}
+
 assertProductionEnvSafety();

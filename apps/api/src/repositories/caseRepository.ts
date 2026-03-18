@@ -68,6 +68,7 @@ export interface CaseRepository {
       clientDataRequestedAt?: string | null;
       workflowStep?: CaseWorkflowStep;
       serviceFee?: CaseServiceFee | null;
+      closeRequest?: CaseRecord["closeRequest"];
     }
   ): Promise<CaseRecord | null>;
   appendCaseMovement(

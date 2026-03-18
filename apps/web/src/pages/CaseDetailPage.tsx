@@ -7,7 +7,8 @@ import type {
   ApiSuccessResponse,
   CaseMovementCreateResult,
   CaseMovementRecord,
-  CaseRecord
+  CaseRecord,
+  PetitionAttachment
 } from "../types";
 
 const MAX_ATTACHMENTS_PER_CASE = 8;
@@ -32,6 +33,13 @@ const WORKFLOW_LABEL: Record<CaseRecord["workflowStep"], string> = {
   awaiting_initial_fee: "Aguardando pagamento inicial",
   in_progress: "Em andamento",
   closed: "Encerrado"
+};
+
+const CLOSE_REQUEST_STATUS_LABEL: Record<CaseRecord["closeRequest"]["status"], string> = {
+  none: "Sem solicitação",
+  pending: "Solicitação pendente",
+  approved: "Solicitação aprovada",
+  denied: "Solicitação recusada"
 };
 
 const SERVICE_FEE_STATUS_LABEL: Record<NonNullable<CaseRecord["serviceFee"]>["status"], string> = {
@@ -73,6 +81,17 @@ const MOVEMENT_VISIBILITY_LABEL: Record<CaseMovementRecord["visibility"], string
 };
 
 type OperatorActionStep = 1 | 2 | 3;
+type CaseDetailTab = "info" | "attachments" | "evolution";
+type CaseAttachmentItem = {
+  key: string;
+  source: "petition" | "message" | "movement";
+  attachment: PetitionAttachment;
+  meta: string;
+  sortDate: string;
+  petitionPriority: number;
+  messageId?: string;
+  movementId?: string;
+};
 
 const OPERATOR_ACTION_STEPS: Array<{
   id: OperatorActionStep;
@@ -90,6 +109,12 @@ const OPERATOR_ACTION_STEPS: Array<{
     id: 3,
     title: "Nova Movimentação"
   }
+];
+
+const CASE_DETAIL_TABS: Array<{ id: CaseDetailTab; label: string }> = [
+  { id: "info", label: "Informações Principais" },
+  { id: "attachments", label: "Anexos" },
+  { id: "evolution", label: "Evolução do Caso" }
 ];
 
 function resolveOperatorStepFromWorkflow(workflowStep: CaseRecord["workflowStep"]): OperatorActionStep {
@@ -206,6 +231,36 @@ function fingerprintFile(file: File): string {
   return `${file.name}:${file.size}:${file.lastModified}`;
 }
 
+function MessageIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="M6.5 7.2h11a2.3 2.3 0 0 1 2.3 2.3v6.2a2.3 2.3 0 0 1-2.3 2.3h-7l-4.3 3v-3h-.7a2.3 2.3 0 0 1-2.3-2.3V9.5a2.3 2.3 0 0 1 2.3-2.3z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ArrowLeftIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="M14.8 5.8L8.6 12l6.2 6.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function CaseDetailPage() {
   const { getToken, canAccessAdmin, isMasterUser, isOperatorUser, user } = useAuth();
   const { id } = useParams<{ id: string }>();
@@ -215,8 +270,9 @@ export function CaseDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [exportingPdf, setExportingPdf] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
+  const [generatingPetitionAttachment, setGeneratingPetitionAttachment] = useState(false);
+  const [petitionAttachmentError, setPetitionAttachmentError] = useState<string | null>(null);
+  const [petitionAttachmentFeedback, setPetitionAttachmentFeedback] = useState<string | null>(null);
 
   const [savingMovement, setSavingMovement] = useState(false);
   const [movementStage, setMovementStage] = useState<CaseMovementRecord["stage"]>("andamento");
@@ -245,6 +301,18 @@ export function CaseDetailPage() {
 
   const [isOperatorSidebarOpen, setIsOperatorSidebarOpen] = useState(false);
   const [operatorStep, setOperatorStep] = useState<OperatorActionStep>(1);
+  const [activeDetailTab, setActiveDetailTab] = useState<CaseDetailTab>("info");
+  const [closingCase, setClosingCase] = useState(false);
+  const [closeFeedback, setCloseFeedback] = useState<string | null>(null);
+  const [closeError, setCloseError] = useState<string | null>(null);
+  const [closeRequestReasonInput, setCloseRequestReasonInput] = useState("");
+  const [requestingClose, setRequestingClose] = useState(false);
+  const [closeRequestFeedback, setCloseRequestFeedback] = useState<string | null>(null);
+  const [closeRequestError, setCloseRequestError] = useState<string | null>(null);
+  const [closeRequestDecisionReason, setCloseRequestDecisionReason] = useState("");
+  const [decidingCloseRequest, setDecidingCloseRequest] = useState(false);
+  const [closeRequestDecisionFeedback, setCloseRequestDecisionFeedback] = useState<string | null>(null);
+  const [closeRequestDecisionError, setCloseRequestDecisionError] = useState<string | null>(null);
 
   const isAssignedOperator = Boolean(user?.uid && caseItem?.assignedOperatorId === user.uid);
   const isRejectedOrClosedCase = Boolean(
@@ -256,6 +324,15 @@ export function CaseDetailPage() {
   const canManageOperatorActions = Boolean(
     caseItem && canAccessAdmin && !isRejectedOrClosedCase && (isMasterUser || (isOperatorUser && isAssignedOperator))
   );
+  const closeRequest = caseItem?.closeRequest;
+  const hasPendingCloseRequest = closeRequest?.status === "pending";
+  const canClientRequestClose = Boolean(
+    caseItem &&
+      !canAccessAdmin &&
+      !isRejectedOrClosedCase &&
+      closeRequest &&
+      closeRequest.status !== "pending"
+  );
 
   const sortedMovements = useMemo(() => {
     if (!caseItem?.movements) {
@@ -264,6 +341,56 @@ export function CaseDetailPage() {
 
     return [...caseItem.movements].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }, [caseItem?.movements]);
+
+  const petitionAttachments = caseItem?.petitionInitial?.attachments ?? [];
+  const allCaseAttachments = useMemo<CaseAttachmentItem[]>(() => {
+    const petitionItems: CaseAttachmentItem[] = petitionAttachments.map((attachment) => {
+      const isGeneratedPetition = attachment.originalName.toLowerCase().startsWith("peticao-inicial-");
+      return {
+        key: `petition:${attachment.id}`,
+        source: "petition",
+        attachment,
+        meta: isGeneratedPetition ? "Petição inicial (PDF gerado)" : "Anexo da petição",
+        sortDate: attachment.uploadedAt,
+        petitionPriority: isGeneratedPetition ? 0 : 1
+      };
+    });
+
+    const messageItems: CaseAttachmentItem[] = (caseItem?.messages ?? []).flatMap((message) =>
+      (message.attachments ?? []).map((attachment) => ({
+        key: `message:${message.id}:${attachment.id}`,
+        source: "message",
+        attachment,
+        messageId: message.id,
+        meta: `Mensagem · ${message.senderName ?? message.senderRole} · ${formatDate(message.createdAt)}`,
+        sortDate: attachment.uploadedAt || message.createdAt,
+        petitionPriority: 2
+      }))
+    );
+
+    const movementItems: CaseAttachmentItem[] = (sortedMovements ?? []).flatMap((movement) =>
+      (movement.attachments ?? []).map((attachment) => ({
+        key: `movement:${movement.id}:${attachment.id}`,
+        source: "movement",
+        attachment,
+        movementId: movement.id,
+        meta: `Movimentação · ${MOVEMENT_STAGE_LABEL[movement.stage]} · ${formatDate(movement.createdAt)}`,
+        sortDate: attachment.uploadedAt || movement.createdAt,
+        petitionPriority: 2
+      }))
+    );
+
+    const merged = [...petitionItems, ...messageItems, ...movementItems];
+    merged.sort((a, b) => {
+      if (a.petitionPriority !== b.petitionPriority) {
+        return a.petitionPriority - b.petitionPriority;
+      }
+
+      return a.sortDate < b.sortDate ? 1 : -1;
+    });
+
+    return merged;
+  }, [caseItem?.messages, petitionAttachments, sortedMovements]);
 
   useEffect(() => {
     async function loadCase() {
@@ -329,7 +456,11 @@ export function CaseDetailPage() {
   }, [canManageOperatorActions, isOperatorSidebarOpen]);
 
   function openOperatorSidebar() {
-    setOperatorStep(caseItem ? resolveOperatorStepFromWorkflow(caseItem.workflowStep) : 1);
+    if (caseItem?.closeRequest?.status === "pending") {
+      setOperatorStep(1);
+    } else {
+      setOperatorStep(caseItem ? resolveOperatorStepFromWorkflow(caseItem.workflowStep) : 1);
+    }
     setIsOperatorSidebarOpen(true);
   }
 
@@ -365,44 +496,31 @@ export function CaseDetailPage() {
     });
   }
 
-  async function handleExportPdf() {
+  async function handleGeneratePetitionAttachment() {
     if (!id) {
-      setExportError("Caso inválido para exportação.");
+      setPetitionAttachmentError("Caso inválido para gerar a petição.");
       return;
     }
 
-    setExportError(null);
-    setExportingPdf(true);
+    setPetitionAttachmentError(null);
+    setPetitionAttachmentFeedback(null);
+    setGeneratingPetitionAttachment(true);
 
     try {
       const token = await getToken();
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/v1/cases/${id}/peticao-inicial.pdf`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${id}/peticao-inicial/attachment`, {
+        method: "POST",
+        token
       });
 
-      if (!response.ok) {
-        throw new Error(await extractApiErrorMessage(response, "Não foi possível gerar o PDF da petição inicial."));
-      }
-
-      const fileName = extractFileName(response.headers.get("content-disposition")) ?? `peticao-inicial-${id}.pdf`;
-      const blob = await response.blob();
-      const objectUrl = window.URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = fileName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      window.URL.revokeObjectURL(objectUrl);
+      setCaseItem(updated);
+      setActiveDetailTab("attachments");
+      setPetitionAttachmentFeedback("Petição inicial gerada em PDF e anexada ao caso.");
     } catch (nextError) {
-      const message =
-        nextError instanceof Error ? nextError.message : "Falha ao exportar o PDF da petição inicial.";
-      setExportError(message);
+      const message = nextError instanceof ApiError ? nextError.message : "Falha ao gerar anexo da petição inicial.";
+      setPetitionAttachmentError(message);
     } finally {
-      setExportingPdf(false);
+      setGeneratingPetitionAttachment(false);
     }
   }
 
@@ -464,6 +582,29 @@ export function CaseDetailPage() {
 
     try {
       await downloadFile(`/v1/cases/${id}/movements/${movementId}/attachments/${attachmentId}`, fallbackName);
+    } catch (nextError) {
+      const message = nextError instanceof Error ? nextError.message : "Falha ao baixar anexo.";
+      setAttachmentError(message);
+    } finally {
+      setDownloadingAttachmentId(null);
+    }
+  }
+
+  async function handleDownloadMessageAttachment(
+    messageId: string,
+    attachmentId: string,
+    fallbackName: string
+  ) {
+    if (!id) {
+      return;
+    }
+
+    const key = `message:${messageId}:${attachmentId}`;
+    setAttachmentError(null);
+    setDownloadingAttachmentId(key);
+
+    try {
+      await downloadFile(`/v1/cases/${id}/messages/${messageId}/attachments/${attachmentId}`, fallbackName);
     } catch (nextError) {
       const message = nextError instanceof Error ? nextError.message : "Falha ao baixar anexo.";
       setAttachmentError(message);
@@ -652,6 +793,147 @@ export function CaseDetailPage() {
     }
   }
 
+  async function handleCloseCase() {
+    if (!id || !caseItem) {
+      return;
+    }
+
+    const firstConfirmation = window.confirm("Tem certeza que deseja encerrar este caso?");
+    if (!firstConfirmation) {
+      return;
+    }
+
+    const secondConfirmation = window.confirm(
+      "Confirmacao final: este caso sera movido para Casos Encerrados. Deseja continuar?"
+    );
+    if (!secondConfirmation) {
+      return;
+    }
+
+    setCloseFeedback(null);
+    setCloseError(null);
+    setClosingCase(true);
+
+    try {
+      const token = await getToken();
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${id}/close`, {
+        method: "POST",
+        token
+      });
+
+      setCaseItem(updated);
+      setMovementStatus(updated.status);
+      setOperatorStep(resolveOperatorStepFromWorkflow(updated.workflowStep));
+      setIsOperatorSidebarOpen(false);
+      setCloseFeedback("Caso encerrado com sucesso.");
+    } catch (nextError) {
+      const message = nextError instanceof ApiError ? nextError.message : "Falha ao encerrar o caso.";
+      setCloseError(message);
+    } finally {
+      setClosingCase(false);
+    }
+  }
+
+  async function handleRequestCloseCase() {
+    if (!id || !caseItem) {
+      return;
+    }
+
+    const reason = closeRequestReasonInput.trim();
+    if (reason.length < 10) {
+      setCloseRequestError("Informe uma justificativa com pelo menos 10 caracteres.");
+      return;
+    }
+
+    const confirmation = window.confirm(
+      "Confirma o envio da solicitação de encerramento? O operador responsável fará a decisão final."
+    );
+    if (!confirmation) {
+      return;
+    }
+
+    setCloseRequestError(null);
+    setCloseRequestFeedback(null);
+    setRequestingClose(true);
+
+    try {
+      const token = await getToken();
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${id}/close-request`, {
+        method: "POST",
+        token,
+        body: {
+          reason
+        }
+      });
+
+      setCaseItem(updated);
+      setCloseRequestReasonInput("");
+      setCloseRequestFeedback("Solicitação de encerramento enviada para o operador responsável.");
+    } catch (nextError) {
+      const message = nextError instanceof ApiError ? nextError.message : "Falha ao solicitar encerramento.";
+      setCloseRequestError(message);
+    } finally {
+      setRequestingClose(false);
+    }
+  }
+
+  async function handleCloseRequestDecision(decision: "approved" | "denied") {
+    if (!id || !caseItem || !hasPendingCloseRequest) {
+      return;
+    }
+
+    const rejectionReason = closeRequestDecisionReason.trim();
+    if (decision === "denied" && rejectionReason.length < 10) {
+      setCloseRequestDecisionError("Informe o motivo da recusa com pelo menos 10 caracteres.");
+      return;
+    }
+
+    const confirmationText =
+      decision === "approved"
+        ? "Confirma a aprovação do encerramento solicitado pelo cliente?"
+        : "Confirma a recusa do encerramento solicitado pelo cliente?";
+    const confirmed = window.confirm(confirmationText);
+    if (!confirmed) {
+      return;
+    }
+
+    setCloseRequestDecisionError(null);
+    setCloseRequestDecisionFeedback(null);
+    setDecidingCloseRequest(true);
+
+    try {
+      const token = await getToken();
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${id}/close-request/decision`, {
+        method: "POST",
+        token,
+        body: {
+          decision,
+          reason: decision === "denied" ? rejectionReason : null
+        }
+      });
+
+      setCaseItem(updated);
+      setMovementStatus(updated.status);
+      setOperatorStep(resolveOperatorStepFromWorkflow(updated.workflowStep));
+      if (decision === "approved") {
+        setIsOperatorSidebarOpen(false);
+      } else {
+        setCloseRequestDecisionReason("");
+      }
+      setCloseRequestDecisionFeedback(
+        decision === "approved"
+          ? "Encerramento aprovado e cliente notificado."
+          : "Solicitação recusada e cliente notificado."
+      );
+    } catch (nextError) {
+      const message =
+        nextError instanceof ApiError ? nextError.message : "Falha ao registrar decisão da solicitação.";
+      setCloseRequestDecisionError(message);
+    } finally {
+      setDecidingCloseRequest(false);
+    }
+  }
+
   async function handleSaveServiceFee() {
     if (!id) {
       return;
@@ -737,261 +1019,356 @@ export function CaseDetailPage() {
       <section className="workspace-hero workspace-hero--compact workspace-hero--simple">
         <div className="workspace-hero-grid">
           <div>
-            <p className="hero-kicker">Detalhe do caso</p>
-            <h1>{caseItem.varaNome}</h1>
+            <div className="case-detail-kicker-row">
+              <div className="case-detail-kicker-left">
+                <Link to="/dashboard" className="case-detail-back-link" aria-label="Voltar ao painel">
+                  <ArrowLeftIcon />
+                </Link>
+                <p className="hero-kicker">Detalhe do caso</p>
+              </div>
+              <span className={`status-badge status-badge--${caseItem.status}`}>{STATUS_LABEL[caseItem.status]}</span>
+            </div>
+
+            <div className="case-detail-title-row">
+              <h1>{caseItem.varaNome}</h1>
+              <Link
+                to={`/messages?caseId=${caseItem.id}`}
+                className="case-detail-message-link"
+                aria-label="Abrir mensagens do caso"
+              >
+                <MessageIcon />
+              </Link>
+            </div>
             <p className="helper-text">Código do caso: {caseItem.caseCode}</p>
-            <p>Consulte os dados principais, o histórico de movimentações e os documentos anexados.</p>
             <div className="hero-cta">
               <button
                 type="button"
                 className="hero-primary"
-                onClick={() => void handleExportPdf()}
-                disabled={exportingPdf}
+                onClick={() => void handleGeneratePetitionAttachment()}
+                disabled={generatingPetitionAttachment}
               >
-                {exportingPdf ? "Gerando PDF..." : "Exportar petição inicial (PDF)"}
+                {generatingPetitionAttachment ? "Gerando..." : "Gerar petição e enviar para Anexos"}
               </button>
-              <span className={`status-badge status-badge--${caseItem.status}`}>{STATUS_LABEL[caseItem.status]}</span>
-              <Link to="/messages" className="hero-secondary">
-                Mensagens
-              </Link>
-              <Link to="/dashboard" className="hero-secondary">
-                Voltar ao painel
-              </Link>
             </div>
-            {exportError && <p className="error-text">{exportError}</p>}
+            {petitionAttachmentError && <p className="error-text">{petitionAttachmentError}</p>}
+            {petitionAttachmentFeedback && <p className="success-text">{petitionAttachmentFeedback}</p>}
             {attachmentError && <p className="error-text">{attachmentError}</p>}
+            {closeError && <p className="error-text">{closeError}</p>}
+            {closeFeedback && <p className="success-text">{closeFeedback}</p>}
+            {closeRequestError && <p className="error-text">{closeRequestError}</p>}
+            {closeRequestFeedback && <p className="success-text">{closeRequestFeedback}</p>}
+            {canClientRequestClose && (
+              <div className="resumo-box client-close-request-box">
+                <strong>Solicitar encerramento do caso</strong>
+                <p>Você pode solicitar o encerramento a qualquer momento. O operador fará a confirmação final.</p>
+                <label>
+                  Justificativa obrigatória
+                  <textarea
+                    rows={3}
+                    value={closeRequestReasonInput}
+                    onChange={(event) => setCloseRequestReasonInput(event.target.value)}
+                    placeholder="Explique por que deseja encerrar o caso."
+                    disabled={requestingClose}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="danger-button danger-button--small"
+                  onClick={() => void handleRequestCloseCase()}
+                  disabled={requestingClose}
+                >
+                  {requestingClose ? "Enviando..." : "Solicitar encerramento"}
+                </button>
+              </div>
+            )}
+            {!canAccessAdmin && closeRequest?.status === "pending" && (
+              <p className="helper-text">Solicitação de encerramento pendente de confirmação do operador.</p>
+            )}
           </div>
         </div>
       </section>
 
       <div className="detail-grid detail-grid--single">
         <article className="detail-card">
-          <h2>Informações principais</h2>
-          <div className="detail-list">
-            <div className="detail-item">
-              <span>Código</span>
-              <strong>{caseItem.caseCode}</strong>
-            </div>
-            <div className="detail-item">
-              <span>Status</span>
-              <strong>{STATUS_LABEL[caseItem.status]}</strong>
-            </div>
-            <div className="detail-item">
-              <span>Parecer inicial</span>
-              <strong>{REVIEW_LABEL[caseItem.reviewDecision]}</strong>
-            </div>
-            <div className="detail-item">
-              <span>Fase atual</span>
-              <strong>{WORKFLOW_LABEL[caseItem.workflowStep]}</strong>
-            </div>
-            <div className="detail-item">
-              <span>Cliente</span>
-              <strong>
-                {caseItem.responsavelNome ?? caseItem.clienteNome ?? caseItem.responsavelEmail ?? "Não informado"}
-              </strong>
-            </div>
-            <div className="detail-item">
-              <span>CPF</span>
-              <strong>{caseItem.cpf}</strong>
-            </div>
-            <div className="detail-item">
-              <span>Operador alocado</span>
-              <strong>{caseItem.assignedOperatorName ?? caseItem.assignedOperatorId ?? "Sem operador"}</strong>
-            </div>
-            <div className="detail-item">
-              <span>Abertura</span>
-              <strong>{formatDate(caseItem.createdAt)}</strong>
-            </div>
-            <div className="detail-item">
-              <span>Última atualização</span>
-              <strong>{formatDate(caseItem.updatedAt)}</strong>
-            </div>
-            {(caseItem.responsavelNome || caseItem.responsavelEmail) && (
-              <div className="detail-item">
-                <span>Conta responsável</span>
-                <strong>{caseItem.responsavelNome ?? caseItem.responsavelEmail}</strong>
-              </div>
-            )}
-          </div>
+          <nav className="case-detail-tabs" aria-label="Navegação do caso">
+            {CASE_DETAIL_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={activeDetailTab === tab.id ? "case-detail-tab case-detail-tab--active" : "case-detail-tab"}
+                onClick={() => setActiveDetailTab(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
 
-          {(caseItem.reviewReason || caseItem.clientDataRequest) && (
-            <div className="info-box">
-              <strong>Parecer do operador</strong>
-              {caseItem.reviewReason && <span>Resumo: {caseItem.reviewReason}</span>}
-              {caseItem.clientDataRequest && (
-                <span>Dados solicitados ao cliente: {caseItem.clientDataRequest}</span>
-              )}
-            </div>
-          )}
-
-          {caseItem.serviceFee && (
-            <div className="info-box">
-              <strong>Taxa inicial de serviço</strong>
-              <span>Valor: {formatCurrencyBr(caseItem.serviceFee.amount)}</span>
-              <span>Vencimento: {formatIsoDateToBr(caseItem.serviceFee.dueDate)}</span>
-              <span>Status: {SERVICE_FEE_STATUS_LABEL[caseItem.serviceFee.status]}</span>
-              <span>Provedor: {caseItem.serviceFee.provider.toUpperCase()} (integração preparada)</span>
-            </div>
-          )}
-
-          {caseItem.cpfConsulta && (
-            <div className="info-box">
-              <strong>Consulta de CPF</strong>
-              <span>Nome: {caseItem.cpfConsulta.nome}</span>
-              <span>Situação: {caseItem.cpfConsulta.situacao}</span>
-              <span>Fonte: {caseItem.cpfConsulta.source}</span>
-            </div>
-          )}
-
-          <div className="resumo-box">
-            <strong>Resumo</strong>
-            <p>{caseItem.resumo}</p>
-          </div>
-
-          {caseItem.petitionInitial && (
+          {activeDetailTab === "info" && (
             <>
-              <div className="info-box">
-                <strong>Dados estruturados da petição</strong>
-                <span>Assunto: {caseItem.petitionInitial.claimSubject}</span>
-                <span>Endereço do requerente: {caseItem.petitionInitial.claimantAddress}</span>
-                <span>Tipo da reclamada: {DEFENDANT_TYPE_LABEL[caseItem.petitionInitial.defendantType]}</span>
-                <span>Reclamada: {caseItem.petitionInitial.defendantName}</span>
-                <span>Documento da reclamada: {caseItem.petitionInitial.defendantDocument ?? "Não informado"}</span>
-                <span>Endereço da reclamada: {caseItem.petitionInitial.defendantAddress ?? "Não informado"}</span>
-                <span>Valor da causa: {formatCurrencyBr(caseItem.petitionInitial.claimValue)}</span>
-                <span>Interesse em audiência: {caseItem.petitionInitial.hearingInterest ? "Sim" : "Não"}</span>
+              <h2>Informações principais</h2>
+              <div className="detail-list">
+                <div className="detail-item">
+                  <span>Código</span>
+                  <strong>{caseItem.caseCode}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Status</span>
+                  <strong>{STATUS_LABEL[caseItem.status]}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Parecer inicial</span>
+                  <strong>{REVIEW_LABEL[caseItem.reviewDecision]}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Fase atual</span>
+                  <strong>{WORKFLOW_LABEL[caseItem.workflowStep]}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Solicitação de encerramento</span>
+                  <strong>{CLOSE_REQUEST_STATUS_LABEL[caseItem.closeRequest.status]}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Cliente</span>
+                  <strong>
+                    {caseItem.responsavelNome ?? caseItem.clienteNome ?? caseItem.responsavelEmail ?? "Não informado"}
+                  </strong>
+                </div>
+                <div className="detail-item">
+                  <span>CPF</span>
+                  <strong>{caseItem.cpf}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Operador alocado</span>
+                  <strong>{caseItem.assignedOperatorName ?? caseItem.assignedOperatorId ?? "Sem operador"}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Abertura</span>
+                  <strong>{formatDate(caseItem.createdAt)}</strong>
+                </div>
+                <div className="detail-item">
+                  <span>Última atualização</span>
+                  <strong>{formatDate(caseItem.updatedAt)}</strong>
+                </div>
+                {(caseItem.responsavelNome || caseItem.responsavelEmail) && (
+                  <div className="detail-item">
+                    <span>Conta responsável</span>
+                    <strong>{caseItem.responsavelNome ?? caseItem.responsavelEmail}</strong>
+                  </div>
+                )}
               </div>
 
-              <div className="resumo-box">
-                <strong>Fatos</strong>
-                <p>{caseItem.petitionInitial.facts}</p>
-              </div>
+              {(caseItem.closeRequest.reason || caseItem.closeRequest.decisionReason) && (
+                <div className="info-box">
+                  <strong>Histórico da solicitação de encerramento</strong>
+                  {caseItem.closeRequest.reason && (
+                    <span>Pedido do cliente: {caseItem.closeRequest.reason}</span>
+                  )}
+                  {caseItem.closeRequest.decisionReason && (
+                    <span>Motivo da decisão: {caseItem.closeRequest.decisionReason}</span>
+                  )}
+                </div>
+              )}
 
-              {(caseItem.petitionInitial.timelineEvents ?? []).length > 0 && (
-                <div className="resumo-box">
-                  <strong>Cronologia dos eventos</strong>
-                  <ul className="timeline-list">
-                    {(caseItem.petitionInitial.timelineEvents ?? []).map((item, index) => (
-                      <li key={`${caseItem.id}-evento-${index}`}>
-                        {formatIsoDateToBr(item.eventDate)} - {item.description}
-                      </li>
-                    ))}
-                  </ul>
+              {(caseItem.reviewReason || caseItem.clientDataRequest) && (
+                <div className="info-box">
+                  <strong>Parecer do operador</strong>
+                  {caseItem.reviewReason && <span>Resumo: {caseItem.reviewReason}</span>}
+                  {caseItem.clientDataRequest && (
+                    <span>Dados solicitados ao cliente: {caseItem.clientDataRequest}</span>
+                  )}
+                </div>
+              )}
+
+              {caseItem.serviceFee && (
+                <div className="info-box">
+                  <strong>Taxa inicial de serviço</strong>
+                  <span>Valor: {formatCurrencyBr(caseItem.serviceFee.amount)}</span>
+                  <span>Vencimento: {formatIsoDateToBr(caseItem.serviceFee.dueDate)}</span>
+                  <span>Status: {SERVICE_FEE_STATUS_LABEL[caseItem.serviceFee.status]}</span>
+                  <span>Provedor: {caseItem.serviceFee.provider.toUpperCase()} (integração preparada)</span>
+                </div>
+              )}
+
+              {caseItem.cpfConsulta && (
+                <div className="info-box">
+                  <strong>Consulta de CPF</strong>
+                  <span>Nome: {caseItem.cpfConsulta.nome}</span>
+                  <span>Situação: {caseItem.cpfConsulta.situacao}</span>
+                  <span>Fonte: {caseItem.cpfConsulta.source}</span>
                 </div>
               )}
 
               <div className="resumo-box">
-                <strong>Fundamentos</strong>
-                <p>{caseItem.petitionInitial.legalGrounds}</p>
+                <strong>Resumo</strong>
+                <p>{caseItem.resumo}</p>
               </div>
 
-              <div className="resumo-box">
-                <strong>Pedidos</strong>
-                <ul className="timeline-list">
-                  {caseItem.petitionInitial.requests.map((item, index) => (
-                    <li key={`${caseItem.id}-pedido-${index}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
+              {caseItem.petitionInitial && (
+                <>
+                  <div className="info-box">
+                    <strong>Dados estruturados da petição</strong>
+                    <span>Assunto: {caseItem.petitionInitial.claimSubject}</span>
+                    <span>Endereço do requerente: {caseItem.petitionInitial.claimantAddress}</span>
+                    <span>Tipo da reclamada: {DEFENDANT_TYPE_LABEL[caseItem.petitionInitial.defendantType]}</span>
+                    <span>Reclamada: {caseItem.petitionInitial.defendantName}</span>
+                    <span>Documento da reclamada: {caseItem.petitionInitial.defendantDocument ?? "Não informado"}</span>
+                    <span>Endereço da reclamada: {caseItem.petitionInitial.defendantAddress ?? "Não informado"}</span>
+                    <span>Valor da causa: {formatCurrencyBr(caseItem.petitionInitial.claimValue)}</span>
+                    <span>Interesse em audiência: {caseItem.petitionInitial.hearingInterest ? "Sim" : "Não"}</span>
+                  </div>
 
-              {(caseItem.petitionInitial.pretensions ?? []).length > 0 && (
-                <div className="resumo-box">
-                  <strong>Pretensões declaradas</strong>
-                  <ul className="timeline-list">
-                    {(caseItem.petitionInitial.pretensions ?? []).map((item, index) => (
-                      <li key={`${caseItem.id}-pretensao-${index}`}>{describePretension(item)}</li>
-                    ))}
-                  </ul>
-                </div>
+                  <div className="resumo-box">
+                    <strong>Fatos</strong>
+                    <p>{caseItem.petitionInitial.facts}</p>
+                  </div>
+
+                  {(caseItem.petitionInitial.timelineEvents ?? []).length > 0 && (
+                    <div className="resumo-box">
+                      <strong>Cronologia dos eventos</strong>
+                      <ul className="timeline-list">
+                        {(caseItem.petitionInitial.timelineEvents ?? []).map((item, index) => (
+                          <li key={`${caseItem.id}-evento-${index}`}>
+                            {formatIsoDateToBr(item.eventDate)} - {item.description}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="resumo-box">
+                    <strong>Fundamentos</strong>
+                    <p>{caseItem.petitionInitial.legalGrounds}</p>
+                  </div>
+
+                  <div className="resumo-box">
+                    <strong>Pedidos</strong>
+                    <ul className="timeline-list">
+                      {caseItem.petitionInitial.requests.map((item, index) => (
+                        <li key={`${caseItem.id}-pedido-${index}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {(caseItem.petitionInitial.pretensions ?? []).length > 0 && (
+                    <div className="resumo-box">
+                      <strong>Pretensões declaradas</strong>
+                      <ul className="timeline-list">
+                        {(caseItem.petitionInitial.pretensions ?? []).map((item, index) => (
+                          <li key={`${caseItem.id}-pretensao-${index}`}>{describePretension(item)}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {caseItem.petitionInitial.evidence && (
+                    <div className="resumo-box">
+                      <strong>Provas informadas</strong>
+                      <p>{caseItem.petitionInitial.evidence}</p>
+                    </div>
+                  )}
+                </>
               )}
+            </>
+          )}
 
-              {caseItem.petitionInitial.evidence && (
-                <div className="resumo-box">
-                  <strong>Provas informadas</strong>
-                  <p>{caseItem.petitionInitial.evidence}</p>
-                </div>
-              )}
+          {activeDetailTab === "attachments" && (
+            <>
+              <h2>Anexos</h2>
+              {allCaseAttachments.length === 0 ? (
+                <p className="helper-text">Nenhum anexo enviado até o momento.</p>
+              ) : (
+                <div className="page-stack page-stack--tight">
+                  <div className="resumo-box">
+                    <strong>Todos os anexos do caso</strong>
+                    <ul className="attachment-list">
+                      {allCaseAttachments.map((item) => {
+                        const key =
+                          item.source === "petition"
+                            ? item.attachment.id
+                            : item.source === "message"
+                              ? `message:${item.messageId}:${item.attachment.id}`
+                              : `${item.movementId}:${item.attachment.id}`;
 
-              {(caseItem.petitionInitial.attachments ?? []).length > 0 && (
-                <div className="resumo-box">
-                  <strong>Anexos enviados na petição</strong>
-                  <ul className="attachment-list">
-                    {(caseItem.petitionInitial.attachments ?? []).map((item) => (
-                      <li key={item.id}>
-                        <div>
-                          <strong>{item.originalName}</strong>
-                          <span>{formatAttachmentSize(item.sizeBytes)}</span>
-                        </div>
-                        <button
-                          type="button"
-                          className="attachment-remove"
-                          onClick={() => void handleDownloadPetitionAttachment(item.id, item.originalName)}
-                          disabled={downloadingAttachmentId === item.id}
-                        >
-                          {downloadingAttachmentId === item.id ? "Baixando..." : "Baixar"}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                        return (
+                          <li key={item.key}>
+                            <div>
+                              <strong>{item.attachment.originalName}</strong>
+                              <span>
+                                {formatAttachmentSize(item.attachment.sizeBytes)} · {item.meta}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="attachment-remove"
+                              onClick={() => {
+                                if (item.source === "petition") {
+                                  void handleDownloadPetitionAttachment(
+                                    item.attachment.id,
+                                    item.attachment.originalName
+                                  );
+                                  return;
+                                }
+
+                                if (item.source === "message" && item.messageId) {
+                                  void handleDownloadMessageAttachment(
+                                    item.messageId,
+                                    item.attachment.id,
+                                    item.attachment.originalName
+                                  );
+                                  return;
+                                }
+
+                                if (item.source === "movement" && item.movementId) {
+                                  void handleDownloadMovementAttachment(
+                                    item.movementId,
+                                    item.attachment.id,
+                                    item.attachment.originalName
+                                  );
+                                }
+                              }}
+                              disabled={downloadingAttachmentId === key}
+                            >
+                              {downloadingAttachmentId === key ? "Baixando..." : "Baixar"}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
                 </div>
               )}
             </>
           )}
 
-          <div className="resumo-box">
-            <strong>Evolução do caso</strong>
-            {sortedMovements.length === 0 ? (
-              <p>Nenhuma movimentação registrada até o momento.</p>
-            ) : (
-              <ul className="movement-list">
-                {sortedMovements.map((movement) => (
-                  <li key={movement.id}>
-                    <div className="movement-list-head">
-                      <span className="info-pill info-pill--neutral">{MOVEMENT_STAGE_LABEL[movement.stage]}</span>
-                      <span className="movement-list-date">{formatDate(movement.createdAt)}</span>
-                    </div>
-                    <p>{movement.description}</p>
-                    <div className="movement-list-meta">
-                      <span>Status: {STATUS_LABEL[movement.statusAfter]}</span>
-                      <span>Por: {movement.createdByName ?? movement.createdByUserId}</span>
-                      {canAccessAdmin && (
-                        <span>Visibilidade: {MOVEMENT_VISIBILITY_LABEL[movement.visibility]}</span>
-                      )}
-                    </div>
-                    {(movement.attachments ?? []).length > 0 && (
-                      <ul className="attachment-list movement-attachment-list">
-                        {(movement.attachments ?? []).map((attachment) => {
-                          const key = `${movement.id}:${attachment.id}`;
-                          return (
-                            <li key={attachment.id}>
-                              <div>
-                                <strong>{attachment.originalName}</strong>
-                                <span>{formatAttachmentSize(attachment.sizeBytes)}</span>
-                              </div>
-                              <button
-                                type="button"
-                                className="attachment-remove"
-                                onClick={() =>
-                                  void handleDownloadMovementAttachment(
-                                    movement.id,
-                                    attachment.id,
-                                    attachment.originalName
-                                  )
-                                }
-                                disabled={downloadingAttachmentId === key}
-                              >
-                                {downloadingAttachmentId === key ? "Baixando..." : "Baixar"}
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          {activeDetailTab === "evolution" && (
+            <>
+              <h2>Evolução do caso</h2>
+              <div className="resumo-box">
+                {sortedMovements.length === 0 ? (
+                  <p>Nenhuma movimentação registrada até o momento.</p>
+                ) : (
+                  <ul className="movement-list">
+                    {sortedMovements.map((movement) => (
+                      <li key={movement.id}>
+                        <div className="movement-list-head">
+                          <span className="info-pill info-pill--neutral">{MOVEMENT_STAGE_LABEL[movement.stage]}</span>
+                          <span className="movement-list-date">{formatDate(movement.createdAt)}</span>
+                        </div>
+                        <p>{movement.description}</p>
+                        <div className="movement-list-meta">
+                          <span>Status: {STATUS_LABEL[movement.statusAfter]}</span>
+                          <span>Por: {movement.createdByName ?? movement.createdByUserId}</span>
+                          {canAccessAdmin && (
+                            <span>Visibilidade: {MOVEMENT_VISIBILITY_LABEL[movement.visibility]}</span>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
         </article>
       </div>
 
@@ -1012,9 +1389,19 @@ export function CaseDetailPage() {
       {canManageOperatorActions && (
         <>
           {!isOperatorSidebarOpen && (
-            <button type="button" className="operator-progress-trigger" onClick={openOperatorSidebar}>
-              Avançar no Caso
-            </button>
+            <div className="operator-action-dock">
+              <button type="button" className="operator-progress-trigger" onClick={openOperatorSidebar}>
+                Avançar no Caso
+              </button>
+              <button
+                type="button"
+                className="danger-button operator-close-trigger"
+                onClick={() => void handleCloseCase()}
+                disabled={closingCase}
+              >
+                {closingCase ? "Encerrando..." : "Encerrar Caso"}
+              </button>
+            </div>
           )}
 
           {isOperatorSidebarOpen && (
@@ -1048,6 +1435,46 @@ export function CaseDetailPage() {
                 <div className="operator-action-box">
                   <h3>Parecer inicial</h3>
                   <p>Avalie a viabilidade e decida se o caso será aceito ou rejeitado.</p>
+
+                  {hasPendingCloseRequest && (
+                    <div className="info-box operator-close-request-box">
+                      <strong>Solicitação de encerramento pendente</strong>
+                      <span>Justificativa do cliente: {caseItem.closeRequest.reason}</span>
+                      {caseItem.closeRequest.requestedAt && (
+                        <span>Solicitado em: {formatDate(caseItem.closeRequest.requestedAt)}</span>
+                      )}
+                      <label>
+                        Motivo da recusa (obrigatório ao recusar)
+                        <textarea
+                          rows={3}
+                          value={closeRequestDecisionReason}
+                          onChange={(event) => setCloseRequestDecisionReason(event.target.value)}
+                          placeholder="Explique o motivo caso decida recusar o pedido."
+                          disabled={decidingCloseRequest}
+                        />
+                      </label>
+                      <div className="operator-action-buttons">
+                        <button
+                          type="button"
+                          className="secondary-button secondary-button--small"
+                          onClick={() => void handleCloseRequestDecision("approved")}
+                          disabled={decidingCloseRequest}
+                        >
+                          {decidingCloseRequest ? "Salvando..." : "Aprovar encerramento"}
+                        </button>
+                        <button
+                          type="button"
+                          className="danger-button danger-button--small"
+                          onClick={() => void handleCloseRequestDecision("denied")}
+                          disabled={decidingCloseRequest}
+                        >
+                          Recusar encerramento
+                        </button>
+                      </div>
+                      {closeRequestDecisionFeedback && <p className="success-text">{closeRequestDecisionFeedback}</p>}
+                      {closeRequestDecisionError && <p className="error-text">{closeRequestDecisionError}</p>}
+                    </div>
+                  )}
 
                   <label>
                     Justificativa do parecer

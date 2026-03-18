@@ -107,6 +107,25 @@ const caseServiceFeeSchema = z.object({
     })
 });
 
+const caseCloseRequestSchema = z.object({
+  reason: z.string().trim().min(10).max(5000)
+});
+
+const caseCloseRequestDecisionSchema = z
+  .object({
+    decision: z.enum(["approved", "denied"]),
+    reason: z.string().trim().max(5000).nullable().optional()
+  })
+  .superRefine((value, ctx) => {
+    if (value.decision === "denied" && !value.reason?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Informe o motivo da recusa do encerramento.",
+        path: ["reason"]
+      });
+    }
+  });
+
 export interface ValidatedCreateCaseInput {
   varaId: string;
   varaNome: string;
@@ -342,6 +361,32 @@ export function validateCaseServiceFeePayload(payload: unknown): {
   return {
     amount: parsed.data.amount,
     dueDate: parsed.data.dueDate
+  };
+}
+
+export function validateCaseCloseRequestPayload(payload: unknown): { reason: string } {
+  const parsed = caseCloseRequestSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new HttpError(400, "Payload inválido para solicitação de encerramento.", parsed.error.flatten());
+  }
+
+  return {
+    reason: parsed.data.reason.trim()
+  };
+}
+
+export function validateCaseCloseRequestDecisionPayload(payload: unknown): {
+  decision: "approved" | "denied";
+  reason: string | null;
+} {
+  const parsed = caseCloseRequestDecisionSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new HttpError(400, "Payload inválido para decisão de encerramento.", parsed.error.flatten());
+  }
+
+  return {
+    decision: parsed.data.decision,
+    reason: normalizeOptionalText(parsed.data.reason)
   };
 }
 

@@ -76,6 +76,20 @@ export type CaseWorkflowStep =
 
 export type CaseMessageSenderRole = "client" | "operator" | "master" | "system";
 
+export type CaseCloseRequestStatus = "none" | "pending" | "approved" | "denied";
+
+export interface CaseCloseRequest {
+  status: CaseCloseRequestStatus;
+  reason: string | null;
+  requestedAt: string | null;
+  requestedByUserId: string | null;
+  requestedByName: string | null;
+  decisionAt: string | null;
+  decidedByUserId: string | null;
+  decidedByName: string | null;
+  decisionReason: string | null;
+}
+
 export interface CaseServiceFee {
   amount: number;
   dueDate: string;
@@ -148,6 +162,7 @@ export interface CaseRecord {
   clientDataRequest: string | null;
   clientDataRequestedAt: string | null;
   workflowStep: CaseWorkflowStep;
+  closeRequest: CaseCloseRequest;
   serviceFee: CaseServiceFee | null;
   messages: CaseMessageRecord[];
   movements: CaseMovementRecord[];
