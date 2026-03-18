@@ -117,6 +117,18 @@ const CASE_DETAIL_TABS: Array<{ id: CaseDetailTab; label: string }> = [
   { id: "evolution", label: "Evolução do Caso" }
 ];
 
+const DEFAULT_CLOSE_REQUEST: CaseRecord["closeRequest"] = {
+  status: "none",
+  reason: null,
+  requestedAt: null,
+  requestedByUserId: null,
+  requestedByName: null,
+  decisionAt: null,
+  decidedByUserId: null,
+  decidedByName: null,
+  decisionReason: null
+};
+
 function resolveOperatorStepFromWorkflow(workflowStep: CaseRecord["workflowStep"]): OperatorActionStep {
   if (workflowStep === "awaiting_initial_fee") {
     return 2;
@@ -324,13 +336,12 @@ export function CaseDetailPage() {
   const canManageOperatorActions = Boolean(
     caseItem && canAccessAdmin && !isRejectedOrClosedCase && (isMasterUser || (isOperatorUser && isAssignedOperator))
   );
-  const closeRequest = caseItem?.closeRequest;
-  const hasPendingCloseRequest = closeRequest?.status === "pending";
+  const closeRequest = caseItem?.closeRequest ?? DEFAULT_CLOSE_REQUEST;
+  const hasPendingCloseRequest = closeRequest.status === "pending";
   const canClientRequestClose = Boolean(
     caseItem &&
       !canAccessAdmin &&
       !isRejectedOrClosedCase &&
-      closeRequest &&
       closeRequest.status !== "pending"
   );
 
@@ -456,7 +467,7 @@ export function CaseDetailPage() {
   }, [canManageOperatorActions, isOperatorSidebarOpen]);
 
   function openOperatorSidebar() {
-    if (caseItem?.closeRequest?.status === "pending") {
+    if (closeRequest.status === "pending") {
       setOperatorStep(1);
     } else {
       setOperatorStep(caseItem ? resolveOperatorStepFromWorkflow(caseItem.workflowStep) : 1);
@@ -1081,7 +1092,7 @@ export function CaseDetailPage() {
                 </button>
               </div>
             )}
-            {!canAccessAdmin && closeRequest?.status === "pending" && (
+            {!canAccessAdmin && closeRequest.status === "pending" && (
               <p className="helper-text">Solicitação de encerramento pendente de confirmação do operador.</p>
             )}
           </div>
@@ -1125,7 +1136,7 @@ export function CaseDetailPage() {
                 </div>
                 <div className="detail-item">
                   <span>Solicitação de encerramento</span>
-                  <strong>{CLOSE_REQUEST_STATUS_LABEL[caseItem.closeRequest.status]}</strong>
+                  <strong>{CLOSE_REQUEST_STATUS_LABEL[closeRequest.status]}</strong>
                 </div>
                 <div className="detail-item">
                   <span>Cliente</span>
@@ -1157,14 +1168,14 @@ export function CaseDetailPage() {
                 )}
               </div>
 
-              {(caseItem.closeRequest.reason || caseItem.closeRequest.decisionReason) && (
+              {(closeRequest.reason || closeRequest.decisionReason) && (
                 <div className="info-box">
                   <strong>Histórico da solicitação de encerramento</strong>
-                  {caseItem.closeRequest.reason && (
-                    <span>Pedido do cliente: {caseItem.closeRequest.reason}</span>
+                  {closeRequest.reason && (
+                    <span>Pedido do cliente: {closeRequest.reason}</span>
                   )}
-                  {caseItem.closeRequest.decisionReason && (
-                    <span>Motivo da decisão: {caseItem.closeRequest.decisionReason}</span>
+                  {closeRequest.decisionReason && (
+                    <span>Motivo da decisão: {closeRequest.decisionReason}</span>
                   )}
                 </div>
               )}
@@ -1439,9 +1450,9 @@ export function CaseDetailPage() {
                   {hasPendingCloseRequest && (
                     <div className="info-box operator-close-request-box">
                       <strong>Solicitação de encerramento pendente</strong>
-                      <span>Justificativa do cliente: {caseItem.closeRequest.reason}</span>
-                      {caseItem.closeRequest.requestedAt && (
-                        <span>Solicitado em: {formatDate(caseItem.closeRequest.requestedAt)}</span>
+                      <span>Justificativa do cliente: {closeRequest.reason}</span>
+                      {closeRequest.requestedAt && (
+                        <span>Solicitado em: {formatDate(closeRequest.requestedAt)}</span>
                       )}
                       <label>
                         Motivo da recusa (obrigatório ao recusar)

@@ -377,6 +377,7 @@ export function DashboardPage() {
           const creatorName = resolveCreatorName(item);
           const latestMovement = resolveLatestMovement(item);
           const isExpanded = expandedCaseId === item.id;
+          const closeRequestStatus = item.closeRequest?.status ?? "none";
 
           return (
             <article key={item.id} className={`case-card ${isExpanded ? "case-card--expanded" : ""}`}>
@@ -388,7 +389,7 @@ export function DashboardPage() {
                   <small className="case-card-code">{item.caseCode}</small>
                 </div>
                 <div className="case-card-top-actions">
-                  {item.closeRequest.status === "pending" && (
+                  {closeRequestStatus === "pending" && (
                     <span className="status-badge status-badge--close-request-pending">Encerramento solicitado</span>
                   )}
                   <span className={`status-badge status-badge--review-${item.reviewDecision}`}>
