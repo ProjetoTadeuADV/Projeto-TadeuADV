@@ -36,7 +36,10 @@ export const env = {
   EMAIL_FROM: process.env.EMAIL_FROM ?? "",
   EMAIL_REPLY_TO: process.env.EMAIL_REPLY_TO ?? "",
   SENDGRID_API_KEY: process.env.SENDGRID_API_KEY ?? "",
-  SENDGRID_TEMPLATE_ID: process.env.SENDGRID_TEMPLATE_ID ?? ""
+  SENDGRID_TEMPLATE_ID: process.env.SENDGRID_TEMPLATE_ID ?? "",
+  ASAAS_API_KEY: process.env.ASAAS_API_KEY ?? "",
+  ASAAS_BASE_URL: process.env.ASAAS_BASE_URL ?? "https://api-sandbox.asaas.com/v3",
+  ASAAS_USER_AGENT: process.env.ASAAS_USER_AGENT ?? "DoutorEu-API/1.0"
 };
 
 function looksLikePlaceholder(value: string): boolean {

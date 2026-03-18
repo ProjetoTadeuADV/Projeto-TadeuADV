@@ -7,6 +7,7 @@ MVP funcional para abertura e acompanhamento de casos juridicos com:
 - `Firebase Auth` (login por e-mail/senha)
 - `Firestore` (persistencia de usuarios e casos)
 - Consulta de CPF via adaptador mock (`source: "mock"`)
+- Integracao de cobranca inicial via Asaas (cliente + boleto)
 
 ## Estrutura
 
@@ -105,6 +106,9 @@ API: `http://localhost:8080`
    - `FIREBASE_CLIENT_EMAIL`
    - `FIREBASE_PRIVATE_KEY` (com `\n` escapado)
    - `MOCK_CPF_DEFAULT_NAME` (opcional)
+   - `ASAAS_API_KEY`
+   - `ASAAS_BASE_URL` (`https://api.asaas.com/v3` producao ou `https://api-sandbox.asaas.com/v3` sandbox)
+   - `ASAAS_USER_AGENT` (opcional)
 6. Nao usar valores locais/placeholder em producao (`localhost`, `SEU_APP`, `SUA_API` etc).
 
 ## Alinhamento local x producao (obrigatorio)

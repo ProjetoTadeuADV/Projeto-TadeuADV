@@ -157,6 +157,7 @@ export class MemoryCaseRepository implements CaseRepository {
       nameCustomized: existing.nameCustomized ?? false,
       avatarUrlCustomized: existing.avatarUrlCustomized ?? false,
       cpf: existing.cpf ?? user.cpf ?? null,
+      asaasCustomerId: existing.asaasCustomerId ?? null,
       emailVerified: user.emailVerified,
       isMaster: user.isMaster,
       isOperator: user.isMaster ? false : (user.isOperator ?? existing.isOperator ?? false),
@@ -193,6 +194,7 @@ export class MemoryCaseRepository implements CaseRepository {
         nameCustomized: true,
         avatarUrlCustomized: false,
         cpf: profile.cpf,
+        asaasCustomerId: null,
         emailVerified: false,
         isMaster: false,
         isOperator: false,
@@ -208,6 +210,39 @@ export class MemoryCaseRepository implements CaseRepository {
       name: normalizeOptionalText(profile.name) ?? existing.name,
       nameCustomized: true,
       cpf: profile.cpf,
+      asaasCustomerId: existing.asaasCustomerId ?? null,
+      lastSeenAt: now
+    };
+    this.users.set(userId, updated);
+    return updated;
+  }
+
+  async updateUserAsaasCustomer(userId: string, asaasCustomerId: string): Promise<UserRecord | null> {
+    const now = new Date().toISOString();
+    const existing = this.users.get(userId);
+    if (!existing) {
+      const created: UserRecord = {
+        id: userId,
+        email: null,
+        name: null,
+        avatarUrl: null,
+        nameCustomized: false,
+        avatarUrlCustomized: false,
+        cpf: null,
+        asaasCustomerId: normalizeOptionalText(asaasCustomerId),
+        emailVerified: false,
+        isMaster: false,
+        isOperator: false,
+        createdAt: now,
+        lastSeenAt: now
+      };
+      this.users.set(userId, created);
+      return created;
+    }
+
+    const updated: UserRecord = {
+      ...existing,
+      asaasCustomerId: normalizeOptionalText(asaasCustomerId),
       lastSeenAt: now
     };
     this.users.set(userId, updated);
@@ -257,6 +292,7 @@ export class MemoryCaseRepository implements CaseRepository {
         nameCustomized: hasName,
         avatarUrlCustomized: hasAvatarUrl,
         cpf: hasCpf ? normalizeOptionalText(profile.cpf) : null,
+        asaasCustomerId: null,
         rg: hasRg ? normalizeOptionalText(profile.rg) : null,
         rgIssuer: hasRgIssuer ? normalizeOptionalText(profile.rgIssuer) : null,
         birthDate: hasBirthDate ? normalizeOptionalText(profile.birthDate) : null,
@@ -280,6 +316,7 @@ export class MemoryCaseRepository implements CaseRepository {
       nameCustomized: hasName ? true : existing.nameCustomized ?? false,
       avatarUrlCustomized: hasAvatarUrl ? true : existing.avatarUrlCustomized ?? false,
       cpf: hasCpf ? normalizeOptionalText(profile.cpf) : existing.cpf ?? null,
+      asaasCustomerId: existing.asaasCustomerId ?? null,
       rg: hasRg ? normalizeOptionalText(profile.rg) : existing.rg ?? null,
       rgIssuer: hasRgIssuer ? normalizeOptionalText(profile.rgIssuer) : existing.rgIssuer ?? null,
       birthDate: hasBirthDate ? normalizeOptionalText(profile.birthDate) : existing.birthDate ?? null,

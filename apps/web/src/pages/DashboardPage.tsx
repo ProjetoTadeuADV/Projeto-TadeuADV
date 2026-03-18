@@ -2,7 +2,7 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
-import type { CaseMovementRecord, CaseRecord } from "../types";
+import type { AdminOperatorOption, CaseMovementRecord, CaseRecord } from "../types";
 
 const STATUS_LABEL: Record<CaseRecord["status"], string> = {
   recebido: "Recebido",
@@ -114,11 +114,20 @@ function countPublicUpdates(item: CaseRecord): number {
   return Math.max(0, publicMovements.length - 1);
 }
 
+function isRejectedCase(item: CaseRecord): boolean {
+  return item.reviewDecision === "rejected" || item.workflowStep === "closed";
+}
+
 export function DashboardPage() {
-  const { getToken, canCreateCases, canAccessAdmin, user } = useAuth();
+  const { getToken, canCreateCases, canAccessAdmin, isMasterUser, user } = useAuth();
   const [cases, setCases] = useState<CaseRecord[]>([]);
+  const [operators, setOperators] = useState<AdminOperatorOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const [assignmentFeedback, setAssignmentFeedback] = useState<string | null>(null);
+  const [assigningCaseId, setAssigningCaseId] = useState<string | null>(null);
+  const [selectedOperatorByCase, setSelectedOperatorByCase] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos");
   const [sortBy, setSortBy] = useState<SortOption>("updated_desc");
@@ -128,11 +137,31 @@ export function DashboardPage() {
     async function loadCases() {
       setLoading(true);
       setError(null);
+      setAssignmentError(null);
 
       try {
         const token = await getToken();
         const data = await apiRequest<CaseRecord[]>("/v1/cases", { token });
         setCases(data);
+
+        if (canAccessAdmin && isMasterUser) {
+          const availableOperators = await apiRequest<AdminOperatorOption[]>("/v1/admin/operators", { token });
+          const normalizedOperators = availableOperators.filter((item) => item.isOperator || item.isMaster);
+          setOperators(normalizedOperators);
+
+          const fallbackOperatorId = normalizedOperators[0]?.id ?? "";
+          setSelectedOperatorByCase((current) => {
+            const next: Record<string, string> = {};
+            for (const item of data) {
+              const selected = current[item.id] ?? item.assignedOperatorId ?? fallbackOperatorId;
+              next[item.id] = selected;
+            }
+            return next;
+          });
+        } else {
+          setOperators([]);
+          setSelectedOperatorByCase({});
+        }
       } catch (err) {
         const message = err instanceof ApiError ? err.message : "Erro ao carregar casos.";
         setError(message);
@@ -142,7 +171,7 @@ export function DashboardPage() {
     }
 
     void loadCases();
-  }, [getToken]);
+  }, [canAccessAdmin, getToken, isMasterUser]);
 
   const totalCases = cases.length;
   const recebidos = useMemo(() => cases.filter((item) => item.status === "recebido").length, [cases]);
@@ -204,7 +233,7 @@ export function DashboardPage() {
       return [];
     }
 
-    return filteredCases.filter((item) => item.assignedOperatorId === user.uid);
+    return filteredCases.filter((item) => item.assignedOperatorId === user.uid && !isRejectedCase(item));
   }, [canAccessAdmin, filteredCases, user?.uid]);
 
   const openOtherCases = useMemo(() => {
@@ -216,16 +245,30 @@ export function DashboardPage() {
       return filteredCases;
     }
 
-    return filteredCases.filter((item) => item.assignedOperatorId !== user.uid && item.status !== "encerrado");
+    return filteredCases.filter(
+      (item) => item.assignedOperatorId !== user.uid && item.status !== "encerrado" && !isRejectedCase(item)
+    );
   }, [canAccessAdmin, filteredCases, user?.uid]);
 
+  const rejectedCases = useMemo(() => {
+    if (!canAccessAdmin) {
+      return [];
+    }
+
+    return filteredCases.filter((item) => isRejectedCase(item));
+  }, [canAccessAdmin, filteredCases]);
+
   const hasFilteredCases = canAccessAdmin
-    ? myAssignedCases.length > 0 || openOtherCases.length > 0
+    ? myAssignedCases.length > 0 || openOtherCases.length > 0 || rejectedCases.length > 0
     : filteredCases.length > 0;
   const displayedCasesCount = canAccessAdmin
-    ? myAssignedCases.length + openOtherCases.length
+    ? myAssignedCases.length + openOtherCases.length + rejectedCases.length
     : filteredCases.length;
   const hasActiveFilters = normalizedSearch.length > 0 || statusFilter !== "todos" || sortBy !== "updated_desc";
+  const operatorOptions = useMemo(
+    () => operators.filter((item) => item.isOperator || item.isMaster),
+    [operators]
+  );
 
   function resetFilters() {
     setSearch("");
@@ -235,6 +278,73 @@ export function DashboardPage() {
 
   function toggleExpanded(caseId: string) {
     setExpandedCaseId((current) => (current === caseId ? null : caseId));
+  }
+
+  function handleOperatorSelection(caseId: string, operatorUserId: string) {
+    setSelectedOperatorByCase((current) => ({
+      ...current,
+      [caseId]: operatorUserId
+    }));
+  }
+
+  async function handleAssignOperator(caseItem: CaseRecord) {
+    if (!isMasterUser) {
+      return;
+    }
+
+    if (isRejectedCase(caseItem) || caseItem.status === "encerrado") {
+      setAssignmentError("Casos rejeitados/encerrados nao podem receber nova alocacao no momento.");
+      return;
+    }
+
+    const operatorUserId = selectedOperatorByCase[caseItem.id] ?? "";
+    if (!operatorUserId) {
+      setAssignmentError("Selecione um operador antes de alocar o caso.");
+      return;
+    }
+
+    setAssignmentError(null);
+    setAssignmentFeedback(null);
+    setAssigningCaseId(caseItem.id);
+
+    try {
+      const token = await getToken();
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${caseItem.id}/assign-operator`, {
+        method: "POST",
+        token,
+        body: {
+          operatorUserId
+        }
+      });
+
+      setCases((current) =>
+        current.map((item) =>
+          item.id === caseItem.id
+            ? {
+                ...item,
+                assignedOperatorId: updated.assignedOperatorId,
+                assignedOperatorName: updated.assignedOperatorName,
+                assignedAt: updated.assignedAt,
+                movements: updated.movements,
+                updatedAt: updated.updatedAt
+              }
+            : item
+        )
+      );
+
+      const selectedOperator = operatorOptions.find((item) => item.id === operatorUserId);
+      const operatorLabel = selectedOperator?.name ?? selectedOperator?.email ?? updated.assignedOperatorName;
+      setAssignmentFeedback(
+        operatorLabel
+          ? `Caso ${updated.caseCode} alocado para ${operatorLabel}.`
+          : `Caso ${updated.caseCode} alocado com sucesso.`
+      );
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Falha ao alocar operador para este caso.";
+      setAssignmentError(message);
+    } finally {
+      setAssigningCaseId(null);
+    }
   }
 
   function renderCaseCards(items: CaseRecord[], layout: "grid" | "list" = "grid") {
@@ -258,6 +368,9 @@ export function DashboardPage() {
                 <div className="case-card-top-actions">
                   <span className={`status-badge status-badge--review-${item.reviewDecision}`}>
                     {REVIEW_LABEL[item.reviewDecision]}
+                  </span>
+                  <span className={`status-badge status-badge--workflow-${item.workflowStep}`}>
+                    {WORKFLOW_LABEL[item.workflowStep]}
                   </span>
                   <span className={`status-badge status-badge--${item.status}`}>{STATUS_LABEL[item.status]}</span>
                 </div>
@@ -290,6 +403,35 @@ export function DashboardPage() {
                 >
                   {isExpanded ? "Ocultar detalhes" : "Ver detalhes"}
                 </button>
+                {canAccessAdmin && isMasterUser && (
+                  <div className="case-card-assign">
+                    <select
+                      value={selectedOperatorByCase[item.id] ?? ""}
+                      onChange={(event) => handleOperatorSelection(item.id, event.target.value)}
+                      disabled={assigningCaseId === item.id || operatorOptions.length === 0 || isRejectedCase(item)}
+                      aria-label={`Selecionar operador para o caso ${item.caseCode}`}
+                    >
+                      <option value="">Selecione operador</option>
+                      {operatorOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {(option.name ?? option.email ?? option.id) + (option.isMaster ? " (Master)" : "")}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="secondary-button case-card-detail-button"
+                      onClick={() => void handleAssignOperator(item)}
+                      disabled={
+                        assigningCaseId === item.id ||
+                        isRejectedCase(item) ||
+                        !selectedOperatorByCase[item.id]
+                      }
+                    >
+                      {assigningCaseId === item.id ? "Alocando..." : "Alocar operador"}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {isExpanded && (
@@ -466,6 +608,8 @@ export function DashboardPage() {
 
         {loading && <p>Carregando casos...</p>}
         {error && <p className="error-text">{error}</p>}
+        {assignmentError && <p className="error-text">{assignmentError}</p>}
+        {assignmentFeedback && <p className="success-text">{assignmentFeedback}</p>}
 
         {!loading && !hasCases && (
           <div className="empty-state">
@@ -523,6 +667,20 @@ export function DashboardPage() {
                   <p className="helper-text">Não há outros casos em aberto fora da sua fila.</p>
                 ) : (
                   renderCaseCards(openOtherCases, "list")
+                )}
+              </section>
+
+              <section className="workspace-panel workspace-panel--muted">
+                <header className="page-header">
+                  <div>
+                    <h2>Casos Rejeitados</h2>
+                    <p>Casos encerrados por rejeição na triagem inicial.</p>
+                  </div>
+                </header>
+                {rejectedCases.length === 0 ? (
+                  <p className="helper-text">Não há casos rejeitados para os filtros atuais.</p>
+                ) : (
+                  renderCaseCards(rejectedCases, "list")
                 )}
               </section>
             </div>

@@ -156,3 +156,22 @@ export async function storeCaseAttachments(
   }
 }
 
+export async function storeGeneratedCaseAttachment(
+  caseId: string,
+  input: {
+    fileName: string;
+    mimeType: string;
+    bytes: Buffer;
+  }
+): Promise<PetitionAttachment> {
+  const syntheticFile = {
+    originalname: input.fileName,
+    mimetype: input.mimeType,
+    size: input.bytes.length,
+    buffer: input.bytes
+  } as Express.Multer.File;
+
+  const [stored] = await storeCaseAttachments(caseId, [syntheticFile]);
+  return stored;
+}
+

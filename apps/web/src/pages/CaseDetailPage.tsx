@@ -3,7 +3,6 @@ import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
 import type {
-  AdminOperatorOption,
   ApiErrorResponse,
   ApiSuccessResponse,
   CaseMovementCreateResult,
@@ -72,6 +71,38 @@ const MOVEMENT_VISIBILITY_LABEL: Record<CaseMovementRecord["visibility"], string
   public: "Pública",
   internal: "Interna"
 };
+
+type OperatorActionStep = 1 | 2 | 3;
+
+const OPERATOR_ACTION_STEPS: Array<{
+  id: OperatorActionStep;
+  title: string;
+}> = [
+  {
+    id: 1,
+    title: "Parecer Inicial"
+  },
+  {
+    id: 2,
+    title: "Cobrança Inicial"
+  },
+  {
+    id: 3,
+    title: "Nova Movimentação"
+  }
+];
+
+function resolveOperatorStepFromWorkflow(workflowStep: CaseRecord["workflowStep"]): OperatorActionStep {
+  if (workflowStep === "awaiting_initial_fee") {
+    return 2;
+  }
+
+  if (workflowStep === "in_progress") {
+    return 3;
+  }
+
+  return 1;
+}
 
 function extractFileName(contentDisposition: string | null): string | null {
   if (!contentDisposition) {
@@ -180,18 +211,12 @@ export function CaseDetailPage() {
   const { id } = useParams<{ id: string }>();
 
   const [caseItem, setCaseItem] = useState<CaseRecord | null>(null);
-  const [operators, setOperators] = useState<AdminOperatorOption[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [exportingPdf, setExportingPdf] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-
-  const [assigningOperator, setAssigningOperator] = useState(false);
-  const [selectedOperatorId, setSelectedOperatorId] = useState("");
-  const [assignmentFeedback, setAssignmentFeedback] = useState<string | null>(null);
-  const [assignmentError, setAssignmentError] = useState<string | null>(null);
 
   const [savingMovement, setSavingMovement] = useState(false);
   const [movementStage, setMovementStage] = useState<CaseMovementRecord["stage"]>("andamento");
@@ -218,6 +243,20 @@ export function CaseDetailPage() {
   const [downloadingAttachmentId, setDownloadingAttachmentId] = useState<string | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
 
+  const [isOperatorSidebarOpen, setIsOperatorSidebarOpen] = useState(false);
+  const [operatorStep, setOperatorStep] = useState<OperatorActionStep>(1);
+
+  const isAssignedOperator = Boolean(user?.uid && caseItem?.assignedOperatorId === user.uid);
+  const isRejectedOrClosedCase = Boolean(
+    caseItem &&
+      (caseItem.reviewDecision === "rejected" ||
+        caseItem.workflowStep === "closed" ||
+        caseItem.status === "encerrado")
+  );
+  const canManageOperatorActions = Boolean(
+    caseItem && canAccessAdmin && !isRejectedOrClosedCase && (isMasterUser || (isOperatorUser && isAssignedOperator))
+  );
+
   const sortedMovements = useMemo(() => {
     if (!caseItem?.movements) {
       return [];
@@ -239,15 +278,8 @@ export function CaseDetailPage() {
 
       try {
         const token = await getToken();
-        const [caseData, operatorData] = await Promise.all([
-          apiRequest<CaseRecord>(`/v1/cases/${id}`, { token }),
-          canAccessAdmin
-            ? apiRequest<AdminOperatorOption[]>("/v1/admin/operators", { token })
-            : Promise.resolve([])
-        ]);
-
+        const caseData = await apiRequest<CaseRecord>(`/v1/cases/${id}`, { token });
         setCaseItem(caseData);
-        setOperators(operatorData);
         setMovementStatus(caseData.status);
       } catch (nextError) {
         const message = nextError instanceof ApiError ? nextError.message : "Falha ao carregar o caso.";
@@ -258,22 +290,7 @@ export function CaseDetailPage() {
     }
 
     void loadCase();
-  }, [canAccessAdmin, getToken, id]);
-
-  useEffect(() => {
-    if (!canAccessAdmin) {
-      return;
-    }
-
-    if (caseItem?.assignedOperatorId) {
-      setSelectedOperatorId(caseItem.assignedOperatorId);
-      return;
-    }
-
-    if (operators.length > 0) {
-      setSelectedOperatorId(operators[0].id);
-    }
-  }, [canAccessAdmin, caseItem?.assignedOperatorId, operators]);
+  }, [getToken, id]);
 
   useEffect(() => {
     if (!caseItem?.serviceFee) {
@@ -283,6 +300,70 @@ export function CaseDetailPage() {
     setServiceFeeAmountInput(String(caseItem.serviceFee.amount));
     setServiceFeeDueDate(caseItem.serviceFee.dueDate);
   }, [caseItem?.serviceFee]);
+
+  useEffect(() => {
+    if (!isOperatorSidebarOpen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOperatorSidebarOpen(false);
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOperatorSidebarOpen]);
+
+  useEffect(() => {
+    if (!canManageOperatorActions && isOperatorSidebarOpen) {
+      setIsOperatorSidebarOpen(false);
+    }
+  }, [canManageOperatorActions, isOperatorSidebarOpen]);
+
+  function openOperatorSidebar() {
+    setOperatorStep(caseItem ? resolveOperatorStepFromWorkflow(caseItem.workflowStep) : 1);
+    setIsOperatorSidebarOpen(true);
+  }
+
+  function closeOperatorSidebar() {
+    setIsOperatorSidebarOpen(false);
+  }
+
+  function goToNextOperatorStep() {
+    setOperatorStep((current) => {
+      if (current === 1) {
+        return 2;
+      }
+
+      if (current === 2) {
+        return 3;
+      }
+
+      return 3;
+    });
+  }
+
+  function goToPreviousOperatorStep() {
+    setOperatorStep((current) => {
+      if (current === 3) {
+        return 2;
+      }
+
+      if (current === 2) {
+        return 1;
+      }
+
+      return 1;
+    });
+  }
 
   async function handleExportPdf() {
     if (!id) {
@@ -391,36 +472,6 @@ export function CaseDetailPage() {
     }
   }
 
-  async function handleAssignOperator(operatorUserId: string) {
-    if (!id || !operatorUserId) {
-      return;
-    }
-
-    setAssignmentFeedback(null);
-    setAssignmentError(null);
-    setAssigningOperator(true);
-
-    try {
-      const token = await getToken();
-      const updated = await apiRequest<CaseRecord>(`/v1/cases/${id}/assign-operator`, {
-        method: "POST",
-        token,
-        body: {
-          operatorUserId
-        }
-      });
-
-      setCaseItem(updated);
-      setSelectedOperatorId(operatorUserId);
-      setAssignmentFeedback("Operador alocado com sucesso.");
-    } catch (nextError) {
-      const message = nextError instanceof ApiError ? nextError.message : "Falha ao alocar operador.";
-      setAssignmentError(message);
-    } finally {
-      setAssigningOperator(false);
-    }
-  }
-
   function handleMovementFilesChange(event: ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(event.target.files ?? []);
     event.target.value = "";
@@ -525,6 +576,7 @@ export function CaseDetailPage() {
 
       setCaseItem(updatedCase);
       setMovementStatus(updatedCase.status);
+      setOperatorStep(resolveOperatorStepFromWorkflow(updatedCase.workflowStep));
       setMovementDescription("");
       setMovementFiles([]);
       setMovementFeedback("Movimentação registrada com sucesso.");
@@ -580,6 +632,7 @@ export function CaseDetailPage() {
 
       setCaseItem(updated);
       setMovementStatus(updated.status);
+      setOperatorStep(resolveOperatorStepFromWorkflow(updated.workflowStep));
       setReviewFeedback(
         decision === "rejected"
           ? "Caso rejeitado e cliente notificado."
@@ -587,6 +640,10 @@ export function CaseDetailPage() {
             ? "Caso aceito com solicitação de dados enviada ao cliente."
             : "Caso aceito e cliente orientado sobre pagamento inicial."
       );
+
+      if (decision === "rejected") {
+        setIsOperatorSidebarOpen(false);
+      }
     } catch (nextError) {
       const message = nextError instanceof ApiError ? nextError.message : "Falha ao salvar parecer do caso.";
       setReviewError(message);
@@ -635,6 +692,7 @@ export function CaseDetailPage() {
 
       setCaseItem(updated);
       setMovementStatus(updated.status);
+      setOperatorStep(resolveOperatorStepFromWorkflow(updated.workflowStep));
       setServiceFeeFeedback("Cobrança inicial registrada e cliente notificado.");
     } catch (nextError) {
       const message = nextError instanceof ApiError ? nextError.message : "Falha ao registrar cobrança inicial.";
@@ -671,9 +729,8 @@ export function CaseDetailPage() {
     return null;
   }
 
-  const isAssignedOperator = Boolean(user?.uid && caseItem.assignedOperatorId === user.uid);
-  const canManageOperatorActions =
-    canAccessAdmin && (isMasterUser || (isOperatorUser && (isAssignedOperator || !caseItem.assignedOperatorId)));
+  const operatorCurrentStepTitle =
+    OPERATOR_ACTION_STEPS.find((step) => step.id === operatorStep)?.title ?? "Etapa";
 
   return (
     <section className="page-stack">
@@ -707,7 +764,7 @@ export function CaseDetailPage() {
         </div>
       </section>
 
-      <div className="detail-grid detail-grid--operator">
+      <div className="detail-grid detail-grid--single">
         <article className="detail-card">
           <h2>Informações principais</h2>
           <div className="detail-list">
@@ -936,277 +993,295 @@ export function CaseDetailPage() {
             )}
           </div>
         </article>
+      </div>
 
-        {(canManageOperatorActions || !canAccessAdmin) && (
-          <aside className="detail-card detail-card--aside">
-            {canManageOperatorActions ? (
-            <>
-              <h2>Ações do operador</h2>
+      {canAccessAdmin && !canManageOperatorActions && (
+        <section className="workspace-panel">
+          {isRejectedOrClosedCase ? (
+            <p className="helper-text">
+              Este caso está rejeitado/encerrado e não está disponível para novas edições operacionais no momento.
+            </p>
+          ) : (
+            <p className="helper-text">
+              As ações do operador ficam disponíveis apenas para o responsável alocado neste caso.
+            </p>
+          )}
+        </section>
+      )}
 
-              <div className="operator-action-box">
-                <h3>Alocação de caso</h3>
-                <p>Assinale o caso para você ou para outro operador.</p>
-                <label>
-                  Operador
-                  <select
-                    value={selectedOperatorId}
-                    onChange={(event) => setSelectedOperatorId(event.target.value)}
-                    disabled={assigningOperator || operators.length === 0}
-                  >
-                    {operators.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name ?? item.email ?? item.id}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+      {canManageOperatorActions && (
+        <>
+          {!isOperatorSidebarOpen && (
+            <button type="button" className="operator-progress-trigger" onClick={openOperatorSidebar}>
+              Avançar no Caso
+            </button>
+          )}
 
-                <div className="operator-action-buttons">
-                  <button
-                    type="button"
-                    className="secondary-button secondary-button--small"
-                    disabled={assigningOperator || !selectedOperatorId}
-                    onClick={() => void handleAssignOperator(selectedOperatorId)}
-                  >
-                    {assigningOperator ? "Salvando..." : "Alocar operador"}
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    disabled={assigningOperator || !user?.uid}
-                    onClick={() => user?.uid && void handleAssignOperator(user.uid)}
-                  >
-                    Assumir para mim
-                  </button>
-                </div>
-                {assignmentFeedback && <p className="success-text">{assignmentFeedback}</p>}
-                {assignmentError && <p className="error-text">{assignmentError}</p>}
+          {isOperatorSidebarOpen && (
+            <button
+              type="button"
+              className="operator-sidebar-overlay"
+              aria-label="Fechar painel de ações do operador"
+              onClick={closeOperatorSidebar}
+            />
+          )}
+
+          <aside className={isOperatorSidebarOpen ? "operator-sidebar operator-sidebar--open" : "operator-sidebar"}>
+            <div className="operator-sidebar-header">
+              <div>
+                <p className="hero-kicker">Ações do operador</p>
+                <h2>{operatorCurrentStepTitle}</h2>
+                <p className="operator-sidebar-progress">Etapa {operatorStep}/3</p>
               </div>
+              <button
+                type="button"
+                className="operator-sidebar-close"
+                aria-label="Fechar painel de ações"
+                onClick={closeOperatorSidebar}
+              >
+                {"\u00D7"}
+              </button>
+            </div>
 
-              <div className="operator-action-box">
-                <h3>Parecer inicial</h3>
-                <p>Avalie a viabilidade e decida se o caso será aceito ou rejeitado.</p>
+            <div className="operator-sidebar-content">
+              {operatorStep === 1 && (
+                <div className="operator-action-box">
+                  <h3>Parecer inicial</h3>
+                  <p>Avalie a viabilidade e decida se o caso será aceito ou rejeitado.</p>
 
-                <label>
-                  Justificativa do parecer
-                  <textarea
-                    rows={4}
-                    value={reviewReason}
-                    onChange={(event) => setReviewReason(event.target.value)}
-                    placeholder="Descreva de forma objetiva o fundamento do aceite ou rejeição."
-                    disabled={reviewingCase}
-                  />
-                </label>
-
-                <label className="checkbox-inline">
-                  <input
-                    type="checkbox"
-                    checked={requestClientData}
-                    onChange={(event) => setRequestClientData(event.target.checked)}
-                    disabled={reviewingCase}
-                  />
-                  Solicitar dados adicionais ao cliente antes da cobrança
-                </label>
-
-                {requestClientData && (
                   <label>
-                    Dados necessários do cliente
+                    Justificativa do parecer
                     <textarea
-                      rows={3}
-                      value={clientDataRequest}
-                      onChange={(event) => setClientDataRequest(event.target.value)}
-                      placeholder="Ex: comprovante de residência atualizado, prints do atendimento, nota fiscal."
+                      rows={4}
+                      value={reviewReason}
+                      onChange={(event) => setReviewReason(event.target.value)}
+                      placeholder="Descreva de forma objetiva o fundamento do aceite ou rejeição."
                       disabled={reviewingCase}
                     />
                   </label>
-                )}
 
-                <div className="operator-action-buttons">
-                  <button
-                    type="button"
-                    className="secondary-button secondary-button--small"
-                    onClick={() => void handleSubmitCaseReview("accepted")}
-                    disabled={reviewingCase}
-                  >
-                    {reviewingCase ? "Salvando..." : "Aceitar caso"}
-                  </button>
-                  <button
-                    type="button"
-                    className="danger-button danger-button--small"
-                    onClick={() => void handleSubmitCaseReview("rejected")}
-                    disabled={reviewingCase}
-                  >
-                    Rejeitar caso
-                  </button>
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      checked={requestClientData}
+                      onChange={(event) => setRequestClientData(event.target.checked)}
+                      disabled={reviewingCase}
+                    />
+                    Solicitar dados adicionais ao cliente antes da cobrança
+                  </label>
+
+                  {requestClientData && (
+                    <label>
+                      Dados necessários do cliente
+                      <textarea
+                        rows={3}
+                        value={clientDataRequest}
+                        onChange={(event) => setClientDataRequest(event.target.value)}
+                        placeholder="Ex: comprovante de residência atualizado, prints do atendimento, nota fiscal."
+                        disabled={reviewingCase}
+                      />
+                    </label>
+                  )}
+
+                  <div className="operator-action-buttons">
+                    <button
+                      type="button"
+                      className="secondary-button secondary-button--small"
+                      onClick={() => void handleSubmitCaseReview("accepted")}
+                      disabled={reviewingCase}
+                    >
+                      {reviewingCase ? "Salvando..." : "Aceitar caso"}
+                    </button>
+                    <button
+                      type="button"
+                      className="danger-button danger-button--small"
+                      onClick={() => void handleSubmitCaseReview("rejected")}
+                      disabled={reviewingCase}
+                    >
+                      Rejeitar caso
+                    </button>
+                  </div>
+
+                  {reviewFeedback && <p className="success-text">{reviewFeedback}</p>}
+                  {reviewError && <p className="error-text">{reviewError}</p>}
+
+                  <div className="operator-step-nav">
+                    <button type="button" className="hero-primary" onClick={goToNextOperatorStep}>
+                      Avançar (1/3)
+                    </button>
+                  </div>
                 </div>
+              )}
 
-                {reviewFeedback && <p className="success-text">{reviewFeedback}</p>}
-                {reviewError && <p className="error-text">{reviewError}</p>}
-              </div>
+              {operatorStep === 2 && (
+                <div className="operator-action-box">
+                  <h3>Cobrança inicial (Asaas)</h3>
+                  <p>Defina valor e vencimento da taxa inicial para liberar o andamento do caso.</p>
 
-              <div className="operator-action-box">
-                <h3>Cobrança inicial (Asaas)</h3>
-                <p>
-                  Defina valor e vencimento da taxa inicial. A integração com Asaas fica pronta para conexão nesta
-                  semana.
-                </p>
+                  <label>
+                    Valor da taxa
+                    <input
+                      type="text"
+                      value={serviceFeeAmountInput}
+                      onChange={(event) => setServiceFeeAmountInput(event.target.value)}
+                      placeholder="Ex: 150,00"
+                      disabled={savingServiceFee}
+                    />
+                  </label>
 
-                <label>
-                  Valor da taxa
-                  <input
-                    type="text"
-                    value={serviceFeeAmountInput}
-                    onChange={(event) => setServiceFeeAmountInput(event.target.value)}
-                    placeholder="Ex: 150,00"
+                  <label>
+                    Vencimento
+                    <input
+                      type="date"
+                      value={serviceFeeDueDate}
+                      onChange={(event) => setServiceFeeDueDate(event.target.value)}
+                      disabled={savingServiceFee}
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    className="hero-primary"
+                    onClick={() => void handleSaveServiceFee()}
                     disabled={savingServiceFee}
-                  />
-                </label>
+                  >
+                    {savingServiceFee ? "Salvando cobrança..." : "Registrar cobrança inicial"}
+                  </button>
 
-                <label>
-                  Vencimento
-                  <input
-                    type="date"
-                    value={serviceFeeDueDate}
-                    onChange={(event) => setServiceFeeDueDate(event.target.value)}
-                    disabled={savingServiceFee}
-                  />
-                </label>
+                  {serviceFeeFeedback && <p className="success-text">{serviceFeeFeedback}</p>}
+                  {serviceFeeError && <p className="error-text">{serviceFeeError}</p>}
 
-                <button
-                  type="button"
-                  className="hero-primary"
-                  onClick={() => void handleSaveServiceFee()}
-                  disabled={savingServiceFee}
-                >
-                  {savingServiceFee ? "Salvando cobrança..." : "Registrar cobrança inicial"}
-                </button>
+                  <div className="operator-step-nav">
+                    <button type="button" className="hero-secondary" onClick={goToPreviousOperatorStep}>
+                      Voltar para Parecer Inicial
+                    </button>
+                    <button type="button" className="hero-primary" onClick={goToNextOperatorStep}>
+                      Avançar (2/3)
+                    </button>
+                  </div>
+                </div>
+              )}
 
-                {serviceFeeFeedback && <p className="success-text">{serviceFeeFeedback}</p>}
-                {serviceFeeError && <p className="error-text">{serviceFeeError}</p>}
-              </div>
+              {operatorStep === 3 && (
+                <div className="operator-action-box">
+                  <h3>Nova movimentação</h3>
+                  <p>Registre a evolução do caso e anexe documentos da etapa.</p>
 
-              <div className="operator-action-box">
-                <h3>Nova movimentação</h3>
-                <p>Registre a evolução do caso e anexe documentos da etapa.</p>
+                  <label>
+                    Etapa
+                    <select
+                      value={movementStage}
+                      onChange={(event) => setMovementStage(event.target.value as CaseMovementRecord["stage"])}
+                      disabled={savingMovement}
+                    >
+                      <option value="triagem">Triagem</option>
+                      <option value="conciliacao">Conciliação</option>
+                      <option value="peticao">Petição</option>
+                      <option value="protocolo">Protocolo</option>
+                      <option value="andamento">Andamento</option>
+                      <option value="solucao">Solução</option>
+                      <option value="outro">Outro</option>
+                    </select>
+                  </label>
 
-                <label>
-                  Etapa
-                  <select
-                    value={movementStage}
-                    onChange={(event) => setMovementStage(event.target.value as CaseMovementRecord["stage"])}
+                  <label>
+                    Visibilidade
+                    <select
+                      value={movementVisibility}
+                      onChange={(event) => setMovementVisibility(event.target.value as CaseMovementRecord["visibility"])}
+                      disabled={savingMovement}
+                    >
+                      <option value="public">Pública (cliente visualiza)</option>
+                      <option value="internal">Interna (somente equipe)</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Status do caso
+                    <select
+                      value={movementStatus}
+                      onChange={(event) => setMovementStatus(event.target.value as CaseRecord["status"])}
+                      disabled={savingMovement}
+                    >
+                      <option value="recebido">Recebido</option>
+                      <option value="em_analise">Em análise</option>
+                      <option value="encerrado">Encerrado</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Descrição
+                    <textarea
+                      rows={6}
+                      value={movementDescription}
+                      onChange={(event) => setMovementDescription(event.target.value)}
+                      placeholder="Descreva o andamento, proposta, resposta da parte reclamada e próximos passos."
+                      disabled={savingMovement}
+                    />
+                  </label>
+
+                  <label>
+                    Anexos da movimentação
+                    <input
+                      type="file"
+                      accept={ATTACHMENT_ACCEPT}
+                      multiple
+                      onChange={handleMovementFilesChange}
+                      disabled={savingMovement}
+                    />
+                  </label>
+                  <p className="field-help">
+                    Opcional: até {MAX_ATTACHMENTS_PER_CASE} arquivos de até{" "}
+                    {formatAttachmentSize(MAX_ATTACHMENT_SIZE_BYTES)}.
+                  </p>
+
+                  {movementFiles.length > 0 && (
+                    <ul className="attachment-list movement-attachment-list">
+                      {movementFiles.map((file, index) => (
+                        <li key={fingerprintFile(file)}>
+                          <div>
+                            <strong>{file.name}</strong>
+                            <span>{formatAttachmentSize(file.size)}</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="attachment-remove"
+                            onClick={() => handleRemoveMovementFile(index)}
+                            disabled={savingMovement}
+                          >
+                            Remover
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <button
+                    type="button"
+                    className="hero-primary"
+                    onClick={() => void handleCreateMovement()}
                     disabled={savingMovement}
                   >
-                    <option value="triagem">Triagem</option>
-                    <option value="conciliacao">Conciliação</option>
-                    <option value="peticao">Petição</option>
-                    <option value="protocolo">Protocolo</option>
-                    <option value="andamento">Andamento</option>
-                    <option value="solucao">Solução</option>
-                    <option value="outro">Outro</option>
-                  </select>
-                </label>
+                    {savingMovement ? "Salvando movimentação..." : "Registrar movimentação"}
+                  </button>
 
-                <label>
-                  Visibilidade
-                  <select
-                    value={movementVisibility}
-                    onChange={(event) =>
-                      setMovementVisibility(event.target.value as CaseMovementRecord["visibility"])
-                    }
-                    disabled={savingMovement}
-                  >
-                    <option value="public">Pública (cliente visualiza)</option>
-                    <option value="internal">Interna (somente equipe)</option>
-                  </select>
-                </label>
+                  {movementFeedback && <p className="success-text">{movementFeedback}</p>}
+                  {movementError && <p className="error-text">{movementError}</p>}
 
-                <label>
-                  Status do caso
-                  <select
-                    value={movementStatus}
-                    onChange={(event) => setMovementStatus(event.target.value as CaseRecord["status"])}
-                    disabled={savingMovement}
-                  >
-                    <option value="recebido">Recebido</option>
-                    <option value="em_analise">Em análise</option>
-                    <option value="encerrado">Encerrado</option>
-                  </select>
-                </label>
-
-                <label>
-                  Descrição
-                  <textarea
-                    rows={6}
-                    value={movementDescription}
-                    onChange={(event) => setMovementDescription(event.target.value)}
-                    placeholder="Descreva o andamento, proposta, resposta da parte reclamada e próximos passos."
-                    disabled={savingMovement}
-                  />
-                </label>
-
-                <label>
-                  Anexos da movimentação
-                  <input
-                    type="file"
-                    accept={ATTACHMENT_ACCEPT}
-                    multiple
-                    onChange={handleMovementFilesChange}
-                    disabled={savingMovement}
-                  />
-                </label>
-                <p className="field-help">
-                  Opcional: até {MAX_ATTACHMENTS_PER_CASE} arquivos de até {formatAttachmentSize(MAX_ATTACHMENT_SIZE_BYTES)}.
-                </p>
-
-                {movementFiles.length > 0 && (
-                  <ul className="attachment-list movement-attachment-list">
-                    {movementFiles.map((file, index) => (
-                      <li key={fingerprintFile(file)}>
-                        <div>
-                          <strong>{file.name}</strong>
-                          <span>{formatAttachmentSize(file.size)}</span>
-                        </div>
-                        <button
-                          type="button"
-                          className="attachment-remove"
-                          onClick={() => handleRemoveMovementFile(index)}
-                          disabled={savingMovement}
-                        >
-                          Remover
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                <button
-                  type="button"
-                  className="hero-primary"
-                  onClick={() => void handleCreateMovement()}
-                  disabled={savingMovement}
-                >
-                  {savingMovement ? "Salvando movimentação..." : "Registrar movimentação"}
-                </button>
-
-                {movementFeedback && <p className="success-text">{movementFeedback}</p>}
-                {movementError && <p className="error-text">{movementError}</p>}
-              </div>
-              </>
-            ) : (
-              <>
-                <h2>Notificações do caso</h2>
-                <ul className="timeline-list">
-                  <li>Acompanhe nesta página cada atualização pública registrada pelo operador.</li>
-                  <li>As etapas de conciliação e proposta de solução serão exibidas no histórico.</li>
-                  <li>Novos documentos disponibilizados no caso podem ser baixados diretamente no histórico.</li>
-                  <li>Use a área de mensagens no menu lateral para enviar respostas ao operador.</li>
-                  <li>Você também recebe e-mail quando houver nova movimentação pública.</li>
-                </ul>
-              </>
-            )}
+                  <div className="operator-step-nav">
+                    <button type="button" className="hero-secondary" onClick={goToPreviousOperatorStep}>
+                      Voltar para Cobrança Inicial
+                    </button>
+                    <button type="button" className="hero-primary" onClick={closeOperatorSidebar}>
+                      Concluir (3/3)
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </aside>
-        )}
-      </div>
+        </>
+      )}
     </section>
   );
 }

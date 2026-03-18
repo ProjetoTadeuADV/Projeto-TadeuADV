@@ -43,7 +43,8 @@ import {
   MAX_ATTACHMENT_SIZE_BYTES,
   formatAttachmentSize,
   resolveCaseAttachmentReadPaths,
-  storeCaseAttachments
+  storeCaseAttachments,
+  storeGeneratedCaseAttachment
 } from "../services/caseAttachmentStorage.js";
 import { HttpError } from "../utils/httpError.js";
 
@@ -210,6 +211,16 @@ function ensureOperatorCanManageCase(
 
   if (caseItem.assignedOperatorId !== user.uid) {
     throw new HttpError(403, "Este caso está alocado para outro operador.");
+  }
+}
+
+function ensureCaseIsEditable(caseItem: CaseRecord): void {
+  if (
+    caseItem.reviewDecision === "rejected" ||
+    caseItem.workflowStep === "closed" ||
+    caseItem.status === "encerrado"
+  ) {
+    throw new HttpError(409, "Caso rejeitado/encerrado. Não é possível editar no momento.");
   }
 }
 
@@ -413,6 +424,106 @@ function normalizeEmail(value: string | null | undefined): string | null {
 
   const trimmed = value.trim().toLowerCase();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeCpfDigits(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const digits = value.replace(/\D/g, "");
+  return digits.length > 0 ? digits : null;
+}
+
+function normalizeName(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+async function syncAsaasCustomerForUser(
+  deps: AppDependencies,
+  input: {
+    userId: string;
+    fallbackName?: string | null;
+    fallbackEmail?: string | null;
+    fallbackCpf?: string | null;
+    required?: boolean;
+  }
+): Promise<{ userRecord: UserRecord | null; customerId: string | null }> {
+  const userRecord = await deps.repository.getUserById(input.userId);
+  if (!userRecord) {
+    if (input.required) {
+      throw new HttpError(404, "Conta do cliente nao encontrada para integracao de pagamento.");
+    }
+
+    return {
+      userRecord: null,
+      customerId: null
+    };
+  }
+
+  const resolvedCpf = normalizeCpfDigits(userRecord.cpf ?? input.fallbackCpf ?? null);
+  const resolvedEmail = normalizeEmail(userRecord.email ?? input.fallbackEmail ?? null);
+  const resolvedName = normalizeName(
+    userRecord.name ?? input.fallbackName ?? userRecord.email ?? input.fallbackEmail ?? null
+  );
+
+  if (!resolvedCpf || !resolvedEmail || !resolvedName) {
+    if (input.required) {
+      throw new HttpError(
+        400,
+        "Perfil do cliente incompleto para cobranca. Confirme nome, e-mail e CPF antes de gerar boleto."
+      );
+    }
+
+    return {
+      userRecord,
+      customerId: userRecord.asaasCustomerId ?? null
+    };
+  }
+
+  try {
+    const customer = await deps.paymentProvider.ensureCustomer({
+      userId: userRecord.id,
+      name: resolvedName,
+      email: resolvedEmail,
+      cpfCnpj: resolvedCpf,
+      existingCustomerId: userRecord.asaasCustomerId ?? null
+    });
+
+    if (customer.customerId && customer.customerId !== userRecord.asaasCustomerId) {
+      const updatedUser = await deps.repository.updateUserAsaasCustomer(userRecord.id, customer.customerId);
+      return {
+        userRecord: updatedUser ?? userRecord,
+        customerId: customer.customerId
+      };
+    }
+
+    return {
+      userRecord,
+      customerId: customer.customerId
+    };
+  } catch (error) {
+    if (input.required) {
+      const details = error instanceof Error ? error.message : "unknown";
+      throw new HttpError(502, `Falha na integracao de pagamentos (Asaas): ${details}`);
+    }
+
+    const details = error instanceof Error ? error.message : "unknown";
+    console.error("asaas-customer-sync-failed", {
+      userId: userRecord.id,
+      details
+    });
+
+    return {
+      userRecord,
+      customerId: userRecord.asaasCustomerId ?? null
+    };
+  }
 }
 
 async function notifyCaseOwnerByEmail(
@@ -825,6 +936,15 @@ export function createV1Router(deps: AppDependencies) {
         name: payload.name
       });
 
+      if (updated) {
+        await syncAsaasCustomerForUser(deps, {
+          userId: currentUserUid,
+          fallbackName: payload.name,
+          fallbackEmail: currentUserEmail,
+          fallbackCpf: payload.cpf
+        });
+      }
+
       res.status(200).json({
         status: "ok",
         result: updated
@@ -876,6 +996,15 @@ export function createV1Router(deps: AppDependencies) {
       }
 
       const updated = await deps.repository.updateAccountProfile(req.user.uid, payload);
+
+      if (updated) {
+        await syncAsaasCustomerForUser(deps, {
+          userId: req.user.uid,
+          fallbackName: payload.name ?? req.user.name ?? null,
+          fallbackEmail: req.user.email,
+          fallbackCpf: payload.cpf ?? null
+        });
+      }
 
       res.status(200).json({
         status: "ok",
@@ -1074,16 +1203,16 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(401, "Usuário não autenticado.");
         }
 
-        ensureAdminPanelAccess(req.user);
+        if (!req.user.isMaster) {
+          throw new HttpError(403, "Somente usuários master podem alocar casos.");
+        }
 
         const allCases = await deps.repository.listAllCases();
         const currentCase = allCases.find((item) => item.id === req.params.id);
         if (!currentCase) {
           throw new HttpError(404, "Caso não encontrado.");
         }
-        ensureOperatorCanManageCase(req.user, currentCase, {
-          allowWhenUnassigned: true
-        });
+        ensureCaseIsEditable(currentCase);
 
         const payload = validateAssignOperatorPayload(req.body);
         const operator = await deps.repository.getUserById(payload.operatorUserId);
@@ -1151,6 +1280,7 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(404, "Caso não encontrado.");
         }
         ensureOperatorCanManageCase(req.user, currentCase);
+        ensureCaseIsEditable(currentCase);
 
         const appended = await deps.repository.appendCaseMovement(req.params.id, {
           stage: payload.stage,
@@ -1202,6 +1332,7 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(404, "Caso não encontrado.");
         }
         ensureOperatorCanManageCase(req.user, currentCase);
+        ensureCaseIsEditable(currentCase);
 
         const now = new Date().toISOString();
         const actorName = req.user.name ?? req.user.email ?? null;
@@ -1303,6 +1434,7 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(404, "Caso não encontrado.");
         }
         ensureOperatorCanManageCase(req.user, currentCase);
+        ensureCaseIsEditable(currentCase);
 
         if (currentCase.reviewDecision === "rejected") {
           throw new HttpError(400, "Não é possível cadastrar cobrança para caso rejeitado.");
@@ -1310,7 +1442,31 @@ export function createV1Router(deps: AppDependencies) {
 
         const now = new Date().toISOString();
         const actorName = req.user.name ?? req.user.email ?? null;
-        const senderRole = resolveSenderRole(req.user);
+        const customerSync = await syncAsaasCustomerForUser(deps, {
+          userId: currentCase.userId,
+          fallbackName: currentCase.cpfConsulta?.nome ?? null,
+          fallbackCpf: currentCase.cpf,
+          required: true
+        });
+        const customerId = customerSync.customerId;
+        if (!customerId) {
+          throw new HttpError(400, "Nao foi possivel identificar o cliente no Asaas para gerar o boleto.");
+        }
+
+        const boleto = await deps.paymentProvider.createBoleto({
+          customerId,
+          caseId: currentCase.id,
+          caseCode: currentCase.caseCode,
+          amount: payload.amount,
+          dueDate: payload.dueDate,
+          description: `Taxa inicial de servico do caso ${currentCase.caseCode}`
+        });
+
+        const boletoAttachment = await storeGeneratedCaseAttachment(currentCase.id, {
+          fileName: boleto.attachment.fileName,
+          mimeType: boleto.attachment.mimeType,
+          bytes: boleto.attachment.bytes
+        });
 
         const withFee = await deps.repository.updateCaseWorkflow(req.params.id, {
           status: "em_analise",
@@ -1320,8 +1476,8 @@ export function createV1Router(deps: AppDependencies) {
             dueDate: payload.dueDate,
             provider: "asaas",
             status: "awaiting_payment",
-            externalReference: null,
-            paymentUrl: null,
+            externalReference: boleto.paymentId,
+            paymentUrl: boleto.bankSlipUrl ?? boleto.invoiceUrl,
             updatedAt: now
           }
         });
@@ -1346,13 +1502,22 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(404, "Caso não encontrado.");
         }
 
-        const paymentMessage =
-          "Para o andamento do caso, é necessário o pagamento da taxa inicial de serviço. Confira o valor e vencimento no detalhamento do caso.";
+        const paymentLink = boleto.bankSlipUrl ?? boleto.invoiceUrl;
+        const paymentMessage = paymentLink
+          ? `Boleto da taxa inicial emitido. Valor ${new Intl.NumberFormat("pt-BR", {
+              style: "currency",
+              currency: "BRL"
+            }).format(payload.amount)} com vencimento em ${payload.dueDate}. Link direto: ${paymentLink}. O documento tambem foi anexado nesta conversa.`
+          : `Boleto da taxa inicial emitido. Valor ${new Intl.NumberFormat("pt-BR", {
+              style: "currency",
+              currency: "BRL"
+            }).format(payload.amount)} com vencimento em ${payload.dueDate}. O documento foi anexado nesta conversa.`;
         const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
-          senderUserId: req.user.uid,
-          senderName: actorName,
-          senderRole,
-          message: paymentMessage
+          senderUserId: "system:billing",
+          senderName: "Sistema de cobrança",
+          senderRole: "system",
+          message: paymentMessage,
+          attachments: [boletoAttachment]
         });
 
         const latestCase = withMessage ?? appendedMovement.caseItem;
@@ -1479,6 +1644,7 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(404, "Caso não encontrado.");
         }
         ensureOperatorCanManageCase(req.user, caseItem);
+        ensureCaseIsEditable(caseItem);
 
         const movement = findMovementById(caseItem, req.params.movementId);
         if (!movement) {

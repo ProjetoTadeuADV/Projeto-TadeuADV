@@ -2,9 +2,11 @@ import { getFirebaseAuth, getFirebaseFirestore } from "./config/firebaseAdmin.js
 import { hasFirebaseCredentials, isMasterEmail } from "./config/env.js";
 import { FirestoreCaseRepository } from "./repositories/firestoreCaseRepository.js";
 import { MockCpfProvider } from "./services/cpfProvider.js";
+import { AsaasBillingProvider } from "./services/asaasProvider.js";
 import type { AuthVerifier } from "./types/auth.js";
 import type { CaseRepository } from "./repositories/caseRepository.js";
 import type { CpfProvider } from "./services/cpfProvider.js";
+import type { BillingProvider } from "./services/asaasProvider.js";
 
 function readBooleanClaim(claims: Record<string, unknown>, key: string): boolean {
   const value = claims[key];
@@ -67,6 +69,7 @@ export interface AppDependencies {
   authVerifier: AuthVerifier;
   repository: CaseRepository;
   cpfProvider: CpfProvider;
+  paymentProvider: BillingProvider;
 }
 
 export function createDefaultDependencies(): AppDependencies {
@@ -79,6 +82,7 @@ export function createDefaultDependencies(): AppDependencies {
   return {
     authVerifier: new FirebaseAuthVerifier(),
     repository: new FirestoreCaseRepository(getFirebaseFirestore()),
-    cpfProvider: new MockCpfProvider()
+    cpfProvider: new MockCpfProvider(),
+    paymentProvider: new AsaasBillingProvider()
   };
 }

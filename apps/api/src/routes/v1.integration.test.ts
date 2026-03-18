@@ -3,6 +3,13 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
 import type { AppDependencies } from "../dependencies.js";
 import { MemoryCaseRepository } from "../repositories/memoryCaseRepository.js";
+import type {
+  BillingBoletoInput,
+  BillingBoletoResult,
+  BillingCustomerInput,
+  BillingCustomerResult,
+  BillingProvider
+} from "../services/asaasProvider.js";
 import type { CpfProvider } from "../services/cpfProvider.js";
 import type { AuthenticatedUser, AuthVerifier } from "../types/auth.js";
 
@@ -82,12 +89,46 @@ class FixedMockCpfProvider implements CpfProvider {
   }
 }
 
+class FakeBillingProvider implements BillingProvider {
+  private customerCount = 0;
+  private paymentCount = 0;
+
+  isConfigured(): boolean {
+    return false;
+  }
+
+  async ensureCustomer(input: BillingCustomerInput): Promise<BillingCustomerResult> {
+    this.customerCount += 1;
+    return {
+      customerId: input.existingCustomerId ?? `cus_test_${this.customerCount}`,
+      liveMode: false
+    };
+  }
+
+  async createBoleto(input: BillingBoletoInput): Promise<BillingBoletoResult> {
+    this.paymentCount += 1;
+    return {
+      paymentId: `pay_test_${this.paymentCount}`,
+      status: "PENDING",
+      invoiceUrl: null,
+      bankSlipUrl: null,
+      attachment: {
+        fileName: `boleto-${input.caseCode}.txt`,
+        mimeType: "text/plain",
+        bytes: Buffer.from("boleto teste", "utf-8")
+      },
+      liveMode: false
+    };
+  }
+}
+
 function buildTestApp() {
   const repository = new MemoryCaseRepository();
   const deps: AppDependencies = {
     repository,
     authVerifier: new FakeAuthVerifier(),
-    cpfProvider: new FixedMockCpfProvider()
+    cpfProvider: new FixedMockCpfProvider(),
+    paymentProvider: new FakeBillingProvider()
   };
 
   return createApp(deps);
@@ -867,6 +908,36 @@ describe("v1 routes", () => {
     );
   });
 
+  it("deve impedir operador de alocar caso quando nao for master", async () => {
+    const app = buildTestApp();
+
+    const createCase = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Caso para validar restricao de alocacao por operador."
+      });
+
+    expect(createCase.status).toBe(201);
+    const caseId = createCase.body.result.id as string;
+
+    await request(app)
+      .get("/v1/auth/session")
+      .set("Authorization", "Bearer token-operator");
+
+    const assignByOperator = await request(app)
+      .post(`/v1/cases/${caseId}/assign-operator`)
+      .set("Authorization", "Bearer token-operator")
+      .send({
+        operatorUserId: "operator-user"
+      });
+
+    expect(assignByOperator.status).toBe(403);
+    expect(assignByOperator.body.message).toContain("Somente usuários master");
+  });
+
   it("deve permitir parecer do operador, mensagens e configuracao de taxa inicial", async () => {
     const app = buildTestApp();
 
@@ -969,6 +1040,81 @@ describe("v1 routes", () => {
         status: "awaiting_payment"
       }
     });
+  });
+
+  it("deve bloquear novas edicoes operacionais apos rejeicao do caso", async () => {
+    const app = buildTestApp();
+
+    const createCase = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Caso para validar bloqueio de edicao apos rejeicao."
+      });
+
+    expect(createCase.status).toBe(201);
+    const caseId = createCase.body.result.id as string;
+
+    await request(app)
+      .get("/v1/auth/session")
+      .set("Authorization", "Bearer token-operator");
+
+    const assignResponse = await request(app)
+      .post(`/v1/cases/${caseId}/assign-operator`)
+      .set("Authorization", "Bearer token-master")
+      .send({
+        operatorUserId: "operator-user"
+      });
+
+    expect(assignResponse.status).toBe(200);
+
+    const rejectResponse = await request(app)
+      .post(`/v1/cases/${caseId}/review`)
+      .set("Authorization", "Bearer token-operator")
+      .send({
+        decision: "rejected",
+        reason: "Documentos insuficientes e ausência de elementos mínimos para continuidade."
+      });
+
+    expect(rejectResponse.status).toBe(200);
+    expect(rejectResponse.body.result).toMatchObject({
+      reviewDecision: "rejected",
+      workflowStep: "closed",
+      status: "encerrado"
+    });
+
+    const movementAfterReject = await request(app)
+      .post(`/v1/cases/${caseId}/movements`)
+      .set("Authorization", "Bearer token-operator")
+      .send({
+        stage: "andamento",
+        description: "Tentativa indevida de movimentacao apos rejeicao.",
+        visibility: "public",
+        status: "em_analise"
+      });
+
+    expect(movementAfterReject.status).toBe(409);
+
+    const feeAfterReject = await request(app)
+      .post(`/v1/cases/${caseId}/service-fee`)
+      .set("Authorization", "Bearer token-operator")
+      .send({
+        amount: 120,
+        dueDate: "2026-03-30"
+      });
+
+    expect(feeAfterReject.status).toBe(409);
+
+    const reassignAfterReject = await request(app)
+      .post(`/v1/cases/${caseId}/assign-operator`)
+      .set("Authorization", "Bearer token-master")
+      .send({
+        operatorUserId: "operator-user"
+      });
+
+    expect(reassignAfterReject.status).toBe(409);
   });
 
   it("deve bloquear envio de mensagens por operador nao alocado ao caso", async () => {

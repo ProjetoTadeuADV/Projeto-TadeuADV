@@ -190,6 +190,7 @@ export interface UserRecord {
   nameCustomized?: boolean;
   avatarUrlCustomized?: boolean;
   cpf?: string | null;
+  asaasCustomerId?: string | null;
   rg?: string | null;
   rgIssuer?: string | null;
   birthDate?: string | null;

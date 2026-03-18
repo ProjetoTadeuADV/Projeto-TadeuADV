@@ -20,6 +20,7 @@ export interface CaseRepository {
     userId: string,
     profile: { cpf: string; name?: string | null }
   ): Promise<UserRecord | null>;
+  updateUserAsaasCustomer(userId: string, asaasCustomerId: string): Promise<UserRecord | null>;
   updateAccountProfile(
     userId: string,
     profile: {

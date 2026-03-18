@@ -83,6 +83,7 @@ function normalizeUserRecord(data: Partial<UserRecord>, fallbackId: string): Use
     nameCustomized: data.nameCustomized ?? false,
     avatarUrlCustomized: data.avatarUrlCustomized ?? false,
     cpf: data.cpf ?? null,
+    asaasCustomerId: normalizeOptionalText(data.asaasCustomerId),
     rg: normalizeOptionalText(data.rg),
     rgIssuer: normalizeOptionalText(data.rgIssuer),
     birthDate: normalizeOptionalText(data.birthDate),
@@ -227,6 +228,7 @@ export class FirestoreCaseRepository implements CaseRepository {
         nameCustomized: existing.nameCustomized,
         avatarUrlCustomized: existing.avatarUrlCustomized,
         cpf: existing.cpf ?? user.cpf ?? null,
+        asaasCustomerId: existing.asaasCustomerId ?? null,
         emailVerified: user.emailVerified,
         isMaster: user.isMaster,
         isOperator: user.isMaster ? false : (user.isOperator ?? existing.isOperator ?? false),
@@ -277,6 +279,7 @@ export class FirestoreCaseRepository implements CaseRepository {
         nameCustomized: true,
         avatarUrlCustomized: false,
         cpf: profile.cpf,
+        asaasCustomerId: null,
         emailVerified: false,
         isMaster: false,
         isOperator: false,
@@ -293,6 +296,41 @@ export class FirestoreCaseRepository implements CaseRepository {
       name: normalizeOptionalText(profile.name) ?? existing.name,
       nameCustomized: true,
       cpf: profile.cpf,
+      asaasCustomerId: existing.asaasCustomerId ?? null,
+      lastSeenAt: now
+    };
+    await ref.set(updated, { merge: true });
+    return updated;
+  }
+
+  async updateUserAsaasCustomer(userId: string, asaasCustomerId: string): Promise<UserRecord | null> {
+    const ref = this.firestore.collection(USERS_COLLECTION).doc(userId);
+    const snapshot = await ref.get();
+    const now = new Date().toISOString();
+    if (!snapshot.exists) {
+      const created: UserRecord = {
+        id: userId,
+        email: null,
+        name: null,
+        avatarUrl: null,
+        nameCustomized: false,
+        avatarUrlCustomized: false,
+        cpf: null,
+        asaasCustomerId: normalizeOptionalText(asaasCustomerId),
+        emailVerified: false,
+        isMaster: false,
+        isOperator: false,
+        createdAt: now,
+        lastSeenAt: now
+      };
+      await ref.set(created, { merge: true });
+      return created;
+    }
+
+    const existing = normalizeUserRecord(snapshot.data() as Partial<UserRecord>, userId);
+    const updated: UserRecord = {
+      ...existing,
+      asaasCustomerId: normalizeOptionalText(asaasCustomerId),
       lastSeenAt: now
     };
     await ref.set(updated, { merge: true });
@@ -344,6 +382,7 @@ export class FirestoreCaseRepository implements CaseRepository {
         nameCustomized: hasName,
         avatarUrlCustomized: hasAvatarUrl,
         cpf: hasCpf ? normalizeOptionalText(profile.cpf) : null,
+        asaasCustomerId: null,
         rg: hasRg ? normalizeOptionalText(profile.rg) : null,
         rgIssuer: hasRgIssuer ? normalizeOptionalText(profile.rgIssuer) : null,
         birthDate: hasBirthDate ? normalizeOptionalText(profile.birthDate) : null,
@@ -368,6 +407,7 @@ export class FirestoreCaseRepository implements CaseRepository {
       nameCustomized: hasName ? true : existing.nameCustomized ?? false,
       avatarUrlCustomized: hasAvatarUrl ? true : existing.avatarUrlCustomized ?? false,
       cpf: hasCpf ? normalizeOptionalText(profile.cpf) : existing.cpf ?? null,
+      asaasCustomerId: existing.asaasCustomerId ?? null,
       rg: hasRg ? normalizeOptionalText(profile.rg) : existing.rg ?? null,
       rgIssuer: hasRgIssuer ? normalizeOptionalText(profile.rgIssuer) : existing.rgIssuer ?? null,
       birthDate: hasBirthDate ? normalizeOptionalText(profile.birthDate) : existing.birthDate ?? null,
