@@ -48,16 +48,38 @@ interface VerificationEmailDispatchResult {
   message?: string;
 }
 
+function mapVerificationErrorMessage(rawMessage: string): string {
+  const normalized = rawMessage.trim().toLowerCase();
+
+  if (!normalized) {
+    return "Não foi possível reenviar agora. Tente novamente em instantes.";
+  }
+
+  if (normalized.includes("continue url must be a valid url string")) {
+    return "Não foi possível reenviar o e-mail agora. Verifique o endereço informado e tente novamente.";
+  }
+
+  if (
+    normalized.includes("user-not-found") ||
+    normalized.includes("no user record") ||
+    normalized.includes("não foi encontrado e-mail")
+  ) {
+    return "Não foi possível localizar o e-mail informado.";
+  }
+
+  return rawMessage;
+}
+
 function resolveVerificationDispatchError(result: VerificationEmailDispatchResult): string {
   if (result.message) {
-    return result.message;
+    return mapVerificationErrorMessage(result.message);
   }
 
   switch (result.reason) {
     case "custom-sender-not-configured":
       return "O envio de verificação por SendGrid ainda não foi configurado no servidor.";
     case "verification-link-failed":
-      return "Não foi possível gerar o link de verificação no Firebase.";
+      return "Não foi possível reenviar o e-mail agora. Verifique o endereço informado e tente novamente.";
     case "custom-send-failed":
       return "O SendGrid recusou o envio deste e-mail.";
     case "already-verified":

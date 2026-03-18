@@ -113,6 +113,7 @@ export function RegisterPage() {
   const [birthDate, setBirthDate] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -435,28 +436,48 @@ export function RegisterPage() {
                         <span className="required-label">
                           Crie sua senha <span className="required-indicator" aria-hidden="true">*</span>
                         </span>
-                        <input
-                          type="password"
-                          value={password}
-                          onChange={(event) => setPassword(event.target.value)}
-                          minLength={6}
-                          autoComplete="new-password"
-                          required
-                        />
+                        <div className="password-input">
+                          <input
+                            type={showPassword ? "text" : "password"}
+                            value={password}
+                            onChange={(event) => setPassword(event.target.value)}
+                            minLength={6}
+                            autoComplete="new-password"
+                            required
+                          />
+                          <button
+                            type="button"
+                            className="password-visibility-button"
+                            onClick={() => setShowPassword((current) => !current)}
+                            aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                          >
+                            {showPassword ? "Ocultar" : "Mostrar"}
+                          </button>
+                        </div>
                       </label>
 
                       <label>
                         <span className="required-label">
                           Confirme a senha <span className="required-indicator" aria-hidden="true">*</span>
                         </span>
-                        <input
-                          type="password"
-                          value={confirmPassword}
-                          onChange={(event) => setConfirmPassword(event.target.value)}
-                          minLength={6}
-                          autoComplete="new-password"
-                          required
-                        />
+                        <div className="password-input">
+                          <input
+                            type={showPassword ? "text" : "password"}
+                            value={confirmPassword}
+                            onChange={(event) => setConfirmPassword(event.target.value)}
+                            minLength={6}
+                            autoComplete="new-password"
+                            required
+                          />
+                          <button
+                            type="button"
+                            className="password-visibility-button"
+                            onClick={() => setShowPassword((current) => !current)}
+                            aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                          >
+                            {showPassword ? "Ocultar" : "Mostrar"}
+                          </button>
+                        </div>
                       </label>
                     </div>
 

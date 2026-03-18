@@ -12,16 +12,46 @@ type VerifyEmailState = {
   };
 } | null;
 
+function mapFriendlyEmailError(message: string): string {
+  const normalized = message.trim().toLowerCase();
+
+  if (!normalized) {
+    return "Nao foi possivel reenviar agora. Tente novamente em instantes.";
+  }
+
+  if (normalized.includes("continue url must be a valid url string")) {
+    return "Nao foi possivel reenviar o e-mail agora. Verifique o endereco informado e tente novamente.";
+  }
+
+  if (
+    normalized.includes("user-not-found") ||
+    normalized.includes("no user record") ||
+    normalized.includes("nao foi encontrado e-mail")
+  ) {
+    return "Nao foi possivel localizar o e-mail informado.";
+  }
+
+  return message;
+}
+
 function formatFirebaseError(error: unknown) {
   if (error instanceof Error && error.message.trim()) {
-    return error.message;
+    return mapFriendlyEmailError(error.message);
   }
 
   if (error instanceof FirebaseError) {
-    return `Não foi possível reenviar agora (${error.code}).`;
+    if (
+      error.code === "auth/user-not-found" ||
+      error.code === "auth/invalid-recipient-email" ||
+      error.code === "auth/invalid-email"
+    ) {
+      return "Nao foi possivel localizar o e-mail informado.";
+    }
+
+    return `Nao foi possivel reenviar agora (${error.code}).`;
   }
 
-  return "Não foi possível reenviar agora. Tente novamente em instantes.";
+  return "Nao foi possivel reenviar agora. Tente novamente em instantes.";
 }
 
 export function VerifyEmailPage() {
@@ -55,14 +85,14 @@ export function VerifyEmailPage() {
     setStatus(null);
 
     if (!user) {
-      setError("Entre novamente para reenviar o e-mail de verificação.");
+      setError("Entre novamente para reenviar o e-mail de verificacao.");
       return;
     }
 
     setResending(true);
     try {
       await resendVerificationEmail();
-      setStatus("Reenvio solicitado. Confira sua caixa de entrada.");
+      setStatus("Reenvio solicitado. Confira sua caixa de entrada e a pasta de spam/lixo eletronico.");
     } catch (nextError) {
       setError(formatFirebaseError(nextError));
     } finally {
@@ -87,9 +117,9 @@ export function VerifyEmailPage() {
         return;
       }
 
-      setStatus("A confirmação ainda não apareceu. Abra o link recebido e tente novamente.");
+      setStatus("A confirmacao ainda nao apareceu. Abra o link recebido e tente novamente.");
     } catch {
-      setError("Não foi possível validar a confirmação agora.");
+      setError("Nao foi possivel validar a confirmacao agora.");
     } finally {
       setChecking(false);
     }
@@ -106,7 +136,7 @@ export function VerifyEmailPage() {
     }
 
     const confirmed = window.confirm(
-      "Deseja excluir sua conta agora? Esta ação remove seu cadastro e os casos vinculados."
+      "Deseja excluir sua conta agora? Esta acao remove seu cadastro e os casos vinculados."
     );
 
     if (!confirmed) {
@@ -124,7 +154,7 @@ export function VerifyEmailPage() {
       const message =
         nextError instanceof ApiError
           ? nextError.message
-          : "Não foi possível excluir sua conta agora. Tente novamente.";
+          : "Nao foi possivel excluir sua conta agora. Tente novamente.";
       setError(message);
     } finally {
       setDeletingAccount(false);
@@ -143,15 +173,16 @@ export function VerifyEmailPage() {
         </p>
 
         <p className="auth-inline-note">
-          Reenvie a mensagem, abra o link recebido e depois clique em "Já confirmei meu e-mail".
+          Reenvie a mensagem, abra o link recebido e depois clique em "Ja confirmei meu e-mail".
         </p>
+        <p className="auth-inline-note">Se nao encontrar o e-mail, verifique tambem a pasta de spam.</p>
 
         {status && <p className="auth-feedback">{status}</p>}
         {error && <p className="error-text">{error}</p>}
 
         <div className="auth-actions auth-actions--compact">
           <button type="button" onClick={handleCheck} disabled={checking || deletingAccount}>
-            {checking ? "Conferindo..." : "Já confirmei meu e-mail"}
+            {checking ? "Conferindo..." : "Ja confirmei meu e-mail"}
           </button>
           <button
             type="button"

@@ -395,13 +395,46 @@ async function readCaseAttachmentBuffer(caseId: string, storedName: string): Pro
   throw new HttpError(404, "Arquivo de anexo não encontrado no armazenamento.");
 }
 
-function resolveVerificationContinueUrl(): string {
-  if (env.VERIFY_EMAIL_CONTINUE_URL) {
-    return env.VERIFY_EMAIL_CONTINUE_URL;
+function sanitizeAbsoluteUrl(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
   }
 
-  const [firstCorsOrigin] = env.CORS_ORIGIN.split(",").map((item) => item.trim());
-  return firstCorsOrigin || "http://localhost:5173";
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.includes("*")) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function resolveVerificationContinueUrl(): string {
+  const explicitContinueUrl = sanitizeAbsoluteUrl(env.VERIFY_EMAIL_CONTINUE_URL);
+  if (explicitContinueUrl) {
+    return explicitContinueUrl;
+  }
+
+  const corsOrigins = env.CORS_ORIGIN.split(",").map((item) => item.trim()).filter(Boolean);
+  for (const origin of corsOrigins) {
+    const validOrigin = sanitizeAbsoluteUrl(origin);
+    if (!validOrigin) {
+      continue;
+    }
+
+    const parsedOrigin = new URL(validOrigin);
+    return `${parsedOrigin.origin}/verify-email`;
+  }
+
+  return "http://localhost:5173/verify-email";
 }
 
 function resolvePortalBaseUrl(): string {

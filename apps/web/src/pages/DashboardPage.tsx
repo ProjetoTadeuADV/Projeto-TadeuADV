@@ -146,14 +146,13 @@ export function DashboardPage() {
 
         if (canAccessAdmin && isMasterUser) {
           const availableOperators = await apiRequest<AdminOperatorOption[]>("/v1/admin/operators", { token });
-          const normalizedOperators = availableOperators.filter((item) => item.isOperator || item.isMaster);
+          const normalizedOperators = availableOperators.filter((item) => item.isOperator);
           setOperators(normalizedOperators);
 
-          const fallbackOperatorId = normalizedOperators[0]?.id ?? "";
           setSelectedOperatorByCase((current) => {
             const next: Record<string, string> = {};
             for (const item of data) {
-              const selected = current[item.id] ?? item.assignedOperatorId ?? fallbackOperatorId;
+              const selected = current[item.id] ?? item.assignedOperatorId ?? "";
               next[item.id] = selected;
             }
             return next;
@@ -265,10 +264,7 @@ export function DashboardPage() {
     ? myAssignedCases.length + openOtherCases.length + rejectedCases.length
     : filteredCases.length;
   const hasActiveFilters = normalizedSearch.length > 0 || statusFilter !== "todos" || sortBy !== "updated_desc";
-  const operatorOptions = useMemo(
-    () => operators.filter((item) => item.isOperator || item.isMaster),
-    [operators]
-  );
+  const operatorOptions = useMemo(() => operators.filter((item) => item.isOperator), [operators]);
 
   function resetFilters() {
     setSearch("");
@@ -411,10 +407,10 @@ export function DashboardPage() {
                       disabled={assigningCaseId === item.id || operatorOptions.length === 0 || isRejectedCase(item)}
                       aria-label={`Selecionar operador para o caso ${item.caseCode}`}
                     >
-                      <option value="">Selecione operador</option>
+                      <option value="">Sem operador</option>
                       {operatorOptions.map((option) => (
                         <option key={option.id} value={option.id}>
-                          {(option.name ?? option.email ?? option.id) + (option.isMaster ? " (Master)" : "")}
+                          {option.name ?? option.email ?? option.id}
                         </option>
                       ))}
                     </select>

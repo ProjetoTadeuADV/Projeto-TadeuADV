@@ -9,6 +9,7 @@ export function MasterLoginPage() {
   const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -86,13 +87,23 @@ export function MasterLoginPage() {
             <span className="required-label">
               Senha <span className="required-indicator" aria-hidden="true">*</span>
             </span>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-              autoComplete="current-password"
-            />
+            <div className="password-input">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+                autoComplete="current-password"
+              />
+              <button
+                type="button"
+                className="password-visibility-button"
+                onClick={() => setShowPassword((current) => !current)}
+                aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+              >
+                {showPassword ? "Ocultar" : "Mostrar"}
+              </button>
+            </div>
           </label>
 
           {error && <p className="error-text">{error}</p>}

@@ -324,6 +324,7 @@ export function NewCasePage() {
   const [cpfLockedByProfile, setCpfLockedByProfile] = useState(false);
   const [claimantAddressLockedByProfile, setClaimantAddressLockedByProfile] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const lastZipLookupRef = useRef<string>("");
 
   const hasVaras = varas.length > 0;
   const selectedVaraName = useMemo(
@@ -677,13 +678,20 @@ export function NewCasePage() {
     }
   }
 
-  async function handleZipCodeLookup() {
+  async function handleZipCodeLookup(
+    zipCodeOverride?: string,
+    options?: {
+      silentInvalid?: boolean;
+    }
+  ) {
     setError(null);
     setZipCodeFeedback(null);
 
-    const normalizedZipCode = normalizeZipCode(claimantZipCode);
+    const normalizedZipCode = normalizeZipCode(zipCodeOverride ?? claimantZipCode);
     if (normalizedZipCode.length !== 8) {
-      setError("Informe um CEP válido com 8 dígitos.");
+      if (!options?.silentInvalid) {
+        setError("Informe um CEP válido com 8 dígitos.");
+      }
       return;
     }
 
@@ -705,6 +713,7 @@ export function NewCasePage() {
       setClaimantCity((data.localidade ?? "").trim());
       setClaimantState((data.uf ?? "").trim().toUpperCase());
       setZipCodeFeedback("Endereço localizado. Informe número e complemento.");
+      lastZipLookupRef.current = normalizedZipCode;
     } catch (nextError) {
       const message = nextError instanceof Error ? nextError.message : "Não foi possível consultar o CEP.";
       setError(message);
@@ -712,6 +721,24 @@ export function NewCasePage() {
       setLookingUpZipCode(false);
     }
   }
+
+  useEffect(() => {
+    if (claimantAddressLockedByProfile || lookingUpZipCode) {
+      return;
+    }
+
+    const normalizedZipCode = normalizeZipCode(claimantZipCode);
+    if (normalizedZipCode.length !== 8) {
+      lastZipLookupRef.current = "";
+      return;
+    }
+
+    if (lastZipLookupRef.current === normalizedZipCode) {
+      return;
+    }
+
+    void handleZipCodeLookup(normalizedZipCode, { silentInvalid: true });
+  }, [claimantAddressLockedByProfile, claimantZipCode, lookingUpZipCode]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1058,30 +1085,18 @@ export function NewCasePage() {
                       setClaimantAddressLockedByProfile(false);
                     }
                   }}
-                  onBlur={() => {
-                    if (normalizeZipCode(claimantZipCode).length === 8 && !claimantStreet.trim()) {
-                      void handleZipCodeLookup();
-                    }
-                  }}
                   placeholder="00000-000"
                   inputMode="numeric"
                   readOnly={claimantAddressLockedByProfile}
                   required
                 />
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => void handleZipCodeLookup()}
-                  disabled={lookingUpZipCode || claimantAddressLockedByProfile}
-                >
-                  {lookingUpZipCode ? "Buscando..." : "Buscar CEP"}
-                </button>
               </div>
               {claimantAddressLockedByProfile && (
                 <span className="field-help">
                   Endereço preenchido com base no seu perfil. Clique em qualquer campo para editar.
                 </span>
               )}
+              {lookingUpZipCode && <span className="field-help">Buscando CEP...</span>}
             </label>
 
             <div className="address-grid">

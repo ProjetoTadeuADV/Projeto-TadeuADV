@@ -610,6 +610,7 @@ export function ProfileSettingsPage() {
   const { user, accessProfile, getToken, refreshAccessProfile, logout, deleteCurrentAccount } = useAuth();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const lastCepLookupRef = useRef<string>("");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -855,10 +856,17 @@ export function ProfileSettingsPage() {
     setCropImageSrc(null);
   }, []);
 
-  async function handleLookupCep() {
-    const cepDigits = normalizeCepDigits(extraInput.address.cep);
+  async function handleLookupCep(
+    cepOverride?: string,
+    options?: {
+      silentInvalid?: boolean;
+    }
+  ) {
+    const cepDigits = normalizeCepDigits(cepOverride ?? extraInput.address.cep);
     if (!cepDigits || cepDigits.length !== 8) {
-      setError("Informe um CEP válido com 8 dígitos para consulta.");
+      if (!options?.silentInvalid) {
+        setError("Informe um CEP válido com 8 dígitos para consulta.");
+      }
       return;
     }
 
@@ -892,6 +900,7 @@ export function ProfileSettingsPage() {
         type: "success",
         message: "CEP encontrado. Complete número e complemento."
       });
+      lastCepLookupRef.current = cepDigits;
     } catch (nextError) {
       const message =
         nextError instanceof Error ? nextError.message : "Não foi possível consultar este CEP agora.";
@@ -904,6 +913,24 @@ export function ProfileSettingsPage() {
       setCepLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (cepLoading) {
+      return;
+    }
+
+    const cepDigits = normalizeCepDigits(extraInput.address.cep);
+    if (!cepDigits || cepDigits.length !== 8) {
+      lastCepLookupRef.current = "";
+      return;
+    }
+
+    if (lastCepLookupRef.current === cepDigits) {
+      return;
+    }
+
+    void handleLookupCep(cepDigits, { silentInvalid: true });
+  }, [cepLoading, extraInput.address.cep]);
 
   async function handleSaveProfile() {
     setError(null);
@@ -1185,26 +1212,22 @@ export function ProfileSettingsPage() {
               <div className="address-grid">
                 <label className="address-grid-span">
                   CEP
-                  <div className="inline-input">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="00000-000"
-                      value={extraInput.address.cep}
-                      onChange={(event) =>
-                        setExtraInput((current) => ({
-                          ...current,
-                          address: {
-                            ...current.address,
-                            cep: formatCepInput(event.target.value)
-                          }
-                        }))
-                      }
-                    />
-                    <button type="button" className="secondary-button" onClick={() => void handleLookupCep()} disabled={cepLoading}>
-                      {cepLoading ? "Buscando..." : "Buscar CEP"}
-                    </button>
-                  </div>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="00000-000"
+                    value={extraInput.address.cep}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        address: {
+                          ...current.address,
+                          cep: formatCepInput(event.target.value)
+                        }
+                      }))
+                    }
+                  />
+                  {cepLoading && <span className="field-help">Buscando CEP...</span>}
                 </label>
 
                 <label className="address-grid-span">

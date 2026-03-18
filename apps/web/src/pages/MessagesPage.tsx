@@ -347,8 +347,8 @@ export function MessagesPage() {
         <div className="workspace-hero-grid">
           <div>
             <p className="hero-kicker">Comunicacao</p>
-            <h1>Mensagens dos casos</h1>
-            <p>Converse com o cliente no formato de chat e centralize anexos do caso.</p>
+            <h1>Mensagens</h1>
+            <p>Acompanhe a conversa do caso em formato de chat e centralize anexos.</p>
           </div>
         </div>
       </section>
