@@ -109,6 +109,7 @@ API: `http://localhost:8080`
    - `ASAAS_API_KEY`
    - `ASAAS_BASE_URL` (`https://api.asaas.com/v3` producao ou `https://api-sandbox.asaas.com/v3` sandbox)
    - `ASAAS_USER_AGENT` (opcional)
+   - Se `ASAAS_BASE_URL` nao for informada, a API assume automaticamente producao quando a chave contem `_prod_`; caso contrario usa sandbox.
 6. Nao usar valores locais/placeholder em producao (`localhost`, `SEU_APP`, `SUA_API` etc).
 
 ## Alinhamento local x producao (obrigatorio)

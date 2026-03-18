@@ -21,6 +21,20 @@ function parseEmailList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function resolveAsaasBaseUrl(rawBaseUrl: string | undefined, rawApiKey: string | undefined): string {
+  const explicitBaseUrl = rawBaseUrl?.trim();
+  if (explicitBaseUrl) {
+    return explicitBaseUrl;
+  }
+
+  const normalizedKey = (rawApiKey ?? "").trim().toLowerCase();
+  if (normalizedKey.includes("_prod_")) {
+    return "https://api.asaas.com/v3";
+  }
+
+  return "https://api-sandbox.asaas.com/v3";
+}
+
 export const env = {
   NODE_ENV: process.env.NODE_ENV ?? "development",
   PORT: parsePort(process.env.PORT, 8080),
@@ -38,7 +52,7 @@ export const env = {
   SENDGRID_API_KEY: process.env.SENDGRID_API_KEY ?? "",
   SENDGRID_TEMPLATE_ID: process.env.SENDGRID_TEMPLATE_ID ?? "",
   ASAAS_API_KEY: process.env.ASAAS_API_KEY ?? "",
-  ASAAS_BASE_URL: process.env.ASAAS_BASE_URL ?? "https://api-sandbox.asaas.com/v3",
+  ASAAS_BASE_URL: resolveAsaasBaseUrl(process.env.ASAAS_BASE_URL, process.env.ASAAS_API_KEY),
   ASAAS_USER_AGENT: process.env.ASAAS_USER_AGENT ?? "DoutorEu-API/1.0"
 };
 
@@ -102,6 +116,12 @@ function assertProductionEnvSafety(): void {
     if (looksLikePlaceholder(env.VERIFY_EMAIL_CONTINUE_URL)) {
       issues.push("VERIFY_EMAIL_CONTINUE_URL contem placeholder.");
     }
+  }
+
+  const asaasKey = env.ASAAS_API_KEY.trim().toLowerCase();
+  const asaasBaseUrl = env.ASAAS_BASE_URL.trim().toLowerCase();
+  if (asaasKey.includes("_prod_") && asaasBaseUrl.includes("sandbox")) {
+    issues.push("ASAAS_API_KEY de producao com ASAAS_BASE_URL de sandbox.");
   }
 
   if (issues.length > 0) {
