@@ -2,6 +2,7 @@ import { type ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, u
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
+import { triggerBrowserDownload } from "../lib/download";
 import type { CaseMessageRecord, CaseRecord, PetitionAttachment } from "../types";
 
 const MAX_ATTACHMENTS_PER_MESSAGE = 8;
@@ -41,17 +42,6 @@ function extractFileName(contentDisposition: string | null): string | null {
 
   const match = contentDisposition.match(/filename="?([^";]+)"?/i);
   return match?.[1] ?? null;
-}
-
-function triggerDownload(blob: Blob, fileName: string): void {
-  const url = window.URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.URL.revokeObjectURL(url);
 }
 
 type ReadMarkersByCase = Record<string, string>;
@@ -505,7 +495,7 @@ export function MessagesPage() {
 
       const blob = await response.blob();
       const fileName = extractFileName(response.headers.get("content-disposition")) ?? attachment.originalName;
-      triggerDownload(blob, fileName);
+      triggerBrowserDownload(blob, fileName);
     } catch (nextError) {
       const message = nextError instanceof ApiError ? nextError.message : "Falha ao baixar anexo.";
       setError(message);

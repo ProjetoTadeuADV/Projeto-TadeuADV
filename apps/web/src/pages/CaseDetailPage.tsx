@@ -2,6 +2,7 @@
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
+import { triggerBrowserDownload } from "../lib/download";
 import type {
   ApiErrorResponse,
   ApiSuccessResponse,
@@ -783,14 +784,7 @@ export function CaseDetailPage() {
 
     const fileName = extractFileName(response.headers.get("content-disposition")) ?? fallbackName;
     const blob = await response.blob();
-    const objectUrl = window.URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = objectUrl;
-    anchor.download = fileName;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    window.URL.revokeObjectURL(objectUrl);
+    triggerBrowserDownload(blob, fileName);
   }
 
   async function handleDownloadPetitionAttachment(attachmentId: string, fallbackName: string) {
