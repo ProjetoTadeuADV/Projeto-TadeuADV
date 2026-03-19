@@ -862,7 +862,7 @@ export function CaseDetailPage() {
     return payload.result;
   }
 
-  async function handleCreateMovement() {
+  async function handleCreateMovement(options?: { closeSidebarAfterSave?: boolean }) {
     if (!id || !caseItem) {
       return;
     }
@@ -901,6 +901,9 @@ export function CaseDetailPage() {
       setMovementDescription("");
       setMovementFiles([]);
       setMovementFeedback("Movimentação registrada com sucesso.");
+      if (options?.closeSidebarAfterSave) {
+        setIsOperatorSidebarOpen(false);
+      }
     } catch (nextError) {
       const message = nextError instanceof Error ? nextError.message : "Falha ao registrar movimentação.";
       setMovementError(message);
@@ -2267,14 +2270,6 @@ export function CaseDetailPage() {
                   <div className="operator-action-buttons">
                     <button
                       type="button"
-                      className="secondary-button secondary-button--small"
-                      onClick={() => void handleSubmitCaseReview("accepted")}
-                      disabled={reviewingCase}
-                    >
-                      {reviewingCase ? "Salvando..." : "Aceitar caso"}
-                    </button>
-                    <button
-                      type="button"
                       className="danger-button danger-button--small"
                       onClick={() => void handleSubmitCaseReview("rejected")}
                       disabled={reviewingCase}
@@ -2287,8 +2282,13 @@ export function CaseDetailPage() {
                   {reviewError && <p className="error-text">{reviewError}</p>}
 
                   <div className="operator-step-nav">
-                    <button type="button" className="hero-primary" onClick={goToNextOperatorStep}>
-                      Avançar (1/3)
+                    <button
+                      type="button"
+                      className="hero-primary"
+                      onClick={() => void handleSubmitCaseReview("accepted")}
+                      disabled={reviewingCase}
+                    >
+                      {reviewingCase ? "Avançando..." : "Avançar (1/3)"}
                     </button>
                   </div>
                 </div>
@@ -2437,15 +2437,6 @@ export function CaseDetailPage() {
                     </ul>
                   )}
 
-                  <button
-                    type="button"
-                    className="hero-primary"
-                    onClick={() => void handleCreateMovement()}
-                    disabled={savingMovement}
-                  >
-                    {savingMovement ? "Salvando movimentação..." : "Registrar movimentação"}
-                  </button>
-
                   {movementFeedback && <p className="success-text">{movementFeedback}</p>}
                   {movementError && <p className="error-text">{movementError}</p>}
 
@@ -2453,8 +2444,13 @@ export function CaseDetailPage() {
                     <button type="button" className="hero-secondary" onClick={goToPreviousOperatorStep}>
                       Voltar para Cobrança Inicial
                     </button>
-                    <button type="button" className="hero-primary" onClick={closeOperatorSidebar}>
-                      Concluir (3/3)
+                    <button
+                      type="button"
+                      className="hero-primary"
+                      onClick={() => void handleCreateMovement({ closeSidebarAfterSave: true })}
+                      disabled={savingMovement}
+                    >
+                      {savingMovement ? "Concluindo..." : "Concluir (3/3)"}
                     </button>
                   </div>
                 </div>
