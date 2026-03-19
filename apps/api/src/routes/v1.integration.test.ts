@@ -1304,6 +1304,74 @@ describe("v1 routes", () => {
     });
   });
 
+  it("deve salvar os campos de conciliacao mesmo sem envio real de e-mail no ambiente de teste", async () => {
+    const app = buildTestApp();
+
+    const createCase = await request(app)
+      .post("/v1/cases")
+      .set("Authorization", "Bearer token-user-a")
+      .send({
+        varaId: "jec-sp-capital",
+        cpf: "935.411.347-80",
+        resumo: "Caso para validar salvamento da conciliacao com tentativa de envio de e-mail."
+      });
+
+    expect(createCase.status).toBe(201);
+    const caseId = createCase.body.result.id as string;
+
+    await request(app)
+      .get("/v1/auth/session")
+      .set("Authorization", "Bearer token-operator");
+
+    const assignResponse = await request(app)
+      .post(`/v1/cases/${caseId}/assign-operator`)
+      .set("Authorization", "Bearer token-master")
+      .send({
+        operatorUserId: "operator-user"
+      });
+
+    expect(assignResponse.status).toBe(200);
+
+    const reviewResponse = await request(app)
+      .post(`/v1/cases/${caseId}/review`)
+      .set("Authorization", "Bearer token-operator")
+      .send({
+        decision: "accepted",
+        reason: "Analise inicial concluida com elementos suficientes para prosseguir.",
+        requestClientData: false
+      });
+
+    expect(reviewResponse.status).toBe(200);
+
+    const conciliationResponse = await request(app)
+      .post(`/v1/cases/${caseId}/progress/conciliation`)
+      .set("Authorization", "Bearer token-operator")
+      .send({
+        contactedDefendant: true,
+        defendantContact: "(11) 99999-0000",
+        defendantEmail: "reclamado@example.com",
+        emailDraft: "Prezados, enviamos esta mensagem para tentativa de conciliacao do caso em aberto.",
+        sendEmailToDefendant: true
+      });
+
+    expect(conciliationResponse.status).toBe(200);
+    expect(conciliationResponse.body.result.procedureProgress.conciliation).toMatchObject({
+      contactedDefendant: true,
+      defendantContact: "(11) 99999-0000",
+      defendantEmail: "reclamado@example.com",
+      emailDraft: "Prezados, enviamos esta mensagem para tentativa de conciliacao do caso em aberto.",
+      emailSent: false
+    });
+    expect(conciliationResponse.body.result.movements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stage: "conciliacao",
+          description: expect.stringContaining("Tentativa de envio")
+        })
+      ])
+    );
+  });
+
   it("deve bloquear novas edicoes operacionais apos rejeicao do caso", async () => {
     const app = buildTestApp();
 

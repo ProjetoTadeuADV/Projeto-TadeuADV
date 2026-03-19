@@ -43,6 +43,10 @@ import {
   isCaseNotificationEmailEnabled,
   sendCaseNotificationEmail
 } from "../services/caseNotificationSender.js";
+import {
+  isDefendantConciliationEmailEnabled,
+  sendDefendantConciliationEmail
+} from "../services/defendantConciliationEmailSender.js";
 import { generateInitialPetitionPdf } from "../services/petitionPdf.js";
 import {
   MAX_ATTACHMENTS_PER_CASE,
@@ -2423,8 +2427,56 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(409, "A etapa de conciliação exige que o caso esteja aceito.");
         }
 
+        const shouldSendDefendantEmail = payload.sendEmailToDefendant;
+        const defendantEmail = payload.defendantEmail;
+        const emailDraft = payload.emailDraft;
+
+        if (shouldSendDefendantEmail && !defendantEmail) {
+          throw new HttpError(400, "Informe o e-mail do reclamado para realizar o envio.");
+        }
+
+        if (shouldSendDefendantEmail && (!emailDraft || emailDraft.length < 10)) {
+          throw new HttpError(400, "Informe a redação do e-mail com pelo menos 10 caracteres.");
+        }
+
         const now = new Date().toISOString();
         const actorName = req.user.name ?? req.user.email ?? null;
+        let emailSentNow = false;
+
+        if (shouldSendDefendantEmail) {
+          if (!defendantEmail || !emailDraft) {
+            throw new HttpError(400, "Informe e-mail e redação para envio ao reclamado.");
+          }
+
+          if (!isDefendantConciliationEmailEnabled()) {
+            console.warn("conciliation-defendant-email-disabled", {
+              caseId: currentCase.id
+            });
+          } else {
+            const owner = await deps.repository.getUserById(currentCase.userId);
+            const claimantName = normalizeName(owner?.name) ?? currentCase.cpfConsulta?.nome ?? null;
+            try {
+              await sendDefendantConciliationEmail({
+                toEmail: defendantEmail,
+                toName: payload.defendantContact ?? currentCase.petitionInitial?.defendantName ?? null,
+                caseId: currentCase.id,
+                varaNome: currentCase.varaNome,
+                claimantName,
+                operatorName: actorName,
+                emailDraft
+              });
+              emailSentNow = true;
+            } catch (emailError) {
+              const details = emailError instanceof Error ? emailError.message : "unknown";
+              console.error("conciliation-defendant-email-failed", {
+                caseId: currentCase.id,
+                toEmail: defendantEmail,
+                details
+              });
+            }
+          }
+        }
+
         const nextProgress = resolveProcedureProgress(currentCase);
         nextProgress.conciliation = {
           ...nextProgress.conciliation,
@@ -2432,8 +2484,8 @@ export function createV1Router(deps: AppDependencies) {
           defendantContact: payload.defendantContact,
           defendantEmail: payload.defendantEmail,
           emailDraft: payload.emailDraft,
-          emailSent: payload.sendEmailToDefendant || nextProgress.conciliation.emailSent,
-          emailSentAt: payload.sendEmailToDefendant ? now : nextProgress.conciliation.emailSentAt,
+          emailSent: nextProgress.conciliation.emailSent || emailSentNow,
+          emailSentAt: emailSentNow ? now : nextProgress.conciliation.emailSentAt,
           lastUpdatedAt: now
         };
 
@@ -2446,8 +2498,10 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(404, "Caso não encontrado.");
         }
 
-        const movementDescription = payload.sendEmailToDefendant
-          ? "Checklist de conciliação atualizado e e-mail ao reclamado marcado como enviado."
+        const movementDescription = shouldSendDefendantEmail
+          ? emailSentNow
+            ? "Checklist de conciliação atualizado e e-mail ao reclamado enviado."
+            : "Checklist de conciliação atualizado. Tentativa de envio do e-mail ao reclamado não concluída."
           : "Checklist de conciliação atualizado.";
         const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
           stage: "conciliacao",
