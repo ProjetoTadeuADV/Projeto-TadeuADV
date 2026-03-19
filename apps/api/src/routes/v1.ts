@@ -1,6 +1,7 @@
 ﻿import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import { promises as fs } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { env, hasFirebaseCredentials, isMasterEmail } from "../config/env.js";
 import { getFirebaseAuth } from "../config/firebaseAdmin.js";
 import { VARAS } from "../constants/varas.js";
@@ -18,10 +19,13 @@ import {
   validateAccountProfilePatchPayload,
   validateAccessLevelPayload,
   validateAssignOperatorPayload,
+  validateCaseChargeUpdatePayload,
+  validateCaseConciliationProgressPayload,
   validateCaseMessagePayload,
   validateCaseMovementPayload,
   validateCaseCloseRequestDecisionPayload,
   validateCaseCloseRequestPayload,
+  validateCasePetitionProgressPayload,
   validateCaseReviewPayload,
   validateCaseServiceFeePayload,
   validateCreateCaseInput,
@@ -268,6 +272,125 @@ function resolveSenderRole(
   }
 
   return "client";
+}
+
+function defaultProcedureChecklist(): NonNullable<CaseRecord["procedureProgress"]>["petition"]["checklist"] {
+  return [
+    {
+      id: "audiencia-conciliacao",
+      label: "Audiência de conciliação",
+      done: false,
+      notes: null,
+      updatedAt: null
+    },
+    {
+      id: "audiencia-instrucao",
+      label: "Audiência de instrução",
+      done: false,
+      notes: null,
+      updatedAt: null
+    },
+    {
+      id: "manifestacoes",
+      label: "Prazos e manifestações",
+      done: false,
+      notes: null,
+      updatedAt: null
+    },
+    {
+      id: "sentenca",
+      label: "Sentença / decisão",
+      done: false,
+      notes: null,
+      updatedAt: null
+    }
+  ];
+}
+
+function defaultProcedureProgress(): NonNullable<CaseRecord["procedureProgress"]> {
+  return {
+    conciliation: {
+      contactedDefendant: false,
+      defendantContact: null,
+      defendantEmail: null,
+      emailDraft: null,
+      emailSent: false,
+      emailSentAt: null,
+      lastUpdatedAt: null,
+      agreementReached: false,
+      agreementClosedAt: null
+    },
+    petition: {
+      petitionPulled: false,
+      petitionPulledAt: null,
+      jusiaProtocolChecked: false,
+      jusiaProtocolCheckedAt: null,
+      protocolCode: null,
+      protocolCodeUpdatedAt: null,
+      checklist: defaultProcedureChecklist(),
+      lastUpdatedAt: null
+    }
+  };
+}
+
+function resolveProcedureProgress(caseItem: CaseRecord): NonNullable<CaseRecord["procedureProgress"]> {
+  const base = caseItem.procedureProgress ?? defaultProcedureProgress();
+  const checklist =
+    Array.isArray(base.petition?.checklist) && base.petition.checklist.length > 0
+      ? base.petition.checklist
+      : defaultProcedureChecklist();
+
+  return {
+    conciliation: {
+      contactedDefendant: base.conciliation?.contactedDefendant === true,
+      defendantContact: base.conciliation?.defendantContact ?? null,
+      defendantEmail: base.conciliation?.defendantEmail ?? null,
+      emailDraft: base.conciliation?.emailDraft ?? null,
+      emailSent: base.conciliation?.emailSent === true,
+      emailSentAt: base.conciliation?.emailSentAt ?? null,
+      lastUpdatedAt: base.conciliation?.lastUpdatedAt ?? null,
+      agreementReached: base.conciliation?.agreementReached === true,
+      agreementClosedAt: base.conciliation?.agreementClosedAt ?? null
+    },
+    petition: {
+      petitionPulled: base.petition?.petitionPulled === true,
+      petitionPulledAt: base.petition?.petitionPulledAt ?? null,
+      jusiaProtocolChecked: base.petition?.jusiaProtocolChecked === true,
+      jusiaProtocolCheckedAt: base.petition?.jusiaProtocolCheckedAt ?? null,
+      protocolCode: base.petition?.protocolCode ?? null,
+      protocolCodeUpdatedAt: base.petition?.protocolCodeUpdatedAt ?? null,
+      checklist,
+      lastUpdatedAt: base.petition?.lastUpdatedAt ?? null
+    }
+  };
+}
+
+function mapServiceFeeStatusToChargeStatus(
+  status: NonNullable<CaseRecord["serviceFee"]>["status"]
+): "awaiting_payment" | "received" | "confirmed" | "canceled" {
+  if (status === "paid") {
+    return "confirmed";
+  }
+
+  if (status === "canceled") {
+    return "canceled";
+  }
+
+  return "awaiting_payment";
+}
+
+function mapChargeStatusToServiceFeeStatus(
+  status: "awaiting_payment" | "received" | "confirmed" | "canceled"
+): NonNullable<CaseRecord["serviceFee"]>["status"] {
+  if (status === "confirmed") {
+    return "paid";
+  }
+
+  if (status === "canceled") {
+    return "canceled";
+  }
+
+  return "awaiting_payment";
 }
 
 function summarizeAdminUser(user: UserRecord, userCases: CaseRecord[]) {
@@ -1362,10 +1485,21 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(404, "Caso não encontrado.");
         }
 
-        void notifyCaseOwnerByEmail(deps, appended.caseItem, appended.movement).catch((error) => {
+        let latestCase = appended.caseItem;
+        if (currentCase.reviewDecision === "accepted" && currentCase.workflowStep !== "in_progress") {
+          const progressed = await deps.repository.updateCaseWorkflow(req.params.id, {
+            status: appended.caseItem.status,
+            workflowStep: "in_progress"
+          });
+          if (progressed) {
+            latestCase = progressed;
+          }
+        }
+
+        void notifyCaseOwnerByEmail(deps, latestCase, appended.movement).catch((error) => {
           const details = error instanceof Error ? error.message : "unknown";
           console.error("case-notification-email-failed", {
-            caseId: appended.caseItem.id,
+            caseId: latestCase.id,
             movementId: appended.movement.id,
             details
           });
@@ -1373,7 +1507,10 @@ export function createV1Router(deps: AppDependencies) {
 
         res.status(201).json({
           status: "ok",
-          result: appended
+          result: {
+            caseItem: latestCase,
+            movement: appended.movement
+          }
         });
       } catch (error) {
         next(error);
@@ -1797,6 +1934,41 @@ export function createV1Router(deps: AppDependencies) {
           bytes: boleto.attachment.bytes
         });
 
+        const recoveredLegacyCharge =
+          (currentCase.charges ?? []).length === 0 && currentCase.serviceFee
+            ? [
+                {
+                  id: `fee-${currentCase.serviceFee.externalReference ?? "legacy"}`,
+                  amount: currentCase.serviceFee.amount,
+                  dueDate: currentCase.serviceFee.dueDate,
+                  provider: "asaas" as const,
+                  status: mapServiceFeeStatusToChargeStatus(currentCase.serviceFee.status),
+                  externalReference: currentCase.serviceFee.externalReference,
+                  paymentUrl: currentCase.serviceFee.paymentUrl,
+                  attachmentId: null,
+                  createdAt: currentCase.serviceFee.updatedAt,
+                  updatedAt: currentCase.serviceFee.updatedAt,
+                  createdByUserId: currentCase.reviewedByUserId ?? req.user.uid,
+                  createdByName: currentCase.reviewedByName ?? actorName
+                }
+              ]
+            : [];
+
+        const nextCharge = {
+          id: randomUUID(),
+          amount: payload.amount,
+          dueDate: payload.dueDate,
+          provider: "asaas" as const,
+          status: "awaiting_payment" as const,
+          externalReference: boleto.paymentId,
+          paymentUrl: boleto.bankSlipUrl ?? boleto.invoiceUrl,
+          attachmentId: boletoAttachment.id,
+          createdAt: now,
+          updatedAt: now,
+          createdByUserId: req.user.uid,
+          createdByName: actorName
+        };
+
         const withFee = await deps.repository.updateCaseWorkflow(req.params.id, {
           status: "em_analise",
           workflowStep: "awaiting_initial_fee",
@@ -1808,7 +1980,8 @@ export function createV1Router(deps: AppDependencies) {
             externalReference: boleto.paymentId,
             paymentUrl: boleto.bankSlipUrl ?? boleto.invoiceUrl,
             updatedAt: now
-          }
+          },
+          charges: [...recoveredLegacyCharge, ...(currentCase.charges ?? []), nextCharge]
         });
         if (!withFee) {
           throw new HttpError(404, "Caso não encontrado.");
@@ -1842,9 +2015,9 @@ export function createV1Router(deps: AppDependencies) {
               currency: "BRL"
             }).format(payload.amount)} com vencimento em ${payload.dueDate}. O documento foi anexado nesta conversa.`;
         const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
-          senderUserId: "system:billing",
-          senderName: "Sistema de cobrança",
-          senderRole: "system",
+          senderUserId: req.user.uid,
+          senderName: actorName,
+          senderRole: resolveSenderRole(req.user),
           message: paymentMessage,
           attachments: [boletoAttachment]
         });
@@ -1863,6 +2036,491 @@ export function createV1Router(deps: AppDependencies) {
           });
         });
 
+        res.status(200).json({
+          status: "ok",
+          result: latestCase
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/charges",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        ensureAdminPanelAccess(req.user);
+
+        const payload = validateCaseServiceFeePayload(req.body);
+        const allCases = await deps.repository.listAllCases();
+        const currentCase = allCases.find((item) => item.id === req.params.id);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+        ensureOperatorCanManageCase(req.user, currentCase);
+        ensureCaseIsEditable(currentCase);
+
+        if (currentCase.reviewDecision !== "accepted") {
+          throw new HttpError(409, "A cobrança só pode ser criada após o aceite inicial do caso.");
+        }
+
+        const now = new Date().toISOString();
+        const actorName = req.user.name ?? req.user.email ?? null;
+        const customerSync = await syncAsaasCustomerForUser(deps, {
+          userId: currentCase.userId,
+          fallbackName: currentCase.cpfConsulta?.nome ?? null,
+          fallbackCpf: currentCase.cpf,
+          required: true
+        });
+        const customerId = customerSync.customerId;
+        if (!customerId) {
+          throw new HttpError(400, "Nao foi possivel identificar o cliente no Asaas para gerar o boleto.");
+        }
+
+        const boleto = await deps.paymentProvider.createBoleto({
+          customerId,
+          caseId: currentCase.id,
+          caseCode: currentCase.caseCode,
+          amount: payload.amount,
+          dueDate: payload.dueDate,
+          description: `Cobranca do caso ${currentCase.caseCode}`
+        });
+
+        const boletoAttachment = await storeGeneratedCaseAttachment(currentCase.id, {
+          fileName: boleto.attachment.fileName,
+          mimeType: boleto.attachment.mimeType,
+          bytes: boleto.attachment.bytes
+        });
+
+        const recoveredLegacyCharge =
+          (currentCase.charges ?? []).length === 0 && currentCase.serviceFee
+            ? [
+                {
+                  id: `fee-${currentCase.serviceFee.externalReference ?? "legacy"}`,
+                  amount: currentCase.serviceFee.amount,
+                  dueDate: currentCase.serviceFee.dueDate,
+                  provider: "asaas" as const,
+                  status: mapServiceFeeStatusToChargeStatus(currentCase.serviceFee.status),
+                  externalReference: currentCase.serviceFee.externalReference,
+                  paymentUrl: currentCase.serviceFee.paymentUrl,
+                  attachmentId: null,
+                  createdAt: currentCase.serviceFee.updatedAt,
+                  updatedAt: currentCase.serviceFee.updatedAt,
+                  createdByUserId: currentCase.reviewedByUserId ?? req.user.uid,
+                  createdByName: currentCase.reviewedByName ?? actorName
+                }
+              ]
+            : [];
+
+        const nextCharge = {
+          id: randomUUID(),
+          amount: payload.amount,
+          dueDate: payload.dueDate,
+          provider: "asaas" as const,
+          status: "awaiting_payment" as const,
+          externalReference: boleto.paymentId,
+          paymentUrl: boleto.bankSlipUrl ?? boleto.invoiceUrl,
+          attachmentId: boletoAttachment.id,
+          createdAt: now,
+          updatedAt: now,
+          createdByUserId: req.user.uid,
+          createdByName: actorName
+        };
+
+        const withCharge = await deps.repository.updateCaseWorkflow(req.params.id, {
+          status: "em_analise",
+          workflowStep: currentCase.workflowStep === "in_progress" ? "in_progress" : "awaiting_initial_fee",
+          serviceFee: {
+            amount: payload.amount,
+            dueDate: payload.dueDate,
+            provider: "asaas",
+            status: "awaiting_payment",
+            externalReference: boleto.paymentId,
+            paymentUrl: boleto.bankSlipUrl ?? boleto.invoiceUrl,
+            updatedAt: now
+          },
+          charges: [...recoveredLegacyCharge, ...(currentCase.charges ?? []), nextCharge]
+        });
+        if (!withCharge) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const movementDescription = `Nova cobrança criada em ${new Intl.NumberFormat("pt-BR", {
+          style: "currency",
+          currency: "BRL"
+        }).format(payload.amount)} com vencimento em ${payload.dueDate}.`;
+
+        const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
+          stage: "andamento",
+          description: movementDescription,
+          visibility: "public",
+          createdByUserId: req.user.uid,
+          createdByName: actorName,
+          statusAfter: "em_analise"
+        });
+        if (!appendedMovement) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const paymentLink = boleto.bankSlipUrl ?? boleto.invoiceUrl;
+        const paymentMessage = paymentLink
+          ? `Nova cobrança emitida. Valor ${new Intl.NumberFormat("pt-BR", {
+              style: "currency",
+              currency: "BRL"
+            }).format(payload.amount)} com vencimento em ${payload.dueDate}. Link direto: ${paymentLink}.`
+          : `Nova cobrança emitida. Valor ${new Intl.NumberFormat("pt-BR", {
+              style: "currency",
+              currency: "BRL"
+            }).format(payload.amount)} com vencimento em ${payload.dueDate}.`;
+        const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
+          senderUserId: req.user.uid,
+          senderName: actorName,
+          senderRole: resolveSenderRole(req.user),
+          message: paymentMessage,
+          attachments: [boletoAttachment]
+        });
+
+        const latestCase = withMessage ?? appendedMovement.caseItem;
+
+        void notifyCaseOwnerByCustomUpdate(deps, latestCase, {
+          stageLabel: "Cobrança",
+          description: paymentMessage,
+          statusAfter: latestCase.status
+        }).catch((error) => {
+          const details = error instanceof Error ? error.message : "unknown";
+          console.error("case-notification-email-failed", {
+            caseId: latestCase.id,
+            details
+          });
+        });
+
+        res.status(200).json({
+          status: "ok",
+          result: latestCase
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.patch(
+    "/cases/:id/charges/:chargeId",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        ensureAdminPanelAccess(req.user);
+
+        const payload = validateCaseChargeUpdatePayload(req.body);
+        const allCases = await deps.repository.listAllCases();
+        const currentCase = allCases.find((item) => item.id === req.params.id);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+        ensureOperatorCanManageCase(req.user, currentCase);
+        ensureCaseIsEditable(currentCase);
+
+        const currentCharges = currentCase.charges ?? [];
+        const targetIndex = currentCharges.findIndex((item) => item.id === req.params.chargeId);
+        if (targetIndex < 0) {
+          throw new HttpError(404, "Cobrança não encontrada para este caso.");
+        }
+
+        const now = new Date().toISOString();
+        const targetCharge = currentCharges[targetIndex];
+        const updatedCharge = {
+          ...targetCharge,
+          ...(typeof payload.amount === "number" ? { amount: payload.amount } : {}),
+          ...(typeof payload.dueDate === "string" ? { dueDate: payload.dueDate } : {}),
+          ...(payload.status ? { status: payload.status } : {}),
+          updatedAt: now
+        };
+
+        const nextCharges = [...currentCharges];
+        nextCharges[targetIndex] = updatedCharge;
+
+        const updated = await deps.repository.updateCaseWorkflow(req.params.id, {
+          workflowStep:
+            payload.status === "confirmed" && currentCase.workflowStep !== "closed"
+              ? "in_progress"
+              : currentCase.workflowStep,
+          serviceFee: {
+            amount: updatedCharge.amount,
+            dueDate: updatedCharge.dueDate,
+            provider: "asaas",
+            status: mapChargeStatusToServiceFeeStatus(updatedCharge.status),
+            externalReference: updatedCharge.externalReference,
+            paymentUrl: updatedCharge.paymentUrl,
+            updatedAt: now
+          },
+          charges: nextCharges
+        });
+        if (!updated) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const actorName = req.user.name ?? req.user.email ?? null;
+        const movementDescription = `Cobrança atualizada: valor ${new Intl.NumberFormat("pt-BR", {
+          style: "currency",
+          currency: "BRL"
+        }).format(updatedCharge.amount)}, vencimento ${updatedCharge.dueDate} e status ${updatedCharge.status}.`;
+        const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
+          stage: "andamento",
+          description: movementDescription,
+          visibility: "public",
+          createdByUserId: req.user.uid,
+          createdByName: actorName,
+          statusAfter: updated.status
+        });
+        const latestCase = appendedMovement?.caseItem ?? updated;
+
+        res.status(200).json({
+          status: "ok",
+          result: latestCase
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/progress/conciliation",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        ensureAdminPanelAccess(req.user);
+
+        const payload = validateCaseConciliationProgressPayload(req.body);
+        const allCases = await deps.repository.listAllCases();
+        const currentCase = allCases.find((item) => item.id === req.params.id);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+        ensureOperatorCanManageCase(req.user, currentCase);
+        ensureCaseIsEditable(currentCase);
+
+        if (currentCase.reviewDecision !== "accepted") {
+          throw new HttpError(409, "A etapa de conciliação exige que o caso esteja aceito.");
+        }
+
+        const now = new Date().toISOString();
+        const actorName = req.user.name ?? req.user.email ?? null;
+        const nextProgress = resolveProcedureProgress(currentCase);
+        nextProgress.conciliation = {
+          ...nextProgress.conciliation,
+          contactedDefendant: payload.contactedDefendant,
+          defendantContact: payload.defendantContact,
+          defendantEmail: payload.defendantEmail,
+          emailDraft: payload.emailDraft,
+          emailSent: payload.sendEmailToDefendant || nextProgress.conciliation.emailSent,
+          emailSentAt: payload.sendEmailToDefendant ? now : nextProgress.conciliation.emailSentAt,
+          lastUpdatedAt: now
+        };
+
+        const withProgress = await deps.repository.updateCaseWorkflow(req.params.id, {
+          status: "em_analise",
+          workflowStep: "in_progress",
+          procedureProgress: nextProgress
+        });
+        if (!withProgress) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const movementDescription = payload.sendEmailToDefendant
+          ? "Checklist de conciliação atualizado e e-mail ao reclamado marcado como enviado."
+          : "Checklist de conciliação atualizado.";
+        const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
+          stage: "conciliacao",
+          description: movementDescription,
+          visibility: "public",
+          createdByUserId: req.user.uid,
+          createdByName: actorName,
+          statusAfter: withProgress.status
+        });
+
+        const latestCase = appendedMovement?.caseItem ?? withProgress;
+        res.status(200).json({
+          status: "ok",
+          result: latestCase
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/progress/conciliation/agreement",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        ensureAdminPanelAccess(req.user);
+
+        const allCases = await deps.repository.listAllCases();
+        const currentCase = allCases.find((item) => item.id === req.params.id);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+        ensureOperatorCanManageCase(req.user, currentCase);
+        ensureCaseIsEditable(currentCase);
+
+        const now = new Date().toISOString();
+        const actorName = req.user.name ?? req.user.email ?? null;
+        const nextProgress = resolveProcedureProgress(currentCase);
+        nextProgress.conciliation = {
+          ...nextProgress.conciliation,
+          agreementReached: true,
+          agreementClosedAt: now,
+          lastUpdatedAt: now
+        };
+
+        const closed = await deps.repository.updateCaseWorkflow(req.params.id, {
+          status: "encerrado",
+          workflowStep: "closed",
+          procedureProgress: nextProgress
+        });
+        if (!closed) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const movementDescription = "Caso encerrado por acordo em conciliação.";
+        const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
+          stage: "solucao",
+          description: movementDescription,
+          visibility: "public",
+          createdByUserId: req.user.uid,
+          createdByName: actorName,
+          statusAfter: "encerrado"
+        });
+
+        const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
+          senderUserId: req.user.uid,
+          senderName: actorName,
+          senderRole: resolveSenderRole(req.user),
+          message: "Seu caso foi encerrado por acordo na etapa de conciliação."
+        });
+
+        const latestCase = withMessage ?? appendedMovement?.caseItem ?? closed;
+
+        void notifyCaseOwnerByCustomUpdate(deps, latestCase, {
+          stageLabel: "Conciliação",
+          description: "Caso encerrado por acordo em conciliação.",
+          statusAfter: latestCase.status
+        }).catch((error) => {
+          const details = error instanceof Error ? error.message : "unknown";
+          console.error("case-notification-email-failed", {
+            caseId: latestCase.id,
+            details
+          });
+        });
+
+        res.status(200).json({
+          status: "ok",
+          result: latestCase
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/progress/petition",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        ensureAdminPanelAccess(req.user);
+
+        const payload = validateCasePetitionProgressPayload(req.body);
+        const allCases = await deps.repository.listAllCases();
+        const currentCase = allCases.find((item) => item.id === req.params.id);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+        ensureOperatorCanManageCase(req.user, currentCase);
+        ensureCaseIsEditable(currentCase);
+
+        if (currentCase.reviewDecision !== "accepted") {
+          throw new HttpError(409, "A etapa de petição exige que o caso esteja aceito.");
+        }
+
+        const now = new Date().toISOString();
+        const actorName = req.user.name ?? req.user.email ?? null;
+        const nextProgress = resolveProcedureProgress(currentCase);
+
+        const nextChecklist = payload.checklist.map((item) => {
+          const existing = (nextProgress.petition.checklist ?? []).find((entry) => entry.id === item.id);
+          const changed =
+            !existing ||
+            existing.done !== item.done ||
+            (existing.notes ?? null) !== (item.notes ?? null) ||
+            existing.label !== item.label;
+
+          return {
+            id: item.id,
+            label: item.label,
+            done: item.done,
+            notes: item.notes,
+            updatedAt: changed ? now : existing?.updatedAt ?? null
+          };
+        });
+
+        nextProgress.petition = {
+          ...nextProgress.petition,
+          petitionPulled: payload.petitionPulled,
+          petitionPulledAt: payload.petitionPulled ? now : nextProgress.petition.petitionPulledAt,
+          jusiaProtocolChecked: payload.jusiaProtocolChecked,
+          jusiaProtocolCheckedAt: payload.jusiaProtocolChecked ? now : nextProgress.petition.jusiaProtocolCheckedAt,
+          protocolCode: payload.protocolCode,
+          protocolCodeUpdatedAt: payload.protocolCode ? now : nextProgress.petition.protocolCodeUpdatedAt,
+          checklist: nextChecklist,
+          lastUpdatedAt: now
+        };
+
+        const withProgress = await deps.repository.updateCaseWorkflow(req.params.id, {
+          status: "em_analise",
+          workflowStep: "in_progress",
+          procedureProgress: nextProgress
+        });
+        if (!withProgress) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const completedSteps = nextChecklist.filter((item) => item.done).length;
+        const movementDescription = `Checklist de petição atualizado (${completedSteps}/${nextChecklist.length} etapas concluídas).`;
+        const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
+          stage: "peticao",
+          description: movementDescription,
+          visibility: "public",
+          createdByUserId: req.user.uid,
+          createdByName: actorName,
+          statusAfter: withProgress.status
+        });
+
+        const latestCase = appendedMovement?.caseItem ?? withProgress;
         res.status(200).json({
           status: "ok",
           result: latestCase

@@ -5,6 +5,8 @@ import type {
   CaseMovementRecord,
   CaseMovementStage,
   CaseMovementVisibility,
+  CaseChargeRecord,
+  CaseProcedureProgress,
   CaseServiceFee,
   CaseRecord,
   NewCaseInput,
@@ -68,6 +70,8 @@ export interface CaseRepository {
       clientDataRequestedAt?: string | null;
       workflowStep?: CaseWorkflowStep;
       serviceFee?: CaseServiceFee | null;
+      charges?: CaseChargeRecord[] | null;
+      procedureProgress?: CaseProcedureProgress | null;
       closeRequest?: CaseRecord["closeRequest"];
     }
   ): Promise<CaseRecord | null>;

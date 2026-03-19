@@ -1,12 +1,14 @@
-﻿import { ChangeEvent, useEffect, useMemo, useState } from "react";
+﻿import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
 import type {
   ApiErrorResponse,
   ApiSuccessResponse,
+  CaseChargeRecord,
   CaseMovementCreateResult,
   CaseMovementRecord,
+  CaseProcedureProgress,
   CaseRecord,
   PetitionAttachment
 } from "../types";
@@ -49,6 +51,13 @@ const SERVICE_FEE_STATUS_LABEL: Record<NonNullable<CaseRecord["serviceFee"]>["st
   canceled: "Cancelado"
 };
 
+const CHARGE_STATUS_LABEL: Record<CaseChargeRecord["status"], string> = {
+  awaiting_payment: "Aguardando pagamento",
+  received: "Recebido",
+  confirmed: "Confirmado",
+  canceled: "Cancelado"
+};
+
 const DEFENDANT_TYPE_LABEL: Record<NonNullable<CaseRecord["petitionInitial"]>["defendantType"], string> = {
   pessoa_fisica: "Pessoa física",
   pessoa_juridica: "Pessoa jurídica",
@@ -81,7 +90,7 @@ const MOVEMENT_VISIBILITY_LABEL: Record<CaseMovementRecord["visibility"], string
 };
 
 type OperatorActionStep = 1 | 2 | 3;
-type CaseDetailTab = "info" | "attachments" | "evolution";
+type CaseDetailTab = "info" | "attachments" | "payments" | "progress" | "evolution";
 type CaseAttachmentItem = {
   key: string;
   source: "petition" | "message" | "movement";
@@ -114,6 +123,8 @@ const OPERATOR_ACTION_STEPS: Array<{
 const CASE_DETAIL_TABS: Array<{ id: CaseDetailTab; label: string }> = [
   { id: "info", label: "Informações Principais" },
   { id: "attachments", label: "Anexos" },
+  { id: "payments", label: "Pagamentos" },
+  { id: "progress", label: "Andamento" },
   { id: "evolution", label: "Evolução do Caso" }
 ];
 
@@ -243,6 +254,76 @@ function fingerprintFile(file: File): string {
   return `${file.name}:${file.size}:${file.lastModified}`;
 }
 
+function getDefaultProcedureChecklist(): NonNullable<CaseProcedureProgress["petition"]["checklist"]> {
+  return [
+    { id: "audiencia-conciliacao", label: "Audiência de conciliação", done: false, notes: null, updatedAt: null },
+    { id: "audiencia-instrucao", label: "Audiência de instrução", done: false, notes: null, updatedAt: null },
+    { id: "manifestacoes", label: "Prazos e manifestações", done: false, notes: null, updatedAt: null },
+    { id: "sentenca", label: "Sentença / decisão", done: false, notes: null, updatedAt: null }
+  ];
+}
+
+function getDefaultProcedureProgress(): CaseProcedureProgress {
+  return {
+    conciliation: {
+      contactedDefendant: false,
+      defendantContact: null,
+      defendantEmail: null,
+      emailDraft: null,
+      emailSent: false,
+      emailSentAt: null,
+      lastUpdatedAt: null,
+      agreementReached: false,
+      agreementClosedAt: null
+    },
+    petition: {
+      petitionPulled: false,
+      petitionPulledAt: null,
+      jusiaProtocolChecked: false,
+      jusiaProtocolCheckedAt: null,
+      protocolCode: null,
+      protocolCodeUpdatedAt: null,
+      checklist: getDefaultProcedureChecklist(),
+      lastUpdatedAt: null
+    }
+  };
+}
+
+function resolveProcedureProgress(progress: CaseRecord["procedureProgress"] | undefined): CaseProcedureProgress {
+  if (!progress) {
+    return getDefaultProcedureProgress();
+  }
+
+  const checklist =
+    Array.isArray(progress.petition?.checklist) && progress.petition.checklist.length > 0
+      ? progress.petition.checklist
+      : getDefaultProcedureChecklist();
+
+  return {
+    conciliation: {
+      contactedDefendant: progress.conciliation?.contactedDefendant === true,
+      defendantContact: progress.conciliation?.defendantContact ?? null,
+      defendantEmail: progress.conciliation?.defendantEmail ?? null,
+      emailDraft: progress.conciliation?.emailDraft ?? null,
+      emailSent: progress.conciliation?.emailSent === true,
+      emailSentAt: progress.conciliation?.emailSentAt ?? null,
+      lastUpdatedAt: progress.conciliation?.lastUpdatedAt ?? null,
+      agreementReached: progress.conciliation?.agreementReached === true,
+      agreementClosedAt: progress.conciliation?.agreementClosedAt ?? null
+    },
+    petition: {
+      petitionPulled: progress.petition?.petitionPulled === true,
+      petitionPulledAt: progress.petition?.petitionPulledAt ?? null,
+      jusiaProtocolChecked: progress.petition?.jusiaProtocolChecked === true,
+      jusiaProtocolCheckedAt: progress.petition?.jusiaProtocolCheckedAt ?? null,
+      protocolCode: progress.petition?.protocolCode ?? null,
+      protocolCodeUpdatedAt: progress.petition?.protocolCodeUpdatedAt ?? null,
+      checklist,
+      lastUpdatedAt: progress.petition?.lastUpdatedAt ?? null
+    }
+  };
+}
+
 function MessageIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -284,7 +365,7 @@ export function CaseDetailPage() {
 
   const [generatingPetitionAttachment, setGeneratingPetitionAttachment] = useState(false);
   const [petitionAttachmentError, setPetitionAttachmentError] = useState<string | null>(null);
-  const [petitionAttachmentFeedback, setPetitionAttachmentFeedback] = useState<string | null>(null);
+  const petitionAutoGenerationAttemptsRef = useRef<Set<string>>(new Set());
 
   const [savingMovement, setSavingMovement] = useState(false);
   const [movementStage, setMovementStage] = useState<CaseMovementRecord["stage"]>("andamento");
@@ -307,6 +388,27 @@ export function CaseDetailPage() {
   const [serviceFeeDueDate, setServiceFeeDueDate] = useState("");
   const [serviceFeeFeedback, setServiceFeeFeedback] = useState<string | null>(null);
   const [serviceFeeError, setServiceFeeError] = useState<string | null>(null);
+  const [creatingCharge, setCreatingCharge] = useState(false);
+  const [newChargeAmountInput, setNewChargeAmountInput] = useState("");
+  const [newChargeDueDate, setNewChargeDueDate] = useState("");
+  const [chargeFeedback, setChargeFeedback] = useState<string | null>(null);
+  const [chargeError, setChargeError] = useState<string | null>(null);
+  const [editingChargeId, setEditingChargeId] = useState<string | null>(null);
+  const [editingChargeAmountInput, setEditingChargeAmountInput] = useState("");
+  const [editingChargeDueDate, setEditingChargeDueDate] = useState("");
+  const [editingChargeStatus, setEditingChargeStatus] = useState<CaseChargeRecord["status"]>("awaiting_payment");
+  const [savingChargeEdit, setSavingChargeEdit] = useState(false);
+
+  const [conciliationForm, setConciliationForm] = useState(() => getDefaultProcedureProgress().conciliation);
+  const [savingConciliation, setSavingConciliation] = useState(false);
+  const [conciliationFeedback, setConciliationFeedback] = useState<string | null>(null);
+  const [conciliationError, setConciliationError] = useState<string | null>(null);
+  const [closingByAgreement, setClosingByAgreement] = useState(false);
+
+  const [petitionProgressForm, setPetitionProgressForm] = useState(() => getDefaultProcedureProgress().petition);
+  const [savingPetitionProgress, setSavingPetitionProgress] = useState(false);
+  const [petitionProgressFeedback, setPetitionProgressFeedback] = useState<string | null>(null);
+  const [petitionProgressError, setPetitionProgressError] = useState<string | null>(null);
 
   const [downloadingAttachmentId, setDownloadingAttachmentId] = useState<string | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
@@ -336,6 +438,10 @@ export function CaseDetailPage() {
   const canManageOperatorActions = Boolean(
     caseItem && canAccessAdmin && !isRejectedOrClosedCase && (isMasterUser || (isOperatorUser && isAssignedOperator))
   );
+  const hasAdvancedCaseFlow = Boolean(
+    caseItem && caseItem.reviewDecision === "accepted" && caseItem.workflowStep === "in_progress" && !isRejectedOrClosedCase
+  );
+  const canUseLegacyOperatorFlow = canManageOperatorActions && !hasAdvancedCaseFlow;
   const closeRequest = caseItem?.closeRequest ?? DEFAULT_CLOSE_REQUEST;
   const hasPendingCloseRequest = closeRequest.status === "pending";
   const canClientRequestClose = Boolean(
@@ -354,6 +460,45 @@ export function CaseDetailPage() {
   }, [caseItem?.movements]);
 
   const petitionAttachments = caseItem?.petitionInitial?.attachments ?? [];
+  const caseCharges = useMemo<CaseChargeRecord[]>(() => {
+    if (!caseItem) {
+      return [];
+    }
+
+    if ((caseItem.charges ?? []).length > 0) {
+      return [...(caseItem.charges ?? [])].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    }
+
+    if (!caseItem.serviceFee) {
+      return [];
+    }
+
+    return [
+      {
+        id: `legacy-${caseItem.id}`,
+        amount: caseItem.serviceFee.amount,
+        dueDate: caseItem.serviceFee.dueDate,
+        provider: "asaas",
+        status:
+          caseItem.serviceFee.status === "paid"
+            ? "confirmed"
+            : caseItem.serviceFee.status === "canceled"
+              ? "canceled"
+              : "awaiting_payment",
+        externalReference: caseItem.serviceFee.externalReference,
+        paymentUrl: caseItem.serviceFee.paymentUrl,
+        attachmentId: null,
+        createdAt: caseItem.serviceFee.updatedAt,
+        updatedAt: caseItem.serviceFee.updatedAt,
+        createdByUserId: caseItem.reviewedByUserId ?? "",
+        createdByName: caseItem.reviewedByName ?? null
+      }
+    ];
+  }, [caseItem]);
+  const procedureProgress = useMemo(() => resolveProcedureProgress(caseItem?.procedureProgress), [caseItem?.procedureProgress]);
+  const hasGeneratedPetitionAttachment = petitionAttachments.some((attachment) =>
+    attachment.originalName.toLowerCase().startsWith("peticao-inicial-")
+  );
   const allCaseAttachments = useMemo<CaseAttachmentItem[]>(() => {
     const petitionItems: CaseAttachmentItem[] = petitionAttachments.map((attachment) => {
       const isGeneratedPetition = attachment.originalName.toLowerCase().startsWith("peticao-inicial-");
@@ -440,6 +585,11 @@ export function CaseDetailPage() {
   }, [caseItem?.serviceFee]);
 
   useEffect(() => {
+    setConciliationForm(procedureProgress.conciliation);
+    setPetitionProgressForm(procedureProgress.petition);
+  }, [procedureProgress]);
+
+  useEffect(() => {
     if (!isOperatorSidebarOpen) {
       return;
     }
@@ -461,10 +611,10 @@ export function CaseDetailPage() {
   }, [isOperatorSidebarOpen]);
 
   useEffect(() => {
-    if (!canManageOperatorActions && isOperatorSidebarOpen) {
+    if (!canUseLegacyOperatorFlow && isOperatorSidebarOpen) {
       setIsOperatorSidebarOpen(false);
     }
-  }, [canManageOperatorActions, isOperatorSidebarOpen]);
+  }, [canUseLegacyOperatorFlow, isOperatorSidebarOpen]);
 
   function openOperatorSidebar() {
     if (closeRequest.status === "pending") {
@@ -507,14 +657,13 @@ export function CaseDetailPage() {
     });
   }
 
-  async function handleGeneratePetitionAttachment() {
+  const handleGeneratePetitionAttachment = useCallback(async () => {
     if (!id) {
       setPetitionAttachmentError("Caso inválido para gerar a petição.");
       return;
     }
 
     setPetitionAttachmentError(null);
-    setPetitionAttachmentFeedback(null);
     setGeneratingPetitionAttachment(true);
 
     try {
@@ -523,17 +672,37 @@ export function CaseDetailPage() {
         method: "POST",
         token
       });
-
       setCaseItem(updated);
-      setActiveDetailTab("attachments");
-      setPetitionAttachmentFeedback("Petição inicial gerada em PDF e anexada ao caso.");
     } catch (nextError) {
       const message = nextError instanceof ApiError ? nextError.message : "Falha ao gerar anexo da petição inicial.";
       setPetitionAttachmentError(message);
     } finally {
       setGeneratingPetitionAttachment(false);
     }
-  }
+  }, [getToken, id]);
+
+  useEffect(() => {
+    if (!id || !caseItem?.petitionInitial) {
+      return;
+    }
+
+    if (hasGeneratedPetitionAttachment || generatingPetitionAttachment) {
+      return;
+    }
+
+    if (petitionAutoGenerationAttemptsRef.current.has(id)) {
+      return;
+    }
+
+    petitionAutoGenerationAttemptsRef.current.add(id);
+    void handleGeneratePetitionAttachment();
+  }, [
+    caseItem?.petitionInitial,
+    generatingPetitionAttachment,
+    handleGeneratePetitionAttachment,
+    hasGeneratedPetitionAttachment,
+    id
+  ]);
 
   async function downloadFile(path: string, fallbackName: string) {
     const token = await getToken();
@@ -995,6 +1164,266 @@ export function CaseDetailPage() {
     }
   }
 
+  function beginChargeEdit(charge: CaseChargeRecord) {
+    setEditingChargeId(charge.id);
+    setEditingChargeAmountInput(charge.amount.toFixed(2).replace(".", ","));
+    setEditingChargeDueDate(charge.dueDate);
+    setEditingChargeStatus(charge.status);
+    setChargeError(null);
+    setChargeFeedback(null);
+  }
+
+  function resetChargeEdit() {
+    setEditingChargeId(null);
+    setEditingChargeAmountInput("");
+    setEditingChargeDueDate("");
+    setEditingChargeStatus("awaiting_payment");
+  }
+
+  async function handleCreateCharge() {
+    if (!id) {
+      return;
+    }
+
+    const parsedAmount = parseMoneyInput(newChargeAmountInput);
+    if (parsedAmount === null) {
+      setChargeError("Informe um valor válido para a cobrança.");
+      return;
+    }
+
+    if (!newChargeDueDate) {
+      setChargeError("Informe a data de vencimento da cobrança.");
+      return;
+    }
+
+    const confirmed = window.confirm("Confirmar geração da nova cobrança para este caso?");
+    if (!confirmed) {
+      return;
+    }
+
+    setChargeError(null);
+    setChargeFeedback(null);
+    setCreatingCharge(true);
+
+    try {
+      const token = await getToken();
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${id}/charges`, {
+        method: "POST",
+        token,
+        body: {
+          amount: parsedAmount,
+          dueDate: newChargeDueDate
+        }
+      });
+
+      setCaseItem(updated);
+      setNewChargeAmountInput("");
+      setNewChargeDueDate("");
+      setChargeFeedback("Nova cobrança criada com sucesso.");
+    } catch (nextError) {
+      const message = nextError instanceof ApiError ? nextError.message : "Falha ao criar cobrança.";
+      setChargeError(message);
+    } finally {
+      setCreatingCharge(false);
+    }
+  }
+
+  async function handleSaveChargeEdit() {
+    if (!id || !editingChargeId) {
+      return;
+    }
+
+    const parsedAmount = parseMoneyInput(editingChargeAmountInput);
+    if (parsedAmount === null) {
+      setChargeError("Informe um valor válido para atualizar a cobrança.");
+      return;
+    }
+
+    if (!editingChargeDueDate) {
+      setChargeError("Informe a data de vencimento.");
+      return;
+    }
+
+    const confirmed = window.confirm("Confirmar atualização da cobrança?");
+    if (!confirmed) {
+      return;
+    }
+
+    setChargeError(null);
+    setChargeFeedback(null);
+    setSavingChargeEdit(true);
+
+    try {
+      const token = await getToken();
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${id}/charges/${editingChargeId}`, {
+        method: "PATCH",
+        token,
+        body: {
+          amount: parsedAmount,
+          dueDate: editingChargeDueDate,
+          status: editingChargeStatus
+        }
+      });
+
+      setCaseItem(updated);
+      resetChargeEdit();
+      setChargeFeedback("Cobrança atualizada com sucesso.");
+    } catch (nextError) {
+      const message = nextError instanceof ApiError ? nextError.message : "Falha ao atualizar cobrança.";
+      setChargeError(message);
+    } finally {
+      setSavingChargeEdit(false);
+    }
+  }
+
+  async function handleSaveConciliationProgress() {
+    if (!id) {
+      return;
+    }
+
+    if (conciliationForm.defendantEmail && !/\S+@\S+\.\S+/.test(conciliationForm.defendantEmail)) {
+      setConciliationError("Informe um e-mail válido do reclamado.");
+      return;
+    }
+
+    if (
+      conciliationForm.emailSent &&
+      (!conciliationForm.defendantEmail || !conciliationForm.emailDraft || conciliationForm.emailDraft.length < 10)
+    ) {
+      setConciliationError("Para marcar envio de e-mail, informe e-mail e redação com pelo menos 10 caracteres.");
+      return;
+    }
+
+    setConciliationError(null);
+    setConciliationFeedback(null);
+    setSavingConciliation(true);
+
+    try {
+      const token = await getToken();
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${id}/progress/conciliation`, {
+        method: "POST",
+        token,
+        body: {
+          contactedDefendant: conciliationForm.contactedDefendant,
+          defendantContact: conciliationForm.defendantContact?.trim() ? conciliationForm.defendantContact : null,
+          defendantEmail: conciliationForm.defendantEmail?.trim() ? conciliationForm.defendantEmail : null,
+          emailDraft: conciliationForm.emailDraft?.trim() ? conciliationForm.emailDraft : null,
+          sendEmailToDefendant: conciliationForm.emailSent
+        }
+      });
+
+      setCaseItem(updated);
+      setConciliationFeedback("Andamento da conciliação atualizado.");
+    } catch (nextError) {
+      const message = nextError instanceof ApiError ? nextError.message : "Falha ao salvar andamento da conciliação.";
+      setConciliationError(message);
+    } finally {
+      setSavingConciliation(false);
+    }
+  }
+
+  async function handleCloseByAgreement() {
+    if (!id) {
+      return;
+    }
+
+    const firstConfirmation = window.confirm("Confirmar que houve acordo e encerrar o caso?");
+    if (!firstConfirmation) {
+      return;
+    }
+
+    const secondConfirmation = window.confirm("Confirmação final: o caso será encerrado por conciliação.");
+    if (!secondConfirmation) {
+      return;
+    }
+
+    setConciliationError(null);
+    setConciliationFeedback(null);
+    setClosingByAgreement(true);
+
+    try {
+      const token = await getToken();
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${id}/progress/conciliation/agreement`, {
+        method: "POST",
+        token
+      });
+
+      setCaseItem(updated);
+      setConciliationFeedback("Caso encerrado por acordo em conciliação.");
+    } catch (nextError) {
+      const message =
+        nextError instanceof ApiError ? nextError.message : "Falha ao encerrar caso por acordo em conciliação.";
+      setConciliationError(message);
+    } finally {
+      setClosingByAgreement(false);
+    }
+  }
+
+  function handlePetitionChecklistChange(
+    targetId: string,
+    patch: Partial<CaseProcedureProgress["petition"]["checklist"][number]>
+  ) {
+    setPetitionProgressForm((current) => ({
+      ...current,
+      checklist: current.checklist.map((item) => (item.id === targetId ? { ...item, ...patch } : item))
+    }));
+  }
+
+  async function handleSavePetitionProgress() {
+    if (!id) {
+      return;
+    }
+
+    if (petitionProgressForm.jusiaProtocolChecked && !petitionProgressForm.protocolCode?.trim()) {
+      setPetitionProgressError("Informe o protocolo da petição ao marcar o protocolo manual.");
+      return;
+    }
+
+    setPetitionProgressError(null);
+    setPetitionProgressFeedback(null);
+    setSavingPetitionProgress(true);
+
+    try {
+      const token = await getToken();
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${id}/progress/petition`, {
+        method: "POST",
+        token,
+        body: {
+          petitionPulled: petitionProgressForm.petitionPulled,
+          jusiaProtocolChecked: petitionProgressForm.jusiaProtocolChecked,
+          protocolCode: petitionProgressForm.protocolCode,
+          checklist: petitionProgressForm.checklist.map((item) => ({
+            id: item.id,
+            label: item.label,
+            done: item.done,
+            notes: item.notes
+          }))
+        }
+      });
+
+      setCaseItem(updated);
+      setPetitionProgressFeedback("Checklist de petição atualizado.");
+    } catch (nextError) {
+      const message = nextError instanceof ApiError ? nextError.message : "Falha ao salvar andamento de petição.";
+      setPetitionProgressError(message);
+    } finally {
+      setSavingPetitionProgress(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!caseItem) {
+      return;
+    }
+
+    const isPostInitialFlow =
+      caseItem.reviewDecision === "accepted" &&
+      (caseItem.workflowStep === "in_progress" || caseItem.workflowStep === "closed");
+    if ((activeDetailTab === "payments" || activeDetailTab === "progress") && !isPostInitialFlow) {
+      setActiveDetailTab("info");
+    }
+  }, [activeDetailTab, caseItem]);
+
   if (loading) {
     return (
       <section className="page-stack">
@@ -1024,6 +1453,16 @@ export function CaseDetailPage() {
 
   const operatorCurrentStepTitle =
     OPERATOR_ACTION_STEPS.find((step) => step.id === operatorStep)?.title ?? "Etapa";
+  const visibleCaseDetailTabs = CASE_DETAIL_TABS.filter((tab) => {
+    const isPostInitialFlow =
+      caseItem.reviewDecision === "accepted" &&
+      (caseItem.workflowStep === "in_progress" || caseItem.workflowStep === "closed");
+    if ((tab.id === "payments" || tab.id === "progress") && !isPostInitialFlow) {
+      return false;
+    }
+
+    return true;
+  });
 
   return (
     <section className="page-stack">
@@ -1051,18 +1490,7 @@ export function CaseDetailPage() {
               </Link>
             </div>
             <p className="helper-text">Código do caso: {caseItem.caseCode}</p>
-            <div className="hero-cta">
-              <button
-                type="button"
-                className="hero-primary"
-                onClick={() => void handleGeneratePetitionAttachment()}
-                disabled={generatingPetitionAttachment}
-              >
-                {generatingPetitionAttachment ? "Gerando..." : "Gerar petição e enviar para Anexos"}
-              </button>
-            </div>
             {petitionAttachmentError && <p className="error-text">{petitionAttachmentError}</p>}
-            {petitionAttachmentFeedback && <p className="success-text">{petitionAttachmentFeedback}</p>}
             {attachmentError && <p className="error-text">{attachmentError}</p>}
             {closeError && <p className="error-text">{closeError}</p>}
             {closeFeedback && <p className="success-text">{closeFeedback}</p>}
@@ -1102,7 +1530,7 @@ export function CaseDetailPage() {
       <div className="detail-grid detail-grid--single">
         <article className="detail-card">
           <nav className="case-detail-tabs" aria-label="Navegação do caso">
-            {CASE_DETAIL_TABS.map((tab) => (
+            {visibleCaseDetailTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
@@ -1351,6 +1779,321 @@ export function CaseDetailPage() {
             </>
           )}
 
+          {activeDetailTab === "payments" && (
+            <>
+              <h2>Pagamentos</h2>
+              {caseCharges.length === 0 ? (
+                <p className="helper-text">Nenhuma cobrança registrada até o momento.</p>
+              ) : (
+                <div className="page-stack page-stack--tight">
+                  {caseCharges.map((charge) => (
+                    <div key={charge.id} className="resumo-box">
+                      <strong>Cobrança {charge.externalReference ? `#${charge.externalReference}` : ""}</strong>
+                      <span>Valor: {formatCurrencyBr(charge.amount)}</span>
+                      <span>Vencimento: {formatIsoDateToBr(charge.dueDate)}</span>
+                      <span>Status: {CHARGE_STATUS_LABEL[charge.status]}</span>
+                      {charge.paymentUrl && (
+                        <a href={charge.paymentUrl} target="_blank" rel="noreferrer" className="primary-link">
+                          Abrir link de pagamento
+                        </a>
+                      )}
+                      <span>Criada em: {formatDate(charge.createdAt)}</span>
+                      {canManageOperatorActions && editingChargeId !== charge.id && (
+                        <button
+                          type="button"
+                          className="secondary-button secondary-button--small"
+                          onClick={() => beginChargeEdit(charge)}
+                        >
+                          Editar cobrança
+                        </button>
+                      )}
+                      {canManageOperatorActions && editingChargeId === charge.id && (
+                        <div className="page-stack page-stack--tight">
+                          <label>
+                            Valor
+                            <input
+                              type="text"
+                              value={editingChargeAmountInput}
+                              onChange={(event) => setEditingChargeAmountInput(event.target.value)}
+                              disabled={savingChargeEdit}
+                            />
+                          </label>
+                          <label>
+                            Vencimento
+                            <input
+                              type="date"
+                              value={editingChargeDueDate}
+                              onChange={(event) => setEditingChargeDueDate(event.target.value)}
+                              disabled={savingChargeEdit}
+                            />
+                          </label>
+                          <label>
+                            Situação
+                            <select
+                              value={editingChargeStatus}
+                              onChange={(event) => setEditingChargeStatus(event.target.value as CaseChargeRecord["status"])}
+                              disabled={savingChargeEdit}
+                            >
+                              <option value="awaiting_payment">Aguardando pagamento</option>
+                              <option value="received">Recebido</option>
+                              <option value="confirmed">Confirmado</option>
+                              <option value="canceled">Cancelado</option>
+                            </select>
+                          </label>
+                          <div className="operator-action-buttons">
+                            <button
+                              type="button"
+                              className="hero-primary"
+                              onClick={() => void handleSaveChargeEdit()}
+                              disabled={savingChargeEdit}
+                            >
+                              {savingChargeEdit ? "Salvando..." : "Salvar edição"}
+                            </button>
+                            <button
+                              type="button"
+                              className="hero-secondary"
+                              onClick={resetChargeEdit}
+                              disabled={savingChargeEdit}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {canManageOperatorActions && (
+                <div className="resumo-box">
+                  <strong>Nova cobrança</strong>
+                  <label>
+                    Valor
+                    <input
+                      type="text"
+                      value={newChargeAmountInput}
+                      onChange={(event) => setNewChargeAmountInput(event.target.value)}
+                      placeholder="Ex: 150,00"
+                      disabled={creatingCharge}
+                    />
+                  </label>
+                  <label>
+                    Vencimento
+                    <input
+                      type="date"
+                      value={newChargeDueDate}
+                      onChange={(event) => setNewChargeDueDate(event.target.value)}
+                      disabled={creatingCharge}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="hero-primary"
+                    onClick={() => void handleCreateCharge()}
+                    disabled={creatingCharge}
+                  >
+                    {creatingCharge ? "Gerando cobrança..." : "Criar nova cobrança"}
+                  </button>
+                  {chargeFeedback && <p className="success-text">{chargeFeedback}</p>}
+                  {chargeError && <p className="error-text">{chargeError}</p>}
+                </div>
+              )}
+            </>
+          )}
+
+          {activeDetailTab === "progress" && (
+            <>
+              <h2>Andamento</h2>
+              <div className="page-stack page-stack--tight">
+                <details className="resumo-box" open>
+                  <summary>
+                    <strong>Conciliação</strong>
+                  </summary>
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      checked={conciliationForm.contactedDefendant}
+                      onChange={(event) =>
+                        setConciliationForm((current) => ({ ...current, contactedDefendant: event.target.checked }))
+                      }
+                      disabled={!canManageOperatorActions || savingConciliation || closingByAgreement}
+                    />
+                    Contato do reclamado realizado
+                  </label>
+                  <label>
+                    Contato do reclamado
+                    <input
+                      type="text"
+                      value={conciliationForm.defendantContact ?? ""}
+                      onChange={(event) =>
+                        setConciliationForm((current) => ({ ...current, defendantContact: event.target.value }))
+                      }
+                      placeholder="Telefone, nome do contato ou canal."
+                      disabled={!canManageOperatorActions || savingConciliation || closingByAgreement}
+                    />
+                  </label>
+                  <label>
+                    E-mail do reclamado
+                    <input
+                      type="email"
+                      value={conciliationForm.defendantEmail ?? ""}
+                      onChange={(event) =>
+                        setConciliationForm((current) => ({ ...current, defendantEmail: event.target.value }))
+                      }
+                      placeholder="email@reclamado.com"
+                      disabled={!canManageOperatorActions || savingConciliation || closingByAgreement}
+                    />
+                  </label>
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      checked={conciliationForm.emailSent}
+                      onChange={(event) =>
+                        setConciliationForm((current) => ({ ...current, emailSent: event.target.checked }))
+                      }
+                      disabled={!canManageOperatorActions || savingConciliation || closingByAgreement}
+                    />
+                    Marcar envio de e-mail ao reclamado pela plataforma
+                  </label>
+                  <label>
+                    Redação do e-mail
+                    <textarea
+                      rows={4}
+                      value={conciliationForm.emailDraft ?? ""}
+                      onChange={(event) =>
+                        setConciliationForm((current) => ({ ...current, emailDraft: event.target.value }))
+                      }
+                      placeholder="Descreva a proposta de conciliação e prazo de retorno."
+                      disabled={!canManageOperatorActions || savingConciliation || closingByAgreement}
+                    />
+                  </label>
+                  {conciliationForm.agreementReached && conciliationForm.agreementClosedAt && (
+                    <p className="helper-text">Acordo registrado em {formatDate(conciliationForm.agreementClosedAt)}.</p>
+                  )}
+                  {canManageOperatorActions && (
+                    <div className="operator-action-buttons">
+                      <button
+                        type="button"
+                        className="hero-primary"
+                        onClick={() => void handleSaveConciliationProgress()}
+                        disabled={savingConciliation || closingByAgreement}
+                      >
+                        {savingConciliation ? "Salvando..." : "Enviar / marcar"}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button secondary-button--small"
+                        onClick={() => void handleCloseByAgreement()}
+                        disabled={closingByAgreement || savingConciliation}
+                      >
+                        {closingByAgreement ? "Encerrando..." : "Acordo"}
+                      </button>
+                    </div>
+                  )}
+                  {conciliationFeedback && <p className="success-text">{conciliationFeedback}</p>}
+                  {conciliationError && <p className="error-text">{conciliationError}</p>}
+                </details>
+
+                <details className="resumo-box" open>
+                  <summary>
+                    <strong>Petição</strong>
+                  </summary>
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      checked={petitionProgressForm.petitionPulled}
+                      onChange={(event) =>
+                        setPetitionProgressForm((current) => ({ ...current, petitionPulled: event.target.checked }))
+                      }
+                      disabled={!canManageOperatorActions || savingPetitionProgress}
+                    />
+                    Puxar petição do caso
+                  </label>
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      checked={petitionProgressForm.jusiaProtocolChecked}
+                      onChange={(event) =>
+                        setPetitionProgressForm((current) => ({
+                          ...current,
+                          jusiaProtocolChecked: event.target.checked
+                        }))
+                      }
+                      disabled={!canManageOperatorActions || savingPetitionProgress}
+                    />
+                    Petição protocolada manualmente na JusIA
+                  </label>
+                  <label>
+                    Protocolo da petição
+                    <input
+                      type="text"
+                      value={petitionProgressForm.protocolCode ?? ""}
+                      onChange={(event) =>
+                        setPetitionProgressForm((current) => ({ ...current, protocolCode: event.target.value }))
+                      }
+                      placeholder="Número do protocolo"
+                      disabled={!canManageOperatorActions || savingPetitionProgress}
+                    />
+                  </label>
+                  <strong>Checklist processual</strong>
+                  <div className="page-stack page-stack--tight">
+                    {petitionProgressForm.checklist.map((item) => (
+                      <div key={item.id} className="resumo-box">
+                        <label className="checkbox-inline">
+                          <input
+                            type="checkbox"
+                            checked={item.done}
+                            onChange={(event) => handlePetitionChecklistChange(item.id, { done: event.target.checked })}
+                            disabled={!canManageOperatorActions || savingPetitionProgress}
+                          />
+                          {item.label}
+                        </label>
+                        <label>
+                          Observações
+                          <input
+                            type="text"
+                            value={item.notes ?? ""}
+                            onChange={(event) => handlePetitionChecklistChange(item.id, { notes: event.target.value })}
+                            placeholder="Opcional"
+                            disabled={!canManageOperatorActions || savingPetitionProgress}
+                          />
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  {canManageOperatorActions && (
+                    <button
+                      type="button"
+                      className="hero-primary"
+                      onClick={() => void handleSavePetitionProgress()}
+                      disabled={savingPetitionProgress}
+                    >
+                      {savingPetitionProgress ? "Salvando..." : "Salvar andamento da petição"}
+                    </button>
+                  )}
+                  {petitionProgressFeedback && <p className="success-text">{petitionProgressFeedback}</p>}
+                  {petitionProgressError && <p className="error-text">{petitionProgressError}</p>}
+                </details>
+
+                {canManageOperatorActions && (
+                  <div className="resumo-box">
+                    <strong>Encerramento administrativo</strong>
+                    <p>Use esta ação somente quando o caso já tiver uma conclusão operacional.</p>
+                    <button
+                      type="button"
+                      className="danger-button danger-button--small"
+                      onClick={() => void handleCloseCase()}
+                      disabled={closingCase}
+                    >
+                      {closingCase ? "Encerrando..." : "Encerrar caso"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
           {activeDetailTab === "evolution" && (
             <>
               <h2>Evolução do caso</h2>
@@ -1397,7 +2140,7 @@ export function CaseDetailPage() {
         </section>
       )}
 
-      {canManageOperatorActions && (
+      {canUseLegacyOperatorFlow && (
         <>
           {!isOperatorSidebarOpen && (
             <div className="operator-action-dock">

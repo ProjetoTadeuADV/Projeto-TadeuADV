@@ -116,6 +116,59 @@ export interface CaseServiceFee {
   updatedAt: string;
 }
 
+export type CaseChargeStatus = "awaiting_payment" | "received" | "confirmed" | "canceled";
+
+export interface CaseChargeRecord {
+  id: string;
+  amount: number;
+  dueDate: string;
+  provider: "asaas";
+  status: CaseChargeStatus;
+  externalReference: string | null;
+  paymentUrl: string | null;
+  attachmentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdByUserId: string;
+  createdByName: string | null;
+}
+
+export interface CaseProcedureChecklistItem {
+  id: string;
+  label: string;
+  done: boolean;
+  notes: string | null;
+  updatedAt: string | null;
+}
+
+export interface CaseConciliationProgress {
+  contactedDefendant: boolean;
+  defendantContact: string | null;
+  defendantEmail: string | null;
+  emailDraft: string | null;
+  emailSent: boolean;
+  emailSentAt: string | null;
+  lastUpdatedAt: string | null;
+  agreementReached: boolean;
+  agreementClosedAt: string | null;
+}
+
+export interface CasePetitionProgress {
+  petitionPulled: boolean;
+  petitionPulledAt: string | null;
+  jusiaProtocolChecked: boolean;
+  jusiaProtocolCheckedAt: string | null;
+  protocolCode: string | null;
+  protocolCodeUpdatedAt: string | null;
+  checklist: CaseProcedureChecklistItem[];
+  lastUpdatedAt: string | null;
+}
+
+export interface CaseProcedureProgress {
+  conciliation: CaseConciliationProgress;
+  petition: CasePetitionProgress;
+}
+
 export interface CaseMessageRecord {
   id: string;
   caseId: string;
@@ -180,6 +233,8 @@ export interface CaseRecord {
   workflowStep: CaseWorkflowStep;
   closeRequest: CaseCloseRequest;
   serviceFee: CaseServiceFee | null;
+  charges?: CaseChargeRecord[];
+  procedureProgress?: CaseProcedureProgress;
   messages: CaseMessageRecord[];
   movements: CaseMovementRecord[];
   status: CaseStatus;

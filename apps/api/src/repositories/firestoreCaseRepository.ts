@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import type { Firestore } from "firebase-admin/firestore";
 import type { CaseRepository } from "./caseRepository.js";
 import type {
+  CaseChargeRecord,
   CaseMessageRecord,
   CaseMovementRecord,
+  CaseProcedureProgress,
   CaseRecord,
   CaseServiceFee,
   NewCaseInput,
@@ -148,6 +150,184 @@ function normalizeCaseServiceFee(value: Partial<CaseServiceFee> | null | undefin
   };
 }
 
+function normalizeCaseChargeStatus(
+  value: CaseChargeRecord["status"] | string | null | undefined
+): CaseChargeRecord["status"] {
+  if (value === "received" || value === "confirmed" || value === "canceled") {
+    return value;
+  }
+
+  return "awaiting_payment";
+}
+
+function normalizeCaseCharges(value: CaseRecord["charges"] | null | undefined): CaseChargeRecord[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      if (typeof item.amount !== "number" || !Number.isFinite(item.amount) || item.amount <= 0) {
+        return null;
+      }
+
+      const createdAt = item.createdAt ?? new Date(0).toISOString();
+      return {
+        id: item.id ?? randomUUID(),
+        amount: item.amount,
+        dueDate: item.dueDate ?? "",
+        provider: "asaas",
+        status: normalizeCaseChargeStatus(item.status),
+        externalReference: normalizeOptionalText(item.externalReference),
+        paymentUrl: normalizeOptionalText(item.paymentUrl),
+        attachmentId: normalizeOptionalText(item.attachmentId),
+        createdAt,
+        updatedAt: item.updatedAt ?? createdAt,
+        createdByUserId: item.createdByUserId ?? "",
+        createdByName: normalizeOptionalText(item.createdByName)
+      } satisfies CaseChargeRecord;
+    })
+    .filter((item): item is CaseChargeRecord => item !== null);
+}
+
+function defaultProcedureChecklist(): CaseProcedureProgress["petition"]["checklist"] {
+  return [
+    {
+      id: "audiencia-conciliacao",
+      label: "Audiência de conciliação",
+      done: false,
+      notes: null,
+      updatedAt: null
+    },
+    {
+      id: "audiencia-instrucao",
+      label: "Audiência de instrução",
+      done: false,
+      notes: null,
+      updatedAt: null
+    },
+    {
+      id: "manifestacoes",
+      label: "Prazos e manifestações",
+      done: false,
+      notes: null,
+      updatedAt: null
+    },
+    {
+      id: "sentenca",
+      label: "Sentença / decisão",
+      done: false,
+      notes: null,
+      updatedAt: null
+    }
+  ];
+}
+
+function normalizeProcedureChecklist(
+  value: CaseProcedureProgress["petition"]["checklist"] | null | undefined
+): CaseProcedureProgress["petition"]["checklist"] {
+  const fallback = defaultProcedureChecklist();
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+
+  const normalized = value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const id = normalizeOptionalText(item.id);
+      const label = normalizeOptionalText(item.label);
+      if (!id || !label) {
+        return null;
+      }
+
+      return {
+        id,
+        label,
+        done: item.done === true,
+        notes: normalizeOptionalText(item.notes),
+        updatedAt: item.updatedAt ?? null
+      };
+    })
+    .filter(
+      (
+        item
+      ): item is {
+        id: string;
+        label: string;
+        done: boolean;
+        notes: string | null;
+        updatedAt: string | null;
+      } => item !== null
+    );
+
+  if (normalized.length === 0) {
+    return fallback;
+  }
+
+  return normalized;
+}
+
+function normalizeCaseProcedureProgress(
+  value: CaseRecord["procedureProgress"] | null | undefined
+): CaseProcedureProgress {
+  if (!value) {
+    return {
+      conciliation: {
+        contactedDefendant: false,
+        defendantContact: null,
+        defendantEmail: null,
+        emailDraft: null,
+        emailSent: false,
+        emailSentAt: null,
+        lastUpdatedAt: null,
+        agreementReached: false,
+        agreementClosedAt: null
+      },
+      petition: {
+        petitionPulled: false,
+        petitionPulledAt: null,
+        jusiaProtocolChecked: false,
+        jusiaProtocolCheckedAt: null,
+        protocolCode: null,
+        protocolCodeUpdatedAt: null,
+        checklist: defaultProcedureChecklist(),
+        lastUpdatedAt: null
+      }
+    };
+  }
+
+  return {
+    conciliation: {
+      contactedDefendant: value.conciliation?.contactedDefendant === true,
+      defendantContact: normalizeOptionalText(value.conciliation?.defendantContact),
+      defendantEmail: normalizeOptionalText(value.conciliation?.defendantEmail),
+      emailDraft: normalizeOptionalText(value.conciliation?.emailDraft),
+      emailSent: value.conciliation?.emailSent === true,
+      emailSentAt: value.conciliation?.emailSentAt ?? null,
+      lastUpdatedAt: value.conciliation?.lastUpdatedAt ?? null,
+      agreementReached: value.conciliation?.agreementReached === true,
+      agreementClosedAt: value.conciliation?.agreementClosedAt ?? null
+    },
+    petition: {
+      petitionPulled: value.petition?.petitionPulled === true,
+      petitionPulledAt: value.petition?.petitionPulledAt ?? null,
+      jusiaProtocolChecked: value.petition?.jusiaProtocolChecked === true,
+      jusiaProtocolCheckedAt: value.petition?.jusiaProtocolCheckedAt ?? null,
+      protocolCode: normalizeOptionalText(value.petition?.protocolCode),
+      protocolCodeUpdatedAt: value.petition?.protocolCodeUpdatedAt ?? null,
+      checklist: normalizeProcedureChecklist(value.petition?.checklist),
+      lastUpdatedAt: value.petition?.lastUpdatedAt ?? null
+    }
+  };
+}
+
 function normalizeCaseCloseRequest(
   value: CaseRecord["closeRequest"] | null | undefined
 ): CaseRecord["closeRequest"] {
@@ -222,6 +402,8 @@ function normalizeCaseRecord(data: Partial<CaseRecord>, fallbackId: string): Cas
     workflowStep: data.workflowStep ?? "triage",
     closeRequest: normalizeCaseCloseRequest(data.closeRequest),
     serviceFee: normalizeCaseServiceFee(data.serviceFee),
+    charges: normalizeCaseCharges(data.charges),
+    procedureProgress: normalizeCaseProcedureProgress(data.procedureProgress),
     messages: normalizeCaseMessages(data.messages),
     movements: (data.movements ?? []).map((item) => normalizeMovementRecord(item)),
     status: data.status ?? "recebido",
@@ -566,6 +748,8 @@ export class FirestoreCaseRepository implements CaseRepository {
         decisionReason: null
       },
       serviceFee: null,
+      charges: [],
+      procedureProgress: normalizeCaseProcedureProgress(null),
       messages: [],
       movements: [initialMovement],
       status: "recebido",
@@ -628,6 +812,8 @@ export class FirestoreCaseRepository implements CaseRepository {
       clientDataRequestedAt?: string | null;
       workflowStep?: CaseRecord["workflowStep"];
       serviceFee?: CaseRecord["serviceFee"];
+      charges?: CaseRecord["charges"];
+      procedureProgress?: CaseRecord["procedureProgress"];
       closeRequest?: CaseRecord["closeRequest"];
     }
   ): Promise<CaseRecord | null> {
@@ -664,6 +850,12 @@ export class FirestoreCaseRepository implements CaseRepository {
       ...(patch.workflowStep ? { workflowStep: patch.workflowStep } : {}),
       ...(Object.prototype.hasOwnProperty.call(patch, "serviceFee")
         ? { serviceFee: normalizeCaseServiceFee(patch.serviceFee) }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, "charges")
+        ? { charges: normalizeCaseCharges(patch.charges) }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, "procedureProgress")
+        ? { procedureProgress: normalizeCaseProcedureProgress(patch.procedureProgress) }
         : {}),
       ...(Object.prototype.hasOwnProperty.call(patch, "closeRequest")
         ? { closeRequest: normalizeCaseCloseRequest(patch.closeRequest) }

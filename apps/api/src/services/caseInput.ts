@@ -107,6 +107,45 @@ const caseServiceFeeSchema = z.object({
     })
 });
 
+const caseChargeUpdateSchema = z
+  .object({
+    amount: z.number().positive().max(100_000_000).optional(),
+    dueDate: z
+      .string()
+      .trim()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Data de vencimento inválida. Use AAAA-MM-DD.")
+      .refine((value) => !Number.isNaN(new Date(`${value}T00:00:00.000Z`).getTime()), {
+        message: "Data de vencimento inválida."
+      })
+      .optional(),
+    status: z.enum(["awaiting_payment", "received", "confirmed", "canceled"]).optional()
+  })
+  .refine((value) => value.amount !== undefined || value.dueDate !== undefined || value.status !== undefined, {
+    message: "Informe ao menos um campo para atualização da cobrança."
+  });
+
+const caseConciliationProgressSchema = z.object({
+  contactedDefendant: z.boolean(),
+  defendantContact: z.string().trim().max(300).nullable().optional(),
+  defendantEmail: z.string().trim().email("E-mail do reclamado inválido.").nullable().optional(),
+  emailDraft: z.string().trim().max(5000).nullable().optional(),
+  sendEmailToDefendant: z.boolean().optional().default(false)
+});
+
+const casePetitionChecklistItemSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  label: z.string().trim().min(2).max(120),
+  done: z.boolean(),
+  notes: z.string().trim().max(500).nullable().optional()
+});
+
+const casePetitionProgressSchema = z.object({
+  petitionPulled: z.boolean(),
+  jusiaProtocolChecked: z.boolean(),
+  protocolCode: z.string().trim().max(120).nullable().optional(),
+  checklist: z.array(casePetitionChecklistItemSchema).min(1).max(20)
+});
+
 const caseCloseRequestSchema = z.object({
   reason: z.string().trim().min(10).max(5000)
 });
@@ -361,6 +400,68 @@ export function validateCaseServiceFeePayload(payload: unknown): {
   return {
     amount: parsed.data.amount,
     dueDate: parsed.data.dueDate
+  };
+}
+
+export function validateCaseChargeUpdatePayload(payload: unknown): {
+  amount?: number;
+  dueDate?: string;
+  status?: "awaiting_payment" | "received" | "confirmed" | "canceled";
+} {
+  const parsed = caseChargeUpdateSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new HttpError(400, "Payload inválido para atualização de cobrança.", parsed.error.flatten());
+  }
+
+  return {
+    ...(typeof parsed.data.amount === "number" ? { amount: parsed.data.amount } : {}),
+    ...(typeof parsed.data.dueDate === "string" ? { dueDate: parsed.data.dueDate } : {}),
+    ...(parsed.data.status ? { status: parsed.data.status } : {})
+  };
+}
+
+export function validateCaseConciliationProgressPayload(payload: unknown): {
+  contactedDefendant: boolean;
+  defendantContact: string | null;
+  defendantEmail: string | null;
+  emailDraft: string | null;
+  sendEmailToDefendant: boolean;
+} {
+  const parsed = caseConciliationProgressSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new HttpError(400, "Payload inválido para andamento de conciliação.", parsed.error.flatten());
+  }
+
+  return {
+    contactedDefendant: parsed.data.contactedDefendant,
+    defendantContact: normalizeOptionalText(parsed.data.defendantContact),
+    defendantEmail: normalizeOptionalText(parsed.data.defendantEmail),
+    emailDraft: normalizeOptionalText(parsed.data.emailDraft),
+    sendEmailToDefendant: parsed.data.sendEmailToDefendant ?? false
+  };
+}
+
+export function validateCasePetitionProgressPayload(payload: unknown): {
+  petitionPulled: boolean;
+  jusiaProtocolChecked: boolean;
+  protocolCode: string | null;
+  checklist: Array<{ id: string; label: string; done: boolean; notes: string | null }>;
+} {
+  const parsed = casePetitionProgressSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new HttpError(400, "Payload inválido para andamento de petição.", parsed.error.flatten());
+  }
+
+  return {
+    petitionPulled: parsed.data.petitionPulled,
+    jusiaProtocolChecked: parsed.data.jusiaProtocolChecked,
+    protocolCode: normalizeOptionalText(parsed.data.protocolCode),
+    checklist: parsed.data.checklist.map((item) => ({
+      id: item.id,
+      label: item.label,
+      done: item.done,
+      notes: normalizeOptionalText(item.notes)
+    }))
   };
 }
 
