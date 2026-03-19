@@ -2457,6 +2457,77 @@ button.sidebar-item {
   color: #516071;
 }
 
+.info-pill--danger {
+  background: #fff1f1;
+  border-color: #e8c0c0;
+  color: #982a2a;
+}
+
+.charge-card {
+  gap: 0.7rem;
+}
+
+.charge-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.charge-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.55rem;
+}
+
+.charge-meta-item {
+  display: grid;
+  gap: 0.15rem;
+  border: 1px solid #d7e3f2;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.55rem 0.65rem;
+}
+
+.charge-meta-item span {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #5f7288;
+}
+
+.charge-meta-item strong {
+  font-size: 0.92rem;
+  color: #173456;
+}
+
+.charge-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.charge-card-actions a.hero-primary {
+  text-decoration: none;
+}
+
+.charge-edit-form,
+.charge-create-form {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.charge-edit-form label,
+.charge-create-form label {
+  display: grid;
+  gap: 0.3rem;
+  color: #3d5166;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
 .case-layout {
   display: grid;
   grid-template-columns: minmax(360px, 1fr) minmax(260px, 0.45fr);
@@ -4719,22 +4790,25 @@ button.sidebar-item {
 
   .data-table th:nth-child(1),
   .data-table td:nth-child(1) {
-    width: 22%;
+    width: 30%;
   }
 
   .data-table th:nth-child(2),
   .data-table td:nth-child(2) {
-    width: 9%;
+    width: 11%;
   }
 
   .data-table th:nth-child(3),
   .data-table td:nth-child(3) {
-    width: 9%;
+    width: 14%;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: keep-all;
   }
 
   .data-table th:nth-child(4),
   .data-table td:nth-child(4) {
-    width: 9%;
+    width: 11%;
   }
 
   .data-table th:nth-child(5),
@@ -4751,17 +4825,7 @@ button.sidebar-item {
 
   .data-table th:nth-child(7),
   .data-table td:nth-child(7) {
-    width: 13%;
-  }
-
-  .data-table th:nth-child(8),
-  .data-table td:nth-child(8) {
-    width: 10%;
-  }
-
-  .data-table th:nth-child(9),
-  .data-table td:nth-child(9) {
-    width: 12%;
+    width: 18%;
   }
 
   .table-actions .secondary-button {

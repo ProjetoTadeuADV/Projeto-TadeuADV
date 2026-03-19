@@ -58,6 +58,13 @@ const CHARGE_STATUS_LABEL: Record<CaseChargeRecord["status"], string> = {
   canceled: "Cancelado"
 };
 
+const CHARGE_STATUS_PILL_CLASS: Record<CaseChargeRecord["status"], string> = {
+  awaiting_payment: "info-pill--warning",
+  received: "info-pill--neutral",
+  confirmed: "info-pill--success",
+  canceled: "info-pill--danger"
+};
+
 const DEFENDANT_TYPE_LABEL: Record<NonNullable<CaseRecord["petitionInitial"]>["defendantType"], string> = {
   pessoa_fisica: "Pessoa física",
   pessoa_juridica: "Pessoa jurídica",
@@ -1783,28 +1790,45 @@ export function CaseDetailPage() {
               ) : (
                 <div className="page-stack page-stack--tight">
                   {caseCharges.map((charge) => (
-                    <div key={charge.id} className="resumo-box">
-                      <strong>Cobrança {charge.externalReference ? `#${charge.externalReference}` : ""}</strong>
-                      <span>Valor: {formatCurrencyBr(charge.amount)}</span>
-                      <span>Vencimento: {formatIsoDateToBr(charge.dueDate)}</span>
-                      <span>Status: {CHARGE_STATUS_LABEL[charge.status]}</span>
-                      {charge.paymentUrl && (
-                        <a href={charge.paymentUrl} target="_blank" rel="noreferrer" className="primary-link">
-                          Abrir link de pagamento
-                        </a>
-                      )}
-                      <span>Criada em: {formatDate(charge.createdAt)}</span>
-                      {canManageOperatorActions && editingChargeId !== charge.id && (
-                        <button
-                          type="button"
-                          className="secondary-button secondary-button--small"
-                          onClick={() => beginChargeEdit(charge)}
-                        >
-                          Editar cobrança
-                        </button>
-                      )}
+                    <div key={charge.id} className="info-box charge-card">
+                      <div className="charge-card-head">
+                        <strong>Cobrança {charge.externalReference ? `#${charge.externalReference}` : ""}</strong>
+                        <span className={`info-pill ${CHARGE_STATUS_PILL_CLASS[charge.status]}`}>
+                          {CHARGE_STATUS_LABEL[charge.status]}
+                        </span>
+                      </div>
+                      <div className="charge-meta-grid">
+                        <div className="charge-meta-item">
+                          <span>Valor</span>
+                          <strong>{formatCurrencyBr(charge.amount)}</strong>
+                        </div>
+                        <div className="charge-meta-item">
+                          <span>Vencimento</span>
+                          <strong>{formatIsoDateToBr(charge.dueDate)}</strong>
+                        </div>
+                        <div className="charge-meta-item">
+                          <span>Criada em</span>
+                          <strong>{formatDate(charge.createdAt)}</strong>
+                        </div>
+                      </div>
+                      <div className="charge-card-actions">
+                        {charge.paymentUrl && (
+                          <a href={charge.paymentUrl} target="_blank" rel="noreferrer" className="hero-primary">
+                            Abrir link de pagamento
+                          </a>
+                        )}
+                        {canManageOperatorActions && editingChargeId !== charge.id && (
+                          <button
+                            type="button"
+                            className="secondary-button secondary-button--small"
+                            onClick={() => beginChargeEdit(charge)}
+                          >
+                            Editar cobrança
+                          </button>
+                        )}
+                      </div>
                       {canManageOperatorActions && editingChargeId === charge.id && (
-                        <div className="page-stack page-stack--tight">
+                        <div className="charge-edit-form">
                           <label>
                             Valor
                             <input
@@ -1862,27 +1886,29 @@ export function CaseDetailPage() {
               )}
 
               {canManageOperatorActions && (
-                <div className="resumo-box">
+                <div className="info-box charge-create-box">
                   <strong>Nova cobrança</strong>
-                  <label>
-                    Valor
-                    <input
-                      type="text"
-                      value={newChargeAmountInput}
-                      onChange={(event) => setNewChargeAmountInput(event.target.value)}
-                      placeholder="Ex: 150,00"
-                      disabled={creatingCharge}
-                    />
-                  </label>
-                  <label>
-                    Vencimento
-                    <input
-                      type="date"
-                      value={newChargeDueDate}
-                      onChange={(event) => setNewChargeDueDate(event.target.value)}
-                      disabled={creatingCharge}
-                    />
-                  </label>
+                  <div className="charge-create-form">
+                    <label>
+                      Valor
+                      <input
+                        type="text"
+                        value={newChargeAmountInput}
+                        onChange={(event) => setNewChargeAmountInput(event.target.value)}
+                        placeholder="Ex: 150,00"
+                        disabled={creatingCharge}
+                      />
+                    </label>
+                    <label>
+                      Vencimento
+                      <input
+                        type="date"
+                        value={newChargeDueDate}
+                        onChange={(event) => setNewChargeDueDate(event.target.value)}
+                        disabled={creatingCharge}
+                      />
+                    </label>
+                  </div>
                   <button
                     type="button"
                     className="hero-primary"
@@ -2140,7 +2166,7 @@ export function CaseDetailPage() {
         <>
           {!isClientCloseSidebarOpen && (
             <div className="operator-action-dock">
-              <button type="button" className="operator-progress-trigger" onClick={openClientCloseSidebar}>
+              <button type="button" className="danger-button operator-close-trigger" onClick={openClientCloseSidebar}>
                 {canClientRequestClose ? "Solicitar encerramento" : "Encerramento solicitado"}
               </button>
             </div>
