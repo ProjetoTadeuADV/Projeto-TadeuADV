@@ -2812,7 +2812,7 @@ button.sidebar-item {
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: rgba(8, 24, 43, 0.32);
+  background: transparent;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   border: 0;
@@ -2825,7 +2825,7 @@ button.sidebar-item {
 .operator-sidebar-overlay:hover,
 .operator-sidebar-overlay:focus-visible,
 .operator-sidebar-overlay:active {
-  background: rgba(8, 24, 43, 0.32);
+  background: transparent;
   transform: none;
   box-shadow: none;
 }
@@ -2904,7 +2904,7 @@ button.sidebar-item {
   position: fixed;
   inset: 0;
   z-index: 95;
-  background: rgba(8, 24, 43, 0.3);
+  background: transparent;
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   border: 0;
@@ -2930,6 +2930,13 @@ button.sidebar-item {
   gap: 0.75rem;
 }
 
+.case-notice-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .case-notice-popup h3 {
   margin: 0;
   color: #123458;
@@ -2941,6 +2948,55 @@ button.sidebar-item {
 
 .case-notice-box {
   margin: 0;
+}
+
+.case-notice-box--interactive {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.case-notice-reason-text {
+  display: block;
+}
+
+.case-notice-reason-text--compact {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.case-notice-reason-text--expanded {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.case-notice-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid #b8d0e8;
+  background: #eaf3fc;
+  color: #1a4068;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.case-notice-close:hover {
+  background: #dbeafa;
+  border-color: #9fc2e4;
+  transform: none;
+  box-shadow: none;
+}
+
+.case-notice-box--interactive:focus-visible {
+  outline: 2px solid #8ab3dd;
+  outline-offset: 1px;
 }
 
 .case-notice-popup--client {

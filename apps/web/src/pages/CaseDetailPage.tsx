@@ -173,14 +173,6 @@ function formatDate(value: string): string {
   return new Date(value).toLocaleString("pt-BR");
 }
 
-function truncateText(value: string, maxLength: number): string {
-  if (value.length <= maxLength) {
-    return value;
-  }
-
-  return `${value.slice(0, maxLength).trim()}...`;
-}
-
 async function extractApiErrorMessage(response: Response, fallback: string): Promise<string> {
   try {
     const parsed = (await response.json()) as { message?: unknown };
@@ -448,7 +440,8 @@ export function CaseDetailPage() {
   const [closeRequestDecisionError, setCloseRequestDecisionError] = useState<string | null>(null);
   const [isOperatorCloseRequestPopupOpen, setIsOperatorCloseRequestPopupOpen] = useState(false);
   const [isClientDataRequestPopupOpen, setIsClientDataRequestPopupOpen] = useState(false);
-  const [showCloseRequestJustification, setShowCloseRequestJustification] = useState(false);
+  const [isCloseRequestReasonExpanded, setIsCloseRequestReasonExpanded] = useState(false);
+  const [isCloseRequestRejectMode, setIsCloseRequestRejectMode] = useState(false);
 
   const isAssignedOperator = Boolean(user?.uid && caseItem?.assignedOperatorId === user.uid);
   const isRejectedOrClosedCase = Boolean(
@@ -481,6 +474,18 @@ export function CaseDetailPage() {
       !isRejectedOrClosedCase &&
       closeRequest.status !== "pending"
   );
+  const closeRequestReasonPreview = useMemo(() => {
+    const normalized = (closeRequest.reason ?? "Não informada.").trim();
+    if (!normalized) {
+      return "Não informada.";
+    }
+
+    if (normalized.length <= 500) {
+      return normalized;
+    }
+
+    return `${normalized.slice(0, 500).trim()}...`;
+  }, [closeRequest.reason]);
 
   const sortedMovements = useMemo(() => {
     if (!caseItem?.movements) {
@@ -657,7 +662,9 @@ export function CaseDetailPage() {
   useEffect(() => {
     if (shouldShowOperatorCloseRequestPopup) {
       setIsOperatorCloseRequestPopupOpen(true);
-      setShowCloseRequestJustification(false);
+      setIsCloseRequestReasonExpanded(false);
+      setIsCloseRequestRejectMode(false);
+      setCloseRequestDecisionReason("");
       return;
     }
 
@@ -1158,11 +1165,13 @@ export function CaseDetailPage() {
       setOperatorStep(resolveOperatorStepFromWorkflow(updated.workflowStep));
       if (decision === "approved") {
         setIsOperatorSidebarOpen(false);
+        setIsCloseRequestRejectMode(false);
       } else {
         setCloseRequestDecisionReason("");
+        setIsCloseRequestRejectMode(false);
       }
       setIsOperatorCloseRequestPopupOpen(false);
-      setShowCloseRequestJustification(false);
+      setIsCloseRequestReasonExpanded(false);
       setCloseRequestDecisionFeedback(
         decision === "approved"
           ? "Encerramento aprovado e cliente notificado."
@@ -1175,6 +1184,17 @@ export function CaseDetailPage() {
     } finally {
       setDecidingCloseRequest(false);
     }
+  }
+
+  function handleRejectFlowFromPopup() {
+    if (!isCloseRequestRejectMode) {
+      setIsCloseRequestRejectMode(true);
+      setCloseRequestDecisionError(null);
+      setCloseRequestDecisionFeedback(null);
+      return;
+    }
+
+    void handleCloseRequestDecision("denied");
   }
 
   async function handleSaveServiceFee() {
@@ -2266,23 +2286,46 @@ export function CaseDetailPage() {
 
       {isOperatorCloseRequestPopupOpen && shouldShowOperatorCloseRequestPopup && (
         <>
-          <button
-            type="button"
-            className="case-notice-overlay"
-            aria-label="Fechar alerta de solicitação de encerramento"
-            onClick={() => setIsOperatorCloseRequestPopupOpen(false)}
-          />
+          <div className="case-notice-overlay" aria-hidden="true" />
           <section className="case-notice-popup" role="dialog" aria-modal="true" aria-labelledby="close-request-popup-title">
-            <p className="hero-kicker">Ação pendente</p>
-            <h3 id="close-request-popup-title">Solicitação de encerramento do cliente</h3>
+            <div className="case-notice-header">
+              <div>
+                <p className="hero-kicker">Ação pendente</p>
+                <h3 id="close-request-popup-title">Solicitação de encerramento do cliente</h3>
+              </div>
+              <button
+                type="button"
+                className="case-notice-close"
+                aria-label="Fechar aviso"
+                onClick={() => setIsOperatorCloseRequestPopupOpen(false)}
+              >
+                {"\u00D7"}
+              </button>
+            </div>
             <p>O cliente abriu um pedido de encerramento. Analise o motivo e registre a decisão.</p>
 
-            <div className="info-box case-notice-box">
+            <div
+              role="button"
+              tabIndex={0}
+              className="info-box case-notice-box case-notice-box--interactive"
+              onClick={() => setIsCloseRequestReasonExpanded((current) => !current)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setIsCloseRequestReasonExpanded((current) => !current);
+                }
+              }}
+              aria-expanded={isCloseRequestReasonExpanded}
+            >
               <strong>Justificativa do cliente</strong>
-              <span>
-                {showCloseRequestJustification
-                  ? closeRequest.reason ?? "Não informada."
-                  : truncateText(closeRequest.reason ?? "Não informada.", 180)}
+              <span
+                className={
+                  isCloseRequestReasonExpanded
+                    ? "case-notice-reason-text case-notice-reason-text--expanded"
+                    : "case-notice-reason-text case-notice-reason-text--compact"
+                }
+              >
+                {closeRequestReasonPreview}
               </span>
               {closeRequest.requestedAt && <span>Solicitado em: {formatDate(closeRequest.requestedAt)}</span>}
             </div>
@@ -2290,49 +2333,38 @@ export function CaseDetailPage() {
             <div className="operator-action-buttons">
               <button
                 type="button"
-                className="hero-secondary"
-                onClick={() => setShowCloseRequestJustification((current) => !current)}
-              >
-                {showCloseRequestJustification ? "Ocultar justificativa" : "Ler justificativa"}
-              </button>
-              <button
-                type="button"
-                className="hero-secondary"
-                onClick={() => setIsOperatorCloseRequestPopupOpen(false)}
-              >
-                Fechar aviso
-              </button>
-            </div>
-
-            <label>
-              Motivo da recusa (obrigatório ao recusar)
-              <textarea
-                rows={3}
-                value={closeRequestDecisionReason}
-                onChange={(event) => setCloseRequestDecisionReason(event.target.value)}
-                placeholder="Explique o motivo caso decida recusar o pedido."
-                disabled={decidingCloseRequest}
-              />
-            </label>
-
-            <div className="operator-action-buttons">
-              <button
-                type="button"
                 className="secondary-button secondary-button--small"
-                onClick={() => void handleCloseRequestDecision("approved")}
+                onClick={() => {
+                  setIsCloseRequestRejectMode(false);
+                  setCloseRequestDecisionReason("");
+                  void handleCloseRequestDecision("approved");
+                }}
                 disabled={decidingCloseRequest}
               >
-                {decidingCloseRequest ? "Salvando..." : "Aceitar encerramento"}
+                {decidingCloseRequest ? "Salvando..." : "Aceitar"}
               </button>
               <button
                 type="button"
                 className="danger-button danger-button--small"
-                onClick={() => void handleCloseRequestDecision("denied")}
+                onClick={handleRejectFlowFromPopup}
                 disabled={decidingCloseRequest}
               >
-                Recusar encerramento
+                {decidingCloseRequest ? "Salvando..." : "Recusar"}
               </button>
             </div>
+
+            {isCloseRequestRejectMode && (
+              <label>
+                Motivo da recusa (obrigatório ao recusar)
+                <textarea
+                  rows={3}
+                  value={closeRequestDecisionReason}
+                  onChange={(event) => setCloseRequestDecisionReason(event.target.value)}
+                  placeholder="Explique o motivo caso decida recusar o pedido."
+                  disabled={decidingCloseRequest}
+                />
+              </label>
+            )}
 
             {closeRequestDecisionFeedback && <p className="success-text">{closeRequestDecisionFeedback}</p>}
             {closeRequestDecisionError && <p className="error-text">{closeRequestDecisionError}</p>}
