@@ -2900,6 +2900,53 @@ button.sidebar-item {
   padding-right: 0.15rem;
 }
 
+.case-notice-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  background: rgba(8, 24, 43, 0.3);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.case-notice-popup {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 96;
+  width: min(680px, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  overflow: auto;
+  background: #ffffff;
+  border: 1px solid #cddff1;
+  border-radius: 16px;
+  box-shadow: 0 24px 44px rgba(6, 24, 43, 0.3);
+  padding: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.case-notice-popup h3 {
+  margin: 0;
+  color: #123458;
+}
+
+.case-notice-popup p {
+  margin: 0;
+}
+
+.case-notice-box {
+  margin: 0;
+}
+
+.case-notice-popup--client {
+  border-color: #bdd7f0;
+}
+
 .movement-list {
   list-style: none;
   margin: 0;
@@ -4444,6 +4491,12 @@ button.sidebar-item {
     height: calc(100vh - 89px - 1.1rem);
     border-radius: 14px;
     padding: 0.75rem;
+  }
+
+  .case-notice-popup {
+    width: calc(100vw - 1rem);
+    max-height: calc(100vh - 1rem);
+    padding: 0.85rem;
   }
 
   .operator-step-nav {

@@ -172,6 +172,14 @@ function formatDate(value: string): string {
   return new Date(value).toLocaleString("pt-BR");
 }
 
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength).trim()}...`;
+}
+
 async function extractApiErrorMessage(response: Response, fallback: string): Promise<string> {
   try {
     const parsed = (await response.json()) as { message?: unknown };
@@ -437,6 +445,9 @@ export function CaseDetailPage() {
   const [decidingCloseRequest, setDecidingCloseRequest] = useState(false);
   const [closeRequestDecisionFeedback, setCloseRequestDecisionFeedback] = useState<string | null>(null);
   const [closeRequestDecisionError, setCloseRequestDecisionError] = useState<string | null>(null);
+  const [isOperatorCloseRequestPopupOpen, setIsOperatorCloseRequestPopupOpen] = useState(false);
+  const [isClientDataRequestPopupOpen, setIsClientDataRequestPopupOpen] = useState(false);
+  const [showCloseRequestJustification, setShowCloseRequestJustification] = useState(false);
 
   const isAssignedOperator = Boolean(user?.uid && caseItem?.assignedOperatorId === user.uid);
   const isRejectedOrClosedCase = Boolean(
@@ -455,6 +466,14 @@ export function CaseDetailPage() {
   const canUseLegacyOperatorFlow = canManageOperatorActions && !hasAdvancedCaseFlow;
   const closeRequest = caseItem?.closeRequest ?? DEFAULT_CLOSE_REQUEST;
   const hasPendingCloseRequest = closeRequest.status === "pending";
+  const shouldShowOperatorCloseRequestPopup = Boolean(canManageOperatorActions && hasPendingCloseRequest);
+  const hasClientDocumentRequestPending = Boolean(
+    caseItem &&
+      !canAccessAdmin &&
+      caseItem.reviewDecision === "accepted" &&
+      caseItem.workflowStep === "awaiting_client_data" &&
+      caseItem.clientDataRequest?.trim()
+  );
   const canClientRequestClose = Boolean(
     caseItem &&
       !canAccessAdmin &&
@@ -633,6 +652,25 @@ export function CaseDetailPage() {
       setIsClientCloseSidebarOpen(false);
     }
   }, [canAccessClientCloseSidebar, isClientCloseSidebarOpen]);
+
+  useEffect(() => {
+    if (shouldShowOperatorCloseRequestPopup) {
+      setIsOperatorCloseRequestPopupOpen(true);
+      setShowCloseRequestJustification(false);
+      return;
+    }
+
+    setIsOperatorCloseRequestPopupOpen(false);
+  }, [caseItem?.id, closeRequest.requestedAt, shouldShowOperatorCloseRequestPopup]);
+
+  useEffect(() => {
+    if (hasClientDocumentRequestPending) {
+      setIsClientDataRequestPopupOpen(true);
+      return;
+    }
+
+    setIsClientDataRequestPopupOpen(false);
+  }, [caseItem?.clientDataRequest, caseItem?.clientDataRequestedAt, caseItem?.id, hasClientDocumentRequestPending]);
 
   function openOperatorSidebar() {
     if (closeRequest.status === "pending") {
@@ -1129,6 +1167,8 @@ export function CaseDetailPage() {
       } else {
         setCloseRequestDecisionReason("");
       }
+      setIsOperatorCloseRequestPopupOpen(false);
+      setShowCloseRequestJustification(false);
       setCloseRequestDecisionFeedback(
         decision === "approved"
           ? "Encerramento aprovado e cliente notificado."
@@ -2229,6 +2269,128 @@ export function CaseDetailPage() {
           )}
         </article>
       </div>
+
+      {isOperatorCloseRequestPopupOpen && shouldShowOperatorCloseRequestPopup && (
+        <>
+          <button
+            type="button"
+            className="case-notice-overlay"
+            aria-label="Fechar alerta de solicitação de encerramento"
+            onClick={() => setIsOperatorCloseRequestPopupOpen(false)}
+          />
+          <section className="case-notice-popup" role="dialog" aria-modal="true" aria-labelledby="close-request-popup-title">
+            <p className="hero-kicker">Ação pendente</p>
+            <h3 id="close-request-popup-title">Solicitação de encerramento do cliente</h3>
+            <p>O cliente abriu um pedido de encerramento. Analise o motivo e registre a decisão.</p>
+
+            <div className="info-box case-notice-box">
+              <strong>Justificativa do cliente</strong>
+              <span>
+                {showCloseRequestJustification
+                  ? closeRequest.reason ?? "Não informada."
+                  : truncateText(closeRequest.reason ?? "Não informada.", 180)}
+              </span>
+              {closeRequest.requestedAt && <span>Solicitado em: {formatDate(closeRequest.requestedAt)}</span>}
+            </div>
+
+            <div className="operator-action-buttons">
+              <button
+                type="button"
+                className="hero-secondary"
+                onClick={() => setShowCloseRequestJustification((current) => !current)}
+              >
+                {showCloseRequestJustification ? "Ocultar justificativa" : "Ler justificativa"}
+              </button>
+              <button
+                type="button"
+                className="hero-secondary"
+                onClick={() => setIsOperatorCloseRequestPopupOpen(false)}
+              >
+                Fechar aviso
+              </button>
+            </div>
+
+            <label>
+              Motivo da recusa (obrigatório ao recusar)
+              <textarea
+                rows={3}
+                value={closeRequestDecisionReason}
+                onChange={(event) => setCloseRequestDecisionReason(event.target.value)}
+                placeholder="Explique o motivo caso decida recusar o pedido."
+                disabled={decidingCloseRequest}
+              />
+            </label>
+
+            <div className="operator-action-buttons">
+              <button
+                type="button"
+                className="secondary-button secondary-button--small"
+                onClick={() => void handleCloseRequestDecision("approved")}
+                disabled={decidingCloseRequest}
+              >
+                {decidingCloseRequest ? "Salvando..." : "Aceitar encerramento"}
+              </button>
+              <button
+                type="button"
+                className="danger-button danger-button--small"
+                onClick={() => void handleCloseRequestDecision("denied")}
+                disabled={decidingCloseRequest}
+              >
+                Recusar encerramento
+              </button>
+            </div>
+
+            {closeRequestDecisionFeedback && <p className="success-text">{closeRequestDecisionFeedback}</p>}
+            {closeRequestDecisionError && <p className="error-text">{closeRequestDecisionError}</p>}
+          </section>
+        </>
+      )}
+
+      {isClientDataRequestPopupOpen && hasClientDocumentRequestPending && (
+        <>
+          <button
+            type="button"
+            className="case-notice-overlay"
+            aria-label="Fechar aviso de documentos pendentes"
+            onClick={() => setIsClientDataRequestPopupOpen(false)}
+          />
+          <section
+            className="case-notice-popup case-notice-popup--client"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="client-doc-request-popup-title"
+          >
+            <p className="hero-kicker">Documentos pendentes</p>
+            <h3 id="client-doc-request-popup-title">Solicitação do operador</h3>
+            <p>Para continuar o andamento do caso, envie os dados abaixo no chat do processo.</p>
+
+            <div className="info-box case-notice-box">
+              <strong>Documentos solicitados</strong>
+              <span>{caseItem.clientDataRequest}</span>
+              {caseItem.clientDataRequestedAt && (
+                <span>Solicitado em: {formatDate(caseItem.clientDataRequestedAt)}</span>
+              )}
+            </div>
+
+            <div className="operator-action-buttons">
+              <Link
+                to={`/messages?caseId=${caseItem.id}`}
+                className="hero-primary"
+                onClick={() => setIsClientDataRequestPopupOpen(false)}
+              >
+                Ir para mensagens
+              </Link>
+              <button
+                type="button"
+                className="hero-secondary"
+                onClick={() => setIsClientDataRequestPopupOpen(false)}
+              >
+                Fechar
+              </button>
+            </div>
+          </section>
+        </>
+      )}
 
       {canAccessAdmin && !canManageOperatorActions && (
         <section className="workspace-panel">
