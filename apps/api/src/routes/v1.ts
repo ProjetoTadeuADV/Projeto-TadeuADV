@@ -40,7 +40,6 @@ import {
   sendCustomVerificationEmail
 } from "../services/verificationEmailSender.js";
 import {
-  type CaseNotificationType,
   isCaseNotificationEmailEnabled,
   sendCaseNotificationEmail
 } from "../services/caseNotificationSender.js";
@@ -859,19 +858,6 @@ async function notifyCaseOwnerByEmail(
   const stageLabel = isInternal
     ? `${CASE_MOVEMENT_STAGE_LABELS[movement.stage]} (interna)`
     : CASE_MOVEMENT_STAGE_LABELS[movement.stage];
-  const notificationType: CaseNotificationType =
-    movement.stage === "solucao"
-      ? "closure"
-      : movement.stage === "conciliacao" || movement.stage === "peticao" || movement.stage === "protocolo"
-        ? "update"
-        : movement.stage === "triagem"
-          ? "update"
-          : movement.stage === "andamento" &&
-              (description.toLowerCase().includes("cobranc") ||
-                description.toLowerCase().includes("pagament") ||
-                description.toLowerCase().includes("taxa"))
-            ? "billing"
-            : "update";
 
   await sendCaseNotificationEmail({
     toEmail: ownerEmail,
@@ -881,8 +867,7 @@ async function notifyCaseOwnerByEmail(
     stageLabel,
     description,
     statusLabel: CASE_STATUS_LABELS[movement.statusAfter],
-    messagesUrl: buildCaseMessagesUrl(caseItem.id),
-    notificationType
+    messagesUrl: buildCaseMessagesUrl(caseItem.id)
   });
 }
 
@@ -893,7 +878,6 @@ async function notifyCaseOwnerByCustomUpdate(
     stageLabel: string;
     description: string;
     statusAfter: CaseRecord["status"];
-    notificationType?: CaseNotificationType;
   }
 ): Promise<void> {
   if (!isCaseNotificationEmailEnabled()) {
@@ -914,8 +898,7 @@ async function notifyCaseOwnerByCustomUpdate(
     stageLabel: input.stageLabel,
     description: input.description,
     statusLabel: CASE_STATUS_LABELS[input.statusAfter],
-    messagesUrl: buildCaseMessagesUrl(caseItem.id),
-    notificationType: input.notificationType
+    messagesUrl: buildCaseMessagesUrl(caseItem.id)
   });
 }
 
@@ -1741,8 +1724,7 @@ export function createV1Router(deps: AppDependencies) {
         void notifyCaseOwnerByCustomUpdate(deps, latestCase, {
           stageLabel: "Análise inicial",
           description: clientMessage,
-          statusAfter: latestCase.status,
-          notificationType: payload.decision === "rejected" ? "closure" : "update"
+          statusAfter: latestCase.status
         }).catch((error) => {
           const details = error instanceof Error ? error.message : "unknown";
           console.error("case-notification-email-failed", {
@@ -1916,8 +1898,7 @@ export function createV1Router(deps: AppDependencies) {
         void notifyCaseOwnerByCustomUpdate(deps, latestCase, {
           stageLabel: "Solicitação de encerramento",
           description: decisionMessage,
-          statusAfter: latestCase.status,
-          notificationType: "closure"
+          statusAfter: latestCase.status
         }).catch((error) => {
           const details = error instanceof Error ? error.message : "unknown";
           console.error("case-notification-email-failed", {
@@ -2005,8 +1986,7 @@ export function createV1Router(deps: AppDependencies) {
         void notifyCaseOwnerByCustomUpdate(deps, latestCase, {
           stageLabel: "Encerramento do caso",
           description: closeMessage,
-          statusAfter: latestCase.status,
-          notificationType: "closure"
+          statusAfter: latestCase.status
         }).catch((error) => {
           const details = error instanceof Error ? error.message : "unknown";
           console.error("case-notification-email-failed", {
@@ -2163,8 +2143,7 @@ export function createV1Router(deps: AppDependencies) {
         void notifyCaseOwnerByCustomUpdate(deps, latestCase, {
           stageLabel: "Pagamento inicial",
           description: paymentMessage,
-          statusAfter: latestCase.status,
-          notificationType: "billing"
+          statusAfter: latestCase.status
         }).catch((error) => {
           const details = error instanceof Error ? error.message : "unknown";
           console.error("case-notification-email-failed", {
@@ -2321,8 +2300,7 @@ export function createV1Router(deps: AppDependencies) {
         void notifyCaseOwnerByCustomUpdate(deps, latestCase, {
           stageLabel: "Cobrança",
           description: paymentMessage,
-          statusAfter: latestCase.status,
-          notificationType: "billing"
+          statusAfter: latestCase.status
         }).catch((error) => {
           const details = error instanceof Error ? error.message : "unknown";
           console.error("case-notification-email-failed", {
@@ -2606,8 +2584,7 @@ export function createV1Router(deps: AppDependencies) {
         void notifyCaseOwnerByCustomUpdate(deps, latestCase, {
           stageLabel: "Conciliação",
           description: agreementMessage,
-          statusAfter: latestCase.status,
-          notificationType: "closure"
+          statusAfter: latestCase.status
         }).catch((error) => {
           const details = error instanceof Error ? error.message : "unknown";
           console.error("case-notification-email-failed", {
@@ -2766,8 +2743,7 @@ export function createV1Router(deps: AppDependencies) {
           void notifyCaseOwnerByCustomUpdate(deps, updated, {
             stageLabel: "Mensagens do caso",
             description: notificationDescription,
-            statusAfter: updated.status,
-            notificationType: "messages"
+            statusAfter: updated.status
           }).catch((error) => {
             const details = error instanceof Error ? error.message : "unknown";
             console.error("case-notification-email-failed", {
