@@ -54,6 +54,45 @@ function triggerDownload(blob: Blob, fileName: string): void {
   window.URL.revokeObjectURL(url);
 }
 
+type ReadMarkersByCase = Record<string, string>;
+
+function getReadMarkersStorageKey(userId: string | undefined): string {
+  return `messages.readMarkers.${userId ?? "anonymous"}`;
+}
+
+function parseReadMarkers(value: string | null): ReadMarkersByCase {
+  if (!value) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+
+    const result: ReadMarkersByCase = {};
+    for (const [key, itemValue] of Object.entries(parsed)) {
+      if (typeof key === "string" && typeof itemValue === "string") {
+        result[key] = itemValue;
+      }
+    }
+
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+function toTimestamp(value: string | null | undefined): number {
+  if (!value) {
+    return 0;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function PaperclipIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -92,67 +131,172 @@ export function MessagesPage() {
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [selectedCaseId, setSelectedCaseId] = useState<string>("");
   const [selectedCase, setSelectedCase] = useState<CaseRecord | null>(null);
+  const [readMarkersByCase, setReadMarkersByCase] = useState<ReadMarkersByCase>({});
   const [newMessage, setNewMessage] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingThread, setLoadingThread] = useState(false);
   const [sending, setSending] = useState(false);
   const [downloadingAttachmentId, setDownloadingAttachmentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const selectedCaseFetchRef = useRef(0);
+  const casesRef = useRef<CaseRecord[]>([]);
 
-  const loadSelectedCase = useCallback(async () => {
-    if (!selectedCaseId || !cases.some((item) => item.id === selectedCaseId)) {
+  const markCaseAsRead = useCallback((caseItem: CaseRecord | null) => {
+    if (!caseItem) {
+      return;
+    }
+
+    const latestMessageDate = (caseItem.messages ?? []).reduce<string | null>((current, message) => {
+      if (!current || toTimestamp(message.createdAt) > toTimestamp(current)) {
+        return message.createdAt;
+      }
+      return current;
+    }, null);
+
+    if (!latestMessageDate) {
+      return;
+    }
+
+    setReadMarkersByCase((current) => {
+      const previous = current[caseItem.id];
+      if (toTimestamp(previous) >= toTimestamp(latestMessageDate)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [caseItem.id]: latestMessageDate
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    casesRef.current = cases;
+  }, [cases]);
+
+  const loadSelectedCase = useCallback(async (caseId: string, options?: { silent?: boolean }) => {
+    if (!caseId || !casesRef.current.some((item) => item.id === caseId)) {
       setSelectedCase(null);
       return;
     }
 
-    setLoadingThread(true);
-    setError(null);
+    const fetchId = selectedCaseFetchRef.current + 1;
+    selectedCaseFetchRef.current = fetchId;
+    if (!options?.silent) {
+      setError(null);
+    }
+
     try {
       const token = await getToken();
-      const result = await apiRequest<CaseRecord>(`/v1/cases/${selectedCaseId}`, { token });
+      const result = await apiRequest<CaseRecord>(`/v1/cases/${caseId}`, { token });
+      if (selectedCaseFetchRef.current !== fetchId) {
+        return;
+      }
+
       setSelectedCase(result);
+      setCases((current) => current.map((item) => (item.id === result.id ? result : item)));
+      markCaseAsRead(result);
     } catch (nextError) {
+      if (selectedCaseFetchRef.current !== fetchId) {
+        return;
+      }
+
+      if (options?.silent) {
+        return;
+      }
       const message = nextError instanceof ApiError ? nextError.message : "Falha ao carregar mensagens do caso.";
       setError(message);
-    } finally {
-      setLoadingThread(false);
     }
-  }, [cases, getToken, selectedCaseId]);
+  }, [getToken, markCaseAsRead]);
 
-  useEffect(() => {
-    async function loadCases() {
+  const loadCases = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
       setLoading(true);
       setError(null);
+    }
 
-      try {
-        const token = await getToken();
-        const result = await apiRequest<CaseRecord[]>("/v1/cases", { token });
-        const filtered = filterCasesForMessages(result, user?.uid, isOperatorUser, isMasterUser);
-        setCases(filtered);
+    try {
+      const token = await getToken();
+      const result = await apiRequest<CaseRecord[]>("/v1/cases", { token });
+      const filtered = filterCasesForMessages(result, user?.uid, isOperatorUser, isMasterUser);
+      setCases(filtered);
 
-        setSelectedCaseId((current) => {
-          const preferredCaseId = [requestedCaseId, current, filtered[0]?.id].find(
-            (candidate) => typeof candidate === "string" && filtered.some((item) => item.id === candidate)
-          );
-          return preferredCaseId ?? "";
-        });
-      } catch (nextError) {
-        const message = nextError instanceof ApiError ? nextError.message : "Falha ao carregar casos.";
-        setError(message);
-      } finally {
+      setSelectedCaseId((current) => {
+        const preferredCaseId = [current, filtered[0]?.id].find(
+          (candidate) => typeof candidate === "string" && filtered.some((item) => item.id === candidate)
+        );
+        return preferredCaseId ?? "";
+      });
+    } catch (nextError) {
+      if (options?.silent) {
+        return;
+      }
+      const message = nextError instanceof ApiError ? nextError.message : "Falha ao carregar casos.";
+      setError(message);
+    } finally {
+      if (!options?.silent) {
         setLoading(false);
       }
     }
-
-    void loadCases();
-  }, [getToken, isMasterUser, isOperatorUser, requestedCaseId, user?.uid]);
+  }, [getToken, isMasterUser, isOperatorUser, user?.uid]);
 
   useEffect(() => {
-    void loadSelectedCase();
-  }, [loadSelectedCase]);
+    void loadCases();
+  }, [loadCases]);
+
+  useEffect(() => {
+    if (!requestedCaseId) {
+      return;
+    }
+
+    const requestedCase = cases.find((item) => item.id === requestedCaseId) ?? null;
+    if (!requestedCase || selectedCaseId === requestedCaseId) {
+      return;
+    }
+
+    setSelectedCaseId(requestedCaseId);
+    setSelectedCase(requestedCase);
+    markCaseAsRead(requestedCase);
+  }, [cases, markCaseAsRead, requestedCaseId, selectedCaseId]);
+
+  useEffect(() => {
+    if (!selectedCaseId) {
+      setSelectedCase(null);
+      return;
+    }
+
+    void loadSelectedCase(selectedCaseId, { silent: true });
+  }, [loadSelectedCase, selectedCaseId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const storageKey = getReadMarkersStorageKey(user?.uid);
+    setReadMarkersByCase(parseReadMarkers(window.localStorage.getItem(storageKey)));
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const storageKey = getReadMarkersStorageKey(user?.uid);
+    window.localStorage.setItem(storageKey, JSON.stringify(readMarkersByCase));
+  }, [readMarkersByCase, user?.uid]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void loadCases({ silent: true });
+    }, 5000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [loadCases]);
 
   useEffect(() => {
     if (!selectedCaseId) {
@@ -160,7 +304,7 @@ export function MessagesPage() {
     }
 
     const timer = window.setInterval(() => {
-      void loadSelectedCase();
+      void loadSelectedCase(selectedCaseId, { silent: true });
     }, 5000);
 
     return () => {
@@ -176,9 +320,37 @@ export function MessagesPage() {
     return [...selectedCase.messages].sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
   }, [selectedCase?.messages]);
 
+  const unreadCountByCase = useMemo<Record<string, number>>(() => {
+    const result: Record<string, number> = {};
+
+    for (const item of cases) {
+      if (item.id === selectedCaseId) {
+        result[item.id] = 0;
+        continue;
+      }
+
+      const readMarker = readMarkersByCase[item.id];
+      const readAt = toTimestamp(readMarker);
+      const unread = (item.messages ?? []).reduce((count, message) => {
+        if (message.senderUserId === user?.uid) {
+          return count;
+        }
+
+        return toTimestamp(message.createdAt) > readAt ? count + 1 : count;
+      }, 0);
+
+      result[item.id] = unread;
+    }
+
+    return result;
+  }, [cases, readMarkersByCase, selectedCaseId, user?.uid]);
+
   function handleSelectCase(caseId: string) {
     setSelectedCaseId(caseId);
     setSearchParams({ caseId });
+    const casePreview = cases.find((item) => item.id === caseId) ?? null;
+    setSelectedCase(casePreview);
+    markCaseAsRead(casePreview);
     setFeedback(null);
     setError(null);
   }
@@ -287,6 +459,7 @@ export function MessagesPage() {
       const updated = await sendMessage(selectedCaseId, payload, pendingAttachments);
       setSelectedCase(updated);
       setCases((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      markCaseAsRead(updated);
       setNewMessage("");
       setPendingAttachments([]);
       setFeedback("Mensagem enviada.");
@@ -387,6 +560,11 @@ export function MessagesPage() {
                       <strong>{item.varaNome}</strong>
                       <span>{item.caseCode}</span>
                       <small>{item.resumo}</small>
+                      {(unreadCountByCase[item.id] ?? 0) > 0 && (
+                        <span className="messages-case-unread-badge" aria-label="Mensagens não lidas">
+                          {unreadCountByCase[item.id] > 99 ? "99+" : unreadCountByCase[item.id]}
+                        </span>
+                      )}
                     </button>
                   </li>
                 ))}
@@ -407,7 +585,7 @@ export function MessagesPage() {
                     </div>
                   </header>
 
-                  <div className="messages-thread-list" aria-busy={loadingThread}>
+                  <div className="messages-thread-list">
                     {orderedMessages.length === 0 ? (
                       <p className="helper-text">Ainda nao ha mensagens neste caso.</p>
                     ) : (

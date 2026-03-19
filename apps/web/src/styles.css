@@ -3043,6 +3043,8 @@ button.sidebar-item {
   text-align: left;
   display: grid;
   gap: 0.2rem;
+  position: relative;
+  padding-right: 2.9rem;
   box-shadow: none;
   transform: none;
 }
@@ -3090,6 +3092,27 @@ button.sidebar-item {
   overflow: hidden;
   text-overflow: ellipsis;
   min-height: 1.1rem;
+}
+
+.messages-case-unread-badge {
+  position: absolute;
+  right: 0.62rem;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 1.38rem;
+  height: 1.38rem;
+  border-radius: 999px;
+  background: #0b5fd0;
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0 0.34rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #ffffff;
+  box-shadow: 0 4px 12px rgba(11, 64, 140, 0.24);
 }
 
 .messages-thread-card {
