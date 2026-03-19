@@ -386,18 +386,25 @@ textarea {
 }
 
 .password-visibility-button {
-  min-height: 42px;
-  padding: 0 0.72rem;
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  padding: 0;
   border-radius: 10px;
   border: 1px solid #c6d4e7;
   background: #f2f6fb;
   color: #1e3e62;
-  font-family: "Inter", "Segoe UI", sans-serif;
-  font-weight: 600;
-  font-size: 0.82rem;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   box-shadow: none;
   transform: none;
+}
+
+.password-visibility-button svg {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .password-visibility-button:hover {
@@ -2379,7 +2386,7 @@ button.sidebar-item {
 }
 
 .data-table td[data-label="Perfil"] {
-  vertical-align: middle;
+  vertical-align: top;
 }
 
 .table-actions {

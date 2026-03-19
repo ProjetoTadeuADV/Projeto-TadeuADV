@@ -301,8 +301,6 @@ export function MasterDashboardPage() {
                   <th>Verificação</th>
                   <th>Casos</th>
                   <th>Ativos</th>
-                  <th>Último acesso</th>
-                  <th>Último caso</th>
                   <th>Ações</th>
                 </tr>
               </thead>
@@ -338,10 +336,6 @@ export function MasterDashboardPage() {
                     </td>
                     <td data-label="Casos">{item.totalCases}</td>
                     <td data-label="Ativos">{item.activeCases}</td>
-                    <td data-label="Último acesso">{new Date(item.lastSeenAt).toLocaleString("pt-BR")}</td>
-                    <td data-label="Último caso">
-                      {item.lastCaseAt ? new Date(item.lastCaseAt).toLocaleString("pt-BR") : "Sem casos"}
-                    </td>
                     <td data-label="Ações">
                       <div className="table-actions">
                         <button

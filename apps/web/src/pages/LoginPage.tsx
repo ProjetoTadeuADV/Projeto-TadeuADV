@@ -2,6 +2,7 @@ import { sendPasswordResetEmail } from "firebase/auth";
 import { FormEvent, useState } from "react";
 import { Link, Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { BrandWordmark } from "../components/BrandWordmark";
+import { PasswordVisibilityIcon } from "../components/PasswordVisibilityIcon";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
 import { formatCpf, normalizeCpf } from "../lib/cpf";
@@ -203,7 +204,7 @@ export function LoginPage() {
                       onClick={() => setShowPassword((current) => !current)}
                       aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                     >
-                      {showPassword ? "Ocultar" : "Mostrar"}
+                      <PasswordVisibilityIcon />
                     </button>
                   </div>
                 </label>

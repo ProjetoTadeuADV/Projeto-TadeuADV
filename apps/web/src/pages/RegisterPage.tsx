@@ -1,6 +1,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import { Link, Navigate, NavLink, useNavigate } from "react-router-dom";
 import { BrandWordmark } from "../components/BrandWordmark";
+import { PasswordVisibilityIcon } from "../components/PasswordVisibilityIcon";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
 import { formatCpf, isValidCpf, normalizeCpf } from "../lib/cpf";
@@ -451,7 +452,7 @@ export function RegisterPage() {
                             onClick={() => setShowPassword((current) => !current)}
                             aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                           >
-                            {showPassword ? "Ocultar" : "Mostrar"}
+                            <PasswordVisibilityIcon />
                           </button>
                         </div>
                       </label>
@@ -475,7 +476,7 @@ export function RegisterPage() {
                             onClick={() => setShowPassword((current) => !current)}
                             aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                           >
-                            {showPassword ? "Ocultar" : "Mostrar"}
+                            <PasswordVisibilityIcon />
                           </button>
                         </div>
                       </label>

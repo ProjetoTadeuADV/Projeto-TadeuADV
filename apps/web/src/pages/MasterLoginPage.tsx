@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthBackLink } from "../components/AuthBackLink";
+import { PasswordVisibilityIcon } from "../components/PasswordVisibilityIcon";
 import { useAuth } from "../context/AuthContext";
 
 export function MasterLoginPage() {
@@ -101,7 +102,7 @@ export function MasterLoginPage() {
                 onClick={() => setShowPassword((current) => !current)}
                 aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
               >
-                {showPassword ? "Ocultar" : "Mostrar"}
+                <PasswordVisibilityIcon />
               </button>
             </div>
           </label>
