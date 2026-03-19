@@ -730,13 +730,21 @@ textarea {
 }
 
 .sidebar:not(.sidebar--expanded) .sidebar-brand {
+  width: 46px;
+  max-width: calc(100% - 8px);
+  margin-inline: auto;
   justify-content: center;
+  gap: 0;
   padding-left: 0;
   padding-right: 0;
 }
 
 .sidebar:not(.sidebar--expanded) .sidebar-brand-emblem {
   margin: 0 auto;
+}
+
+.sidebar:not(.sidebar--expanded) .sidebar-brand-label {
+  display: none;
 }
 
 .sidebar-brand-emblem {
@@ -753,6 +761,7 @@ textarea {
 }
 
 .sidebar-brand-label {
+  display: inline-block;
   font-family: "Montserrat", "Inter", sans-serif;
   color: var(--primary-color);
   font-weight: 700;
