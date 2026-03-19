@@ -2528,6 +2528,47 @@ button.sidebar-item {
   font-weight: 600;
 }
 
+.progress-panel {
+  gap: 0;
+  padding: 0.75rem;
+}
+
+.progress-panel-trigger {
+  width: 100%;
+  border: 1px solid #d6e2f1;
+  background: #f8fbff;
+  border-radius: 10px;
+  padding: 0.72rem 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  color: #173456;
+  box-shadow: none;
+  transform: none;
+}
+
+.progress-panel-trigger span {
+  font-size: 0.8rem;
+  color: #5f7388;
+  font-weight: 600;
+}
+
+.progress-panel-trigger:hover {
+  background: #eef4fb;
+  border-color: #bdd2ea;
+  box-shadow: none;
+  transform: none;
+}
+
+.progress-panel-content {
+  margin-top: 0.72rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #d6e2f1;
+  display: grid;
+  gap: 0.66rem;
+}
+
 .case-layout {
   display: grid;
   grid-template-columns: minmax(360px, 1fr) minmax(260px, 0.45fr);

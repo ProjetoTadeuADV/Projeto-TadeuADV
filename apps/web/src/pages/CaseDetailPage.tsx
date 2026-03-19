@@ -416,6 +416,8 @@ export function CaseDetailPage() {
   const [savingPetitionProgress, setSavingPetitionProgress] = useState(false);
   const [petitionProgressFeedback, setPetitionProgressFeedback] = useState<string | null>(null);
   const [petitionProgressError, setPetitionProgressError] = useState<string | null>(null);
+  const [isConciliationPanelOpen, setIsConciliationPanelOpen] = useState(false);
+  const [isPetitionPanelOpen, setIsPetitionPanelOpen] = useState(false);
 
   const [downloadingAttachmentId, setDownloadingAttachmentId] = useState<string | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
@@ -1928,175 +1930,255 @@ export function CaseDetailPage() {
             <>
               <h2>Andamento</h2>
               <div className="page-stack page-stack--tight">
-                <details className="resumo-box" open>
-                  <summary>
+                <section className="info-box progress-panel">
+                  <button
+                    type="button"
+                    className="progress-panel-trigger"
+                    onClick={() => setIsConciliationPanelOpen((current) => !current)}
+                  >
                     <strong>Conciliação</strong>
-                  </summary>
-                  <label className="checkbox-inline">
-                    <input
-                      type="checkbox"
-                      checked={conciliationForm.contactedDefendant}
-                      onChange={(event) =>
-                        setConciliationForm((current) => ({ ...current, contactedDefendant: event.target.checked }))
-                      }
-                      disabled={!canManageOperatorActions || savingConciliation || closingByAgreement}
-                    />
-                    Contato do reclamado realizado
-                  </label>
-                  <label>
-                    Contato do reclamado
-                    <input
-                      type="text"
-                      value={conciliationForm.defendantContact ?? ""}
-                      onChange={(event) =>
-                        setConciliationForm((current) => ({ ...current, defendantContact: event.target.value }))
-                      }
-                      placeholder="Telefone, nome do contato ou canal."
-                      disabled={!canManageOperatorActions || savingConciliation || closingByAgreement}
-                    />
-                  </label>
-                  <label>
-                    E-mail do reclamado
-                    <input
-                      type="email"
-                      value={conciliationForm.defendantEmail ?? ""}
-                      onChange={(event) =>
-                        setConciliationForm((current) => ({ ...current, defendantEmail: event.target.value }))
-                      }
-                      placeholder="email@reclamado.com"
-                      disabled={!canManageOperatorActions || savingConciliation || closingByAgreement}
-                    />
-                  </label>
-                  <label className="checkbox-inline">
-                    <input
-                      type="checkbox"
-                      checked={conciliationForm.emailSent}
-                      onChange={(event) =>
-                        setConciliationForm((current) => ({ ...current, emailSent: event.target.checked }))
-                      }
-                      disabled={!canManageOperatorActions || savingConciliation || closingByAgreement}
-                    />
-                    Marcar envio de e-mail ao reclamado pela plataforma
-                  </label>
-                  <label>
-                    Redação do e-mail
-                    <textarea
-                      rows={4}
-                      value={conciliationForm.emailDraft ?? ""}
-                      onChange={(event) =>
-                        setConciliationForm((current) => ({ ...current, emailDraft: event.target.value }))
-                      }
-                      placeholder="Descreva a proposta de conciliação e prazo de retorno."
-                      disabled={!canManageOperatorActions || savingConciliation || closingByAgreement}
-                    />
-                  </label>
-                  {conciliationForm.agreementReached && conciliationForm.agreementClosedAt && (
-                    <p className="helper-text">Acordo registrado em {formatDate(conciliationForm.agreementClosedAt)}.</p>
-                  )}
-                  {canManageOperatorActions && (
-                    <div className="operator-action-buttons">
-                      <button
-                        type="button"
-                        className="hero-primary"
-                        onClick={() => void handleSaveConciliationProgress()}
-                        disabled={savingConciliation || closingByAgreement}
-                      >
-                        {savingConciliation ? "Salvando..." : "Enviar / marcar"}
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-button secondary-button--small"
-                        onClick={() => void handleCloseByAgreement()}
-                        disabled={closingByAgreement || savingConciliation}
-                      >
-                        {closingByAgreement ? "Encerrando..." : "Acordo"}
-                      </button>
+                    <span>{isConciliationPanelOpen ? "Ocultar detalhes" : "Ver detalhes"}</span>
+                  </button>
+
+                  {isConciliationPanelOpen && (
+                    <div className="progress-panel-content">
+                      {canManageOperatorActions ? (
+                        <>
+                          <label className="checkbox-inline">
+                            <input
+                              type="checkbox"
+                              checked={conciliationForm.contactedDefendant}
+                              onChange={(event) =>
+                                setConciliationForm((current) => ({ ...current, contactedDefendant: event.target.checked }))
+                              }
+                              disabled={savingConciliation || closingByAgreement}
+                            />
+                            Contato do reclamado realizado
+                          </label>
+                          <label>
+                            Contato do reclamado
+                            <input
+                              type="text"
+                              value={conciliationForm.defendantContact ?? ""}
+                              onChange={(event) =>
+                                setConciliationForm((current) => ({ ...current, defendantContact: event.target.value }))
+                              }
+                              placeholder="Telefone, nome do contato ou canal."
+                              disabled={savingConciliation || closingByAgreement}
+                            />
+                          </label>
+                          <label>
+                            E-mail do reclamado
+                            <input
+                              type="email"
+                              value={conciliationForm.defendantEmail ?? ""}
+                              onChange={(event) =>
+                                setConciliationForm((current) => ({ ...current, defendantEmail: event.target.value }))
+                              }
+                              placeholder="email@reclamado.com"
+                              disabled={savingConciliation || closingByAgreement}
+                            />
+                          </label>
+                          <label className="checkbox-inline">
+                            <input
+                              type="checkbox"
+                              checked={conciliationForm.emailSent}
+                              onChange={(event) =>
+                                setConciliationForm((current) => ({ ...current, emailSent: event.target.checked }))
+                              }
+                              disabled={savingConciliation || closingByAgreement}
+                            />
+                            Marcar envio de e-mail ao reclamado pela plataforma
+                          </label>
+                          <label>
+                            Redação do e-mail
+                            <textarea
+                              rows={4}
+                              value={conciliationForm.emailDraft ?? ""}
+                              onChange={(event) =>
+                                setConciliationForm((current) => ({ ...current, emailDraft: event.target.value }))
+                              }
+                              placeholder="Descreva a proposta de conciliação e prazo de retorno."
+                              disabled={savingConciliation || closingByAgreement}
+                            />
+                          </label>
+                          {conciliationForm.agreementReached && conciliationForm.agreementClosedAt && (
+                            <p className="helper-text">Acordo registrado em {formatDate(conciliationForm.agreementClosedAt)}.</p>
+                          )}
+                          <div className="operator-action-buttons">
+                            <button
+                              type="button"
+                              className="hero-primary"
+                              onClick={() => void handleSaveConciliationProgress()}
+                              disabled={savingConciliation || closingByAgreement}
+                            >
+                              {savingConciliation ? "Salvando..." : "Enviar / marcar"}
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button secondary-button--small"
+                              onClick={() => void handleCloseByAgreement()}
+                              disabled={closingByAgreement || savingConciliation}
+                            >
+                              {closingByAgreement ? "Encerrando..." : "Acordo"}
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="detail-list">
+                          <div className="detail-item">
+                            <span>Contato do reclamado</span>
+                            <strong>{procedureProgress.conciliation.contactedDefendant ? "Realizado" : "Pendente"}</strong>
+                          </div>
+                          <div className="detail-item">
+                            <span>Canal/contato informado</span>
+                            <strong>{procedureProgress.conciliation.defendantContact ?? "Não informado"}</strong>
+                          </div>
+                          <div className="detail-item">
+                            <span>E-mail do reclamado</span>
+                            <strong>{procedureProgress.conciliation.defendantEmail ?? "Não informado"}</strong>
+                          </div>
+                          <div className="detail-item">
+                            <span>E-mail enviado</span>
+                            <strong>{procedureProgress.conciliation.emailSent ? "Sim" : "Não"}</strong>
+                          </div>
+                          {procedureProgress.conciliation.agreementReached && procedureProgress.conciliation.agreementClosedAt && (
+                            <div className="detail-item">
+                              <span>Acordo</span>
+                              <strong>Concluído em {formatDate(procedureProgress.conciliation.agreementClosedAt)}</strong>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {conciliationFeedback && <p className="success-text">{conciliationFeedback}</p>}
+                      {conciliationError && <p className="error-text">{conciliationError}</p>}
                     </div>
                   )}
-                  {conciliationFeedback && <p className="success-text">{conciliationFeedback}</p>}
-                  {conciliationError && <p className="error-text">{conciliationError}</p>}
-                </details>
+                </section>
 
-                <details className="resumo-box" open>
-                  <summary>
+                <section className="info-box progress-panel">
+                  <button
+                    type="button"
+                    className="progress-panel-trigger"
+                    onClick={() => setIsPetitionPanelOpen((current) => !current)}
+                  >
                     <strong>Petição</strong>
-                  </summary>
-                  <label className="checkbox-inline">
-                    <input
-                      type="checkbox"
-                      checked={petitionProgressForm.petitionPulled}
-                      onChange={(event) =>
-                        setPetitionProgressForm((current) => ({ ...current, petitionPulled: event.target.checked }))
-                      }
-                      disabled={!canManageOperatorActions || savingPetitionProgress}
-                    />
-                    Puxar petição do caso
-                  </label>
-                  <label className="checkbox-inline">
-                    <input
-                      type="checkbox"
-                      checked={petitionProgressForm.jusiaProtocolChecked}
-                      onChange={(event) =>
-                        setPetitionProgressForm((current) => ({
-                          ...current,
-                          jusiaProtocolChecked: event.target.checked
-                        }))
-                      }
-                      disabled={!canManageOperatorActions || savingPetitionProgress}
-                    />
-                    Petição protocolada manualmente na JusIA
-                  </label>
-                  <label>
-                    Protocolo da petição
-                    <input
-                      type="text"
-                      value={petitionProgressForm.protocolCode ?? ""}
-                      onChange={(event) =>
-                        setPetitionProgressForm((current) => ({ ...current, protocolCode: event.target.value }))
-                      }
-                      placeholder="Número do protocolo"
-                      disabled={!canManageOperatorActions || savingPetitionProgress}
-                    />
-                  </label>
-                  <strong>Checklist processual</strong>
-                  <div className="page-stack page-stack--tight">
-                    {petitionProgressForm.checklist.map((item) => (
-                      <div key={item.id} className="resumo-box">
-                        <label className="checkbox-inline">
-                          <input
-                            type="checkbox"
-                            checked={item.done}
-                            onChange={(event) => handlePetitionChecklistChange(item.id, { done: event.target.checked })}
-                            disabled={!canManageOperatorActions || savingPetitionProgress}
-                          />
-                          {item.label}
-                        </label>
-                        <label>
-                          Observações
-                          <input
-                            type="text"
-                            value={item.notes ?? ""}
-                            onChange={(event) => handlePetitionChecklistChange(item.id, { notes: event.target.value })}
-                            placeholder="Opcional"
-                            disabled={!canManageOperatorActions || savingPetitionProgress}
-                          />
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                  {canManageOperatorActions && (
-                    <button
-                      type="button"
-                      className="hero-primary"
-                      onClick={() => void handleSavePetitionProgress()}
-                      disabled={savingPetitionProgress}
-                    >
-                      {savingPetitionProgress ? "Salvando..." : "Salvar andamento da petição"}
-                    </button>
+                    <span>{isPetitionPanelOpen ? "Ocultar detalhes" : "Ver detalhes"}</span>
+                  </button>
+
+                  {isPetitionPanelOpen && (
+                    <div className="progress-panel-content">
+                      {canManageOperatorActions ? (
+                        <>
+                          <label className="checkbox-inline">
+                            <input
+                              type="checkbox"
+                              checked={petitionProgressForm.petitionPulled}
+                              onChange={(event) =>
+                                setPetitionProgressForm((current) => ({ ...current, petitionPulled: event.target.checked }))
+                              }
+                              disabled={savingPetitionProgress}
+                            />
+                            Puxar petição do caso
+                          </label>
+                          <label className="checkbox-inline">
+                            <input
+                              type="checkbox"
+                              checked={petitionProgressForm.jusiaProtocolChecked}
+                              onChange={(event) =>
+                                setPetitionProgressForm((current) => ({
+                                  ...current,
+                                  jusiaProtocolChecked: event.target.checked
+                                }))
+                              }
+                              disabled={savingPetitionProgress}
+                            />
+                            Petição protocolada manualmente na JusIA
+                          </label>
+                          <label>
+                            Protocolo da petição
+                            <input
+                              type="text"
+                              value={petitionProgressForm.protocolCode ?? ""}
+                              onChange={(event) =>
+                                setPetitionProgressForm((current) => ({ ...current, protocolCode: event.target.value }))
+                              }
+                              placeholder="Número do protocolo"
+                              disabled={savingPetitionProgress}
+                            />
+                          </label>
+                          <strong>Checklist processual</strong>
+                          <div className="page-stack page-stack--tight">
+                            {petitionProgressForm.checklist.map((item) => (
+                              <div key={item.id} className="resumo-box">
+                                <label className="checkbox-inline">
+                                  <input
+                                    type="checkbox"
+                                    checked={item.done}
+                                    onChange={(event) => handlePetitionChecklistChange(item.id, { done: event.target.checked })}
+                                    disabled={savingPetitionProgress}
+                                  />
+                                  {item.label}
+                                </label>
+                                <label>
+                                  Observações
+                                  <input
+                                    type="text"
+                                    value={item.notes ?? ""}
+                                    onChange={(event) => handlePetitionChecklistChange(item.id, { notes: event.target.value })}
+                                    placeholder="Opcional"
+                                    disabled={savingPetitionProgress}
+                                  />
+                                </label>
+                              </div>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            className="hero-primary"
+                            onClick={() => void handleSavePetitionProgress()}
+                            disabled={savingPetitionProgress}
+                          >
+                            {savingPetitionProgress ? "Salvando..." : "Salvar andamento da petição"}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="detail-list">
+                            <div className="detail-item">
+                              <span>Petição puxada do caso</span>
+                              <strong>{procedureProgress.petition.petitionPulled ? "Sim" : "Não"}</strong>
+                            </div>
+                            <div className="detail-item">
+                              <span>Protocolo manual na JusIA</span>
+                              <strong>{procedureProgress.petition.jusiaProtocolChecked ? "Concluído" : "Pendente"}</strong>
+                            </div>
+                            <div className="detail-item">
+                              <span>Número de protocolo</span>
+                              <strong>{procedureProgress.petition.protocolCode ?? "Não informado"}</strong>
+                            </div>
+                          </div>
+                          <strong>Checklist processual</strong>
+                          <ul className="movement-list">
+                            {procedureProgress.petition.checklist.map((item) => (
+                              <li key={item.id}>
+                                <div className="movement-list-head">
+                                  <span className={item.done ? "info-pill info-pill--success" : "info-pill info-pill--warning"}>
+                                    {item.done ? "Concluído" : "Pendente"}
+                                  </span>
+                                  <strong>{item.label}</strong>
+                                </div>
+                                <p>{item.notes ?? "Sem observações."}</p>
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
+                      {petitionProgressFeedback && <p className="success-text">{petitionProgressFeedback}</p>}
+                      {petitionProgressError && <p className="error-text">{petitionProgressError}</p>}
+                    </div>
                   )}
-                  {petitionProgressFeedback && <p className="success-text">{petitionProgressFeedback}</p>}
-                  {petitionProgressError && <p className="error-text">{petitionProgressError}</p>}
-                </details>
+                </section>
 
                 {canManageOperatorActions && (
                   <div className="resumo-box">
