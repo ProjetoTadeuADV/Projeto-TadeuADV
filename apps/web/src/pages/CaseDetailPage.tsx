@@ -414,6 +414,7 @@ export function CaseDetailPage() {
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
 
   const [isOperatorSidebarOpen, setIsOperatorSidebarOpen] = useState(false);
+  const [isClientCloseSidebarOpen, setIsClientCloseSidebarOpen] = useState(false);
   const [operatorStep, setOperatorStep] = useState<OperatorActionStep>(1);
   const [activeDetailTab, setActiveDetailTab] = useState<CaseDetailTab>("info");
   const [closingCase, setClosingCase] = useState(false);
@@ -438,6 +439,7 @@ export function CaseDetailPage() {
   const canManageOperatorActions = Boolean(
     caseItem && canAccessAdmin && !isRejectedOrClosedCase && (isMasterUser || (isOperatorUser && isAssignedOperator))
   );
+  const canAccessClientCloseSidebar = Boolean(caseItem && !canAccessAdmin && !isRejectedOrClosedCase);
   const hasAdvancedCaseFlow = Boolean(
     caseItem && caseItem.reviewDecision === "accepted" && caseItem.workflowStep === "in_progress" && !isRejectedOrClosedCase
   );
@@ -590,7 +592,7 @@ export function CaseDetailPage() {
   }, [procedureProgress]);
 
   useEffect(() => {
-    if (!isOperatorSidebarOpen) {
+    if (!isOperatorSidebarOpen && !isClientCloseSidebarOpen) {
       return;
     }
 
@@ -598,6 +600,7 @@ export function CaseDetailPage() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsOperatorSidebarOpen(false);
+        setIsClientCloseSidebarOpen(false);
       }
     };
 
@@ -608,13 +611,19 @@ export function CaseDetailPage() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOperatorSidebarOpen]);
+  }, [isClientCloseSidebarOpen, isOperatorSidebarOpen]);
 
   useEffect(() => {
     if (!canUseLegacyOperatorFlow && isOperatorSidebarOpen) {
       setIsOperatorSidebarOpen(false);
     }
   }, [canUseLegacyOperatorFlow, isOperatorSidebarOpen]);
+
+  useEffect(() => {
+    if (!canAccessClientCloseSidebar && isClientCloseSidebarOpen) {
+      setIsClientCloseSidebarOpen(false);
+    }
+  }, [canAccessClientCloseSidebar, isClientCloseSidebarOpen]);
 
   function openOperatorSidebar() {
     if (closeRequest.status === "pending") {
@@ -627,6 +636,14 @@ export function CaseDetailPage() {
 
   function closeOperatorSidebar() {
     setIsOperatorSidebarOpen(false);
+  }
+
+  function openClientCloseSidebar() {
+    setIsClientCloseSidebarOpen(true);
+  }
+
+  function closeClientCloseSidebar() {
+    setIsClientCloseSidebarOpen(false);
   }
 
   function goToNextOperatorStep() {
@@ -1499,30 +1516,6 @@ export function CaseDetailPage() {
             {closeFeedback && <p className="success-text">{closeFeedback}</p>}
             {closeRequestError && <p className="error-text">{closeRequestError}</p>}
             {closeRequestFeedback && <p className="success-text">{closeRequestFeedback}</p>}
-            {canClientRequestClose && (
-              <div className="resumo-box client-close-request-box">
-                <strong>Solicitar encerramento do caso</strong>
-                <p>Você pode solicitar o encerramento a qualquer momento. O operador fará a confirmação final.</p>
-                <label>
-                  Justificativa obrigatória
-                  <textarea
-                    rows={3}
-                    value={closeRequestReasonInput}
-                    onChange={(event) => setCloseRequestReasonInput(event.target.value)}
-                    placeholder="Explique por que deseja encerrar o caso."
-                    disabled={requestingClose}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="danger-button danger-button--small"
-                  onClick={() => void handleRequestCloseCase()}
-                  disabled={requestingClose}
-                >
-                  {requestingClose ? "Enviando..." : "Solicitar encerramento"}
-                </button>
-              </div>
-            )}
             {!canAccessAdmin && closeRequest.status === "pending" && (
               <p className="helper-text">Solicitação de encerramento pendente de confirmação do operador.</p>
             )}
@@ -2141,6 +2134,83 @@ export function CaseDetailPage() {
             </p>
           )}
         </section>
+      )}
+
+      {canAccessClientCloseSidebar && (
+        <>
+          {!isClientCloseSidebarOpen && (
+            <div className="operator-action-dock">
+              <button type="button" className="operator-progress-trigger" onClick={openClientCloseSidebar}>
+                {canClientRequestClose ? "Solicitar encerramento" : "Encerramento solicitado"}
+              </button>
+            </div>
+          )}
+
+          {isClientCloseSidebarOpen && (
+            <button
+              type="button"
+              className="operator-sidebar-overlay"
+              aria-label="Fechar painel de solicitação de encerramento"
+              onClick={closeClientCloseSidebar}
+            />
+          )}
+
+          <aside className={isClientCloseSidebarOpen ? "operator-sidebar operator-sidebar--open" : "operator-sidebar"}>
+            <div className="operator-sidebar-header">
+              <div>
+                <p className="hero-kicker">Encerramento do caso</p>
+                <h2>Solicitação do cliente</h2>
+                <p className="operator-sidebar-progress">
+                  {canClientRequestClose ? "Envio de solicitação" : "Solicitação pendente"}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="operator-sidebar-close"
+                aria-label="Fechar painel de encerramento"
+                onClick={closeClientCloseSidebar}
+              >
+                {"\u00D7"}
+              </button>
+            </div>
+
+            <div className="operator-sidebar-content">
+              <div className="operator-action-box">
+                <h3>Solicitar encerramento</h3>
+                {canClientRequestClose ? (
+                  <>
+                    <p>Envie uma justificativa. O operador responsável analisará e retornará a decisão.</p>
+                    <label>
+                      Justificativa obrigatória
+                      <textarea
+                        rows={5}
+                        value={closeRequestReasonInput}
+                        onChange={(event) => setCloseRequestReasonInput(event.target.value)}
+                        placeholder="Explique por que deseja encerrar o caso."
+                        disabled={requestingClose}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="danger-button danger-button--small"
+                      onClick={() => void handleRequestCloseCase()}
+                      disabled={requestingClose}
+                    >
+                      {requestingClose ? "Enviando..." : "Solicitar encerramento"}
+                    </button>
+                  </>
+                ) : (
+                  <div className="info-box">
+                    <strong>Solicitação já enviada</strong>
+                    <span>Seu pedido está em análise pela equipe responsável.</span>
+                    {closeRequest.reason && <span>Justificativa enviada: {closeRequest.reason}</span>}
+                    {closeRequest.requestedAt && <span>Enviado em: {formatDate(closeRequest.requestedAt)}</span>}
+                  </div>
+                )}
+              </div>
+            </div>
+          </aside>
+        </>
       )}
 
       {canUseLegacyOperatorFlow && (

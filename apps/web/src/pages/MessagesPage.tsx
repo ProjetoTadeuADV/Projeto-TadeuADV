@@ -405,10 +405,9 @@ export function MessagesPage() {
                       </h2>
                       <span>{selectedCase.caseCode}</span>
                     </div>
-                    {loadingThread && <small>Atualizando...</small>}
                   </header>
 
-                  <div className="messages-thread-list">
+                  <div className="messages-thread-list" aria-busy={loadingThread}>
                     {orderedMessages.length === 0 ? (
                       <p className="helper-text">Ainda nao ha mensagens neste caso.</p>
                     ) : (

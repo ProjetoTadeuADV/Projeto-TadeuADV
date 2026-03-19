@@ -393,6 +393,124 @@ function mapChargeStatusToServiceFeeStatus(
   return "awaiting_payment";
 }
 
+function formatCurrencyBr(value: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  }).format(value);
+}
+
+function pickMessageVariant(variants: string[]): string {
+  if (variants.length === 0) {
+    return "";
+  }
+
+  const index = Math.floor(Math.random() * variants.length);
+  return variants[index] ?? variants[0];
+}
+
+function buildReviewClientMessage(input: {
+  decision: "accepted" | "rejected";
+  reason: string;
+  requestClientData: boolean;
+  clientDataRequest: string | null;
+}): string {
+  if (input.decision === "rejected") {
+    return pickMessageVariant([
+      `Após a análise preliminar, seu caso foi rejeitado. Motivo: ${input.reason}`,
+      `Concluímos a triagem inicial e, neste momento, não será possível prosseguir com o caso. Motivo: ${input.reason}`,
+      `A avaliação inicial foi finalizada com rejeição do caso. Justificativa: ${input.reason}`
+    ]);
+  }
+
+  if (input.requestClientData) {
+    const requestedData = input.clientDataRequest ?? "dados complementares";
+    return pickMessageVariant([
+      `Seu caso foi aceito na triagem. Para continuidade, envie os seguintes dados: ${requestedData}.`,
+      `A análise inicial foi favorável. Para avançarmos, precisamos que você encaminhe: ${requestedData}.`,
+      `Caso aceito. Antes da próxima etapa, solicitamos o envio de: ${requestedData}.`
+    ]);
+  }
+
+  return pickMessageVariant([
+    "Seu caso foi aceito na análise inicial e seguirá para a etapa de cobrança da taxa de serviço.",
+    "A triagem foi concluída com aceite. O próximo passo é a cobrança inicial para andamento do caso.",
+    "Análise inicial aprovada. O caso avançará após a emissão e pagamento da taxa inicial."
+  ]);
+}
+
+function buildInitialFeeMessage(input: {
+  amount: number;
+  dueDate: string;
+  paymentLink: string | null;
+}): string {
+  const base = pickMessageVariant([
+    `Boleto da taxa inicial emitido no valor de ${formatCurrencyBr(input.amount)}, com vencimento em ${input.dueDate}.`,
+    `A cobrança inicial foi registrada em ${formatCurrencyBr(input.amount)}, com vencimento para ${input.dueDate}.`,
+    `Taxa inicial de serviço gerada no valor de ${formatCurrencyBr(input.amount)}, com vencimento em ${input.dueDate}.`
+  ]);
+
+  if (input.paymentLink) {
+    return `${base} Link direto para pagamento: ${input.paymentLink}. O documento também foi anexado nesta conversa.`;
+  }
+
+  return `${base} O documento foi anexado nesta conversa.`;
+}
+
+function buildAdditionalChargeMessage(input: {
+  amount: number;
+  dueDate: string;
+  paymentLink: string | null;
+}): string {
+  const base = pickMessageVariant([
+    `Nova cobrança emitida no valor de ${formatCurrencyBr(input.amount)}, com vencimento em ${input.dueDate}.`,
+    `Foi gerada uma nova cobrança de ${formatCurrencyBr(input.amount)}, com vencimento para ${input.dueDate}.`,
+    `Registramos uma cobrança adicional no valor de ${formatCurrencyBr(input.amount)}, com vencimento em ${input.dueDate}.`
+  ]);
+
+  if (input.paymentLink) {
+    return `${base} Link direto para pagamento: ${input.paymentLink}.`;
+  }
+
+  return base;
+}
+
+function buildCloseRequestDecisionMessage(input: {
+  decision: "approved" | "denied";
+  reason: string | null;
+}): string {
+  if (input.decision === "approved") {
+    return pickMessageVariant([
+      "Sua solicitação de encerramento foi aprovada. O caso foi encerrado.",
+      "A equipe responsável aprovou seu pedido de encerramento. O caso já consta como encerrado.",
+      "Seu pedido de encerramento foi deferido e o caso foi finalizado."
+    ]);
+  }
+
+  const reason = input.reason ?? "Motivo não informado.";
+  return pickMessageVariant([
+    `Sua solicitação de encerramento foi recusada. Motivo: ${reason}`,
+    `A equipe analisou o pedido de encerramento e decidiu pelo não encerramento. Motivo: ${reason}`,
+    `No momento, o pedido de encerramento não foi aprovado. Justificativa: ${reason}`
+  ]);
+}
+
+function buildCaseClosedByTeamMessage(): string {
+  return pickMessageVariant([
+    "Seu caso foi encerrado pela equipe responsável. Você pode consultar o histórico e os anexos no painel.",
+    "A equipe concluiu o encerramento do seu caso. O histórico completo permanece disponível no painel.",
+    "Informamos que o caso foi encerrado pela equipe responsável. Todos os registros seguem acessíveis no painel."
+  ]);
+}
+
+function buildConciliationAgreementClosedMessage(): string {
+  return pickMessageVariant([
+    "Seu caso foi encerrado por acordo na etapa de conciliação.",
+    "A conciliação foi concluída com acordo entre as partes e o caso foi encerrado.",
+    "Registramos acordo em conciliação. O caso está oficialmente encerrado."
+  ]);
+}
+
 function summarizeAdminUser(user: UserRecord, userCases: CaseRecord[]) {
   const activeCases = userCases.filter((item) => item.status !== "encerrado").length;
   const bootstrapMaster = isMasterEmail(user.email);
@@ -1583,11 +1701,12 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(404, "Caso não encontrado.");
         }
 
-        const clientMessage = isRejected
-          ? `Seu caso foi rejeitado na análise inicial. Motivo: ${payload.reason}`
-          : payload.requestClientData
-            ? `Seu caso foi aceito. Para continuar, envie os dados solicitados: ${payload.clientDataRequest ?? ""}`
-            : "Seu caso foi aceito e seguirá para andamento após o pagamento da taxa inicial de serviço.";
+        const clientMessage = buildReviewClientMessage({
+          decision: payload.decision,
+          reason: payload.reason,
+          requestClientData: payload.requestClientData,
+          clientDataRequest: payload.clientDataRequest
+        });
 
         const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
           senderUserId: req.user.uid,
@@ -1759,9 +1878,10 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(404, "Caso não encontrado.");
         }
 
-        const decisionMessage = isApproved
-          ? "Sua solicitação de encerramento foi aprovada. O caso foi encerrado."
-          : `Sua solicitação de encerramento foi recusada. Motivo: ${payload.reason}`;
+        const decisionMessage = buildCloseRequestDecisionMessage({
+          decision: payload.decision,
+          reason: payload.reason
+        });
         const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
           senderUserId: req.user.uid,
           senderName: actorName,
@@ -1849,8 +1969,7 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(404, "Caso não encontrado.");
         }
 
-        const closeMessage =
-          "Seu caso foi encerrado pela equipe responsável. Você pode consultar o histórico e os anexos no painel.";
+        const closeMessage = buildCaseClosedByTeamMessage();
         const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
           senderUserId: req.user.uid,
           senderName: actorName,
@@ -1987,10 +2106,7 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(404, "Caso não encontrado.");
         }
 
-        const movementDescription = `Taxa inicial de serviço configurada em ${new Intl.NumberFormat("pt-BR", {
-          style: "currency",
-          currency: "BRL"
-        }).format(payload.amount)} com vencimento em ${payload.dueDate}.`;
+        const movementDescription = `Taxa inicial de serviço configurada em ${formatCurrencyBr(payload.amount)} com vencimento em ${payload.dueDate}.`;
 
         const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
           stage: "andamento",
@@ -2005,15 +2121,11 @@ export function createV1Router(deps: AppDependencies) {
         }
 
         const paymentLink = boleto.bankSlipUrl ?? boleto.invoiceUrl;
-        const paymentMessage = paymentLink
-          ? `Boleto da taxa inicial emitido. Valor ${new Intl.NumberFormat("pt-BR", {
-              style: "currency",
-              currency: "BRL"
-            }).format(payload.amount)} com vencimento em ${payload.dueDate}. Link direto: ${paymentLink}. O documento tambem foi anexado nesta conversa.`
-          : `Boleto da taxa inicial emitido. Valor ${new Intl.NumberFormat("pt-BR", {
-              style: "currency",
-              currency: "BRL"
-            }).format(payload.amount)} com vencimento em ${payload.dueDate}. O documento foi anexado nesta conversa.`;
+        const paymentMessage = buildInitialFeeMessage({
+          amount: payload.amount,
+          dueDate: payload.dueDate,
+          paymentLink
+        });
         const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
           senderUserId: req.user.uid,
           senderName: actorName,
@@ -2151,10 +2263,7 @@ export function createV1Router(deps: AppDependencies) {
           throw new HttpError(404, "Caso não encontrado.");
         }
 
-        const movementDescription = `Nova cobrança criada em ${new Intl.NumberFormat("pt-BR", {
-          style: "currency",
-          currency: "BRL"
-        }).format(payload.amount)} com vencimento em ${payload.dueDate}.`;
+        const movementDescription = `Nova cobrança criada em ${formatCurrencyBr(payload.amount)} com vencimento em ${payload.dueDate}.`;
 
         const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
           stage: "andamento",
@@ -2169,15 +2278,11 @@ export function createV1Router(deps: AppDependencies) {
         }
 
         const paymentLink = boleto.bankSlipUrl ?? boleto.invoiceUrl;
-        const paymentMessage = paymentLink
-          ? `Nova cobrança emitida. Valor ${new Intl.NumberFormat("pt-BR", {
-              style: "currency",
-              currency: "BRL"
-            }).format(payload.amount)} com vencimento em ${payload.dueDate}. Link direto: ${paymentLink}.`
-          : `Nova cobrança emitida. Valor ${new Intl.NumberFormat("pt-BR", {
-              style: "currency",
-              currency: "BRL"
-            }).format(payload.amount)} com vencimento em ${payload.dueDate}.`;
+        const paymentMessage = buildAdditionalChargeMessage({
+          amount: payload.amount,
+          dueDate: payload.dueDate,
+          paymentLink
+        });
         const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
           senderUserId: req.user.uid,
           senderName: actorName,
@@ -2412,18 +2517,19 @@ export function createV1Router(deps: AppDependencies) {
           statusAfter: "encerrado"
         });
 
+        const agreementMessage = buildConciliationAgreementClosedMessage();
         const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
           senderUserId: req.user.uid,
           senderName: actorName,
           senderRole: resolveSenderRole(req.user),
-          message: "Seu caso foi encerrado por acordo na etapa de conciliação."
+          message: agreementMessage
         });
 
         const latestCase = withMessage ?? appendedMovement?.caseItem ?? closed;
 
         void notifyCaseOwnerByCustomUpdate(deps, latestCase, {
           stageLabel: "Conciliação",
-          description: "Caso encerrado por acordo em conciliação.",
+          description: agreementMessage,
           statusAfter: latestCase.status
         }).catch((error) => {
           const details = error instanceof Error ? error.message : "unknown";
