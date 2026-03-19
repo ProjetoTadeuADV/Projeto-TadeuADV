@@ -2,6 +2,7 @@
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { PetitionAttachment } from "../types/case.js";
 import { HttpError } from "../utils/httpError.js";
 
@@ -9,7 +10,10 @@ export const MAX_ATTACHMENTS_PER_CASE = 8;
 export const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
 
 const LEGACY_TEMP_ATTACHMENT_ROOT = path.join(tmpdir(), "jec-api-case-attachments");
-const DEFAULT_ATTACHMENT_ROOT = path.resolve(process.cwd(), ".data", "case-attachments");
+const MODULE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../");
+const DEFAULT_ATTACHMENT_ROOT = path.resolve(MODULE_ROOT, ".data", "case-attachments");
+const LEGACY_CWD_ATTACHMENT_ROOT = path.resolve(process.cwd(), ".data", "case-attachments");
+const LEGACY_WORKSPACE_ATTACHMENT_ROOT = path.resolve(process.cwd(), "apps", "api", ".data", "case-attachments");
 const STORAGE_ROOT =
   typeof process.env.CASE_ATTACHMENTS_DIR === "string" && process.env.CASE_ATTACHMENTS_DIR.trim().length > 0
     ? path.resolve(process.env.CASE_ATTACHMENTS_DIR.trim())
@@ -71,9 +75,14 @@ export function resolveCaseAttachmentPath(caseId: string, storedName: string): s
 }
 
 export function resolveCaseAttachmentReadPaths(caseId: string, storedName: string): string[] {
-  const configuredPath = resolveCaseAttachmentPath(caseId, storedName);
-  const legacyPath = path.join(LEGACY_TEMP_ATTACHMENT_ROOT, caseId, storedName);
-  const candidates = [configuredPath, legacyPath];
+  const roots = [
+    STORAGE_ROOT,
+    DEFAULT_ATTACHMENT_ROOT,
+    LEGACY_CWD_ATTACHMENT_ROOT,
+    LEGACY_WORKSPACE_ATTACHMENT_ROOT,
+    LEGACY_TEMP_ATTACHMENT_ROOT
+  ];
+  const candidates = roots.map((root) => path.join(root, caseId, storedName));
 
   return candidates.filter((item, index) => candidates.indexOf(item) === index);
 }

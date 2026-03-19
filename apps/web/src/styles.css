@@ -3099,19 +3099,14 @@ button.sidebar-item {
   right: 0.62rem;
   top: 50%;
   transform: translateY(-50%);
-  min-width: 1.38rem;
-  height: 1.38rem;
+  width: 0.78rem;
+  height: 0.78rem;
   border-radius: 999px;
   background: #0b5fd0;
-  color: #ffffff;
-  font-size: 0.7rem;
-  font-weight: 700;
-  line-height: 1;
-  padding: 0 0.34rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid #ffffff;
+  border: 1px solid #ffffff;
   box-shadow: 0 4px 12px rgba(11, 64, 140, 0.24);
 }
 

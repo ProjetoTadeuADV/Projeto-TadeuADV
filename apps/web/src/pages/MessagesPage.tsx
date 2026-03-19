@@ -561,9 +561,7 @@ export function MessagesPage() {
                       <span>{item.caseCode}</span>
                       <small>{item.resumo}</small>
                       {(unreadCountByCase[item.id] ?? 0) > 0 && (
-                        <span className="messages-case-unread-badge" aria-label="Mensagens não lidas">
-                          {unreadCountByCase[item.id] > 99 ? "99+" : unreadCountByCase[item.id]}
-                        </span>
+                        <span className="messages-case-unread-badge" aria-label="Há mensagens não lidas" />
                       )}
                     </button>
                   </li>
