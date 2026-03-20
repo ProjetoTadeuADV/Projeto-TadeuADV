@@ -149,7 +149,7 @@ const DEFAULT_CLOSE_REQUEST: CaseRecord["closeRequest"] = {
 };
 
 function resolveOperatorStepFromWorkflow(workflowStep: CaseRecord["workflowStep"]): OperatorActionStep {
-  if (workflowStep === "awaiting_initial_fee") {
+  if (workflowStep === "awaiting_client_data" || workflowStep === "awaiting_initial_fee") {
     return 2;
   }
 

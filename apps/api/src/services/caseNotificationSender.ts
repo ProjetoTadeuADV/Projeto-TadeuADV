@@ -16,6 +16,17 @@ interface ParsedSender {
   name?: string;
 }
 
+type CaseNotificationStageKey =
+  | "triagem"
+  | "cobranca"
+  | "conciliacao"
+  | "peticao"
+  | "protocolo"
+  | "andamento"
+  | "mensagens"
+  | "encerramento"
+  | "geral";
+
 function parseSender(raw: string): ParsedSender {
   const normalized = raw.trim();
   const withNameMatch = normalized.match(/^(.+?)\s*<([^>]+)>$/);
@@ -23,14 +34,14 @@ function parseSender(raw: string): ParsedSender {
     const name = withNameMatch[1].trim().replace(/^"|"$/g, "");
     const email = withNameMatch[2].trim();
     if (!email) {
-      throw new Error("EMAIL_FROM precisa conter um endereco de e-mail valido.");
+      throw new Error("EMAIL_FROM precisa conter um endereço de e-mail válido.");
     }
 
     return name ? { email, name } : { email };
   }
 
   if (!normalized.includes("@")) {
-    throw new Error("EMAIL_FROM precisa conter um endereco de e-mail valido.");
+    throw new Error("EMAIL_FROM precisa conter um endereço de e-mail válido.");
   }
 
   return { email: normalized };
@@ -66,6 +77,134 @@ function resolveSupportEmail(): string {
   return "suporte@doutoreu.com.br";
 }
 
+function normalizeStageKey(input: CaseNotificationEmailInput): CaseNotificationStageKey {
+  const stage = input.stageLabel
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+  const status = input.statusLabel
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+
+  if (stage.includes("encerr")) {
+    return "encerramento";
+  }
+
+  if (status.includes("encerr")) {
+    return "encerramento";
+  }
+
+  if (stage.includes("mensag")) {
+    return "mensagens";
+  }
+
+  if (stage.includes("cobranc") || stage.includes("pagament")) {
+    return "cobranca";
+  }
+
+  if (stage.includes("concili")) {
+    return "conciliacao";
+  }
+
+  if (stage.includes("peti")) {
+    return "peticao";
+  }
+
+  if (stage.includes("protocolo")) {
+    return "protocolo";
+  }
+
+  if (stage.includes("analise") || stage.includes("triagem")) {
+    return "triagem";
+  }
+
+  if (stage.includes("andamento")) {
+    return "andamento";
+  }
+
+  return "geral";
+}
+
+function seededIndex(seed: string, length: number): number {
+  if (length <= 1) {
+    return 0;
+  }
+
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  }
+
+  return hash % length;
+}
+
+function pickMessageVariant(variants: string[], seed: string): string {
+  if (variants.length === 0) {
+    return "";
+  }
+
+  return variants[seededIndex(seed, variants.length)] ?? variants[0];
+}
+
+function buildStageIntro(input: CaseNotificationEmailInput): string {
+  const recipient = input.toName?.trim() || "cliente";
+  const stageKey = normalizeStageKey(input);
+  const seed = `${input.caseId}:${input.stageLabel}:${input.description}:${input.statusLabel}`;
+
+  const variantsByStage: Record<CaseNotificationStageKey, string[]> = {
+    triagem: [
+      `Olá, ${recipient}. Como está? Recebemos o seu caso e ele está em análise inicial pela equipe responsável.`,
+      `Olá, ${recipient}. Esperamos que esteja bem. Seu caso entrou na etapa de triagem e já está sendo avaliado.`,
+      `Olá, ${recipient}. Registramos o andamento do seu caso na análise preliminar para definição dos próximos passos.`
+    ],
+    cobranca: [
+      `Olá, ${recipient}. Como está? Avançamos no seu caso e a etapa atual envolve a cobrança inicial para continuidade.`,
+      `Olá, ${recipient}. Seu caso teve nova atualização financeira e a equipe registrou os detalhes da cobrança.`,
+      `Olá, ${recipient}. Informamos que seu caso passou para a fase de pagamento, com dados de cobrança atualizados.`
+    ],
+    conciliacao: [
+      `Olá, ${recipient}. Como está? O seu caso recebeu uma nova movimentação na etapa de conciliação.`,
+      `Olá, ${recipient}. Houve avanços na tentativa de conciliação e os registros já estão atualizados no sistema.`,
+      `Olá, ${recipient}. A equipe registrou uma nova ação de conciliação para o seu caso.`
+    ],
+    peticao: [
+      `Olá, ${recipient}. Como está? Seu caso foi atualizado na etapa de preparação da petição.`,
+      `Olá, ${recipient}. Registramos nova movimentação jurídica relacionada à petição do seu caso.`,
+      `Olá, ${recipient}. Sua demanda teve avanços na fase de petição e os detalhes já foram consolidados.`
+    ],
+    protocolo: [
+      `Olá, ${recipient}. Como está? Seu caso recebeu atualização na etapa de protocolo.`,
+      `Olá, ${recipient}. Registramos uma nova movimentação referente ao protocolo do seu caso.`,
+      `Olá, ${recipient}. A fase de protocolo do seu caso teve um novo registro da equipe.`
+    ],
+    andamento: [
+      `Olá, ${recipient}. Como está? Houve nova movimentação no andamento geral do seu caso.`,
+      `Olá, ${recipient}. Seu caso foi atualizado com informações de progresso e próxima ação operacional.`,
+      `Olá, ${recipient}. A equipe registrou uma atualização no andamento do seu caso.`
+    ],
+    mensagens: [
+      `Olá, ${recipient}. Como está? Você recebeu uma nova comunicação no chat do seu caso.`,
+      `Olá, ${recipient}. Houve uma nova mensagem no seu caso e ela já está disponível para consulta.`,
+      `Olá, ${recipient}. Registramos nova interação na conversa do seu caso, com detalhes atualizados.`
+    ],
+    encerramento: [
+      `Olá, ${recipient}. Como está? Seu caso recebeu atualização de encerramento.`,
+      `Olá, ${recipient}. Informamos que houve movimentação final e o encerramento do caso foi registrado.`,
+      `Olá, ${recipient}. A equipe concluiu uma etapa final do seu caso e registrou o encerramento correspondente.`
+    ],
+    geral: [
+      `Olá, ${recipient}. Como está? Seu caso recebeu uma nova atualização e já está em acompanhamento pela equipe.`,
+      `Olá, ${recipient}. Registramos uma nova movimentação no seu caso e os detalhes seguem abaixo.`,
+      `Olá, ${recipient}. Houve progresso no seu caso e atualizamos as informações para sua consulta.`
+    ]
+  };
+
+  return pickMessageVariant(variantsByStage[stageKey], seed);
+}
+
 export function isCaseNotificationEmailEnabled(): boolean {
   if (env.NODE_ENV === "test" || process.env.VITEST) {
     return false;
@@ -75,14 +214,14 @@ export function isCaseNotificationEmailEnabled(): boolean {
 }
 
 function buildCaseNotificationText(input: CaseNotificationEmailInput): string {
-  const recipient = input.toName?.trim() || "cliente";
+  const introMessage = buildStageIntro(input);
   const messagesUrl = input.messagesUrl?.trim() || "";
   const supportEmail = resolveSupportEmail();
 
   return [
-    `Ola, ${recipient}.`,
+    introMessage,
     "",
-    "Registramos uma nova movimentacao no seu caso:",
+    "Resumo da operação:",
     `- Caso: ${input.caseId}`,
     `- Vara: ${input.varaNome}`,
     `- Etapa: ${input.stageLabel}`,
@@ -100,7 +239,7 @@ function buildCaseNotificationText(input: CaseNotificationEmailInput): string {
 
 function buildCaseNotificationHtml(input: CaseNotificationEmailInput): string {
   const brandName = resolveBrandName();
-  const recipient = escapeHtml(input.toName?.trim() || "cliente");
+  const introMessage = escapeHtml(buildStageIntro(input));
   const messagesUrl = input.messagesUrl?.trim() || "";
   const supportEmail = escapeHtml(resolveSupportEmail());
   const messagesCta = messagesUrl
@@ -117,11 +256,11 @@ function buildCaseNotificationHtml(input: CaseNotificationEmailInput): string {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Atualizacao do caso</title>
+    <title>Atualização do caso</title>
   </head>
   <body style="margin:0;padding:0;background:#eef2f7;font-family:Arial,sans-serif;color:#1f2b36;">
     <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;">
-      Nova movimentacao no caso ${escapeHtml(input.caseId)}.
+      Nova movimentação no caso ${escapeHtml(input.caseId)}.
     </span>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#eef2f7;padding:24px 10px;">
       <tr>
@@ -135,11 +274,10 @@ function buildCaseNotificationHtml(input: CaseNotificationEmailInput): string {
             <tr>
               <td style="padding:24px;">
                 <h1 style="margin:0 0 12px;font-size:28px;line-height:1.2;color:#003366;font-family:Montserrat,Arial,sans-serif;">
-                  Atualizacao do seu caso
+                  Atualização do seu caso
                 </h1>
-                <p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#2f4358;">Ola, ${recipient}.</p>
                 <p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#2f4358;">
-                  O caso <strong>${escapeHtml(input.caseId)}</strong> recebeu uma nova movimentacao.
+                  ${introMessage}
                 </p>
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f7faff;border:1px solid #d7e2f0;border-radius:12px;">
                   <tr>
@@ -151,7 +289,7 @@ function buildCaseNotificationHtml(input: CaseNotificationEmailInput): string {
                   </tr>
                 </table>
                 <p style="margin:14px 0 0;font-size:14px;line-height:1.6;color:#2f4358;">
-                  <strong>Resumo:</strong> ${escapeHtml(input.description)}
+                  <strong>Resumo da operação:</strong> ${escapeHtml(input.description)}
                 </p>
                 ${messagesCta}
                 ${
@@ -172,7 +310,7 @@ function buildCaseNotificationHtml(input: CaseNotificationEmailInput): string {
                   Suporte: <a href="mailto:${supportEmail}" style="color:#0b4d90;text-decoration:none;">${supportEmail}</a>
                 </p>
                 <p style="margin:10px 0 0;font-size:11px;line-height:1.6;color:#7a8b9b;">
-                  Voce recebeu esta mensagem porque possui um caso ativo na plataforma.
+                  Você recebeu esta mensagem porque possui um caso ativo na plataforma.
                 </p>
               </td>
             </tr>
@@ -209,7 +347,7 @@ export async function sendCaseNotificationEmail(input: CaseNotificationEmailInpu
     ],
     from,
     ...(replyTo ? { reply_to: replyTo } : {}),
-    subject: `[${brandName}] Atualizacao do caso ${input.caseId}`,
+    subject: `[${brandName}] Atualização do caso ${input.caseId}`,
     content: [
       {
         type: "text/plain",

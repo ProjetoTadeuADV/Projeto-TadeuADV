@@ -708,7 +708,9 @@ export function ProfileSettingsPage() {
         const message =
           nextError instanceof ApiError
             ? nextError.message
-            : "Não foi possível carregar as configurações da conta.";
+            : nextError instanceof Error && nextError.message.trim().length > 0
+              ? nextError.message
+              : "Não foi possível carregar as configurações da conta.";
         setError(message);
       } finally {
         if (mounted) {
