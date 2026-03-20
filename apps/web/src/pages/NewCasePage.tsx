@@ -58,6 +58,12 @@ interface PretensionDraft {
   details: string;
 }
 
+interface CaseCreationChecklistItem {
+  id: string;
+  label: string;
+  done: boolean;
+}
+
 const PRETENSION_OPTIONS: PretensionOptionConfig[] = [
   {
     type: "ressarcimento_valor",
@@ -347,6 +353,130 @@ export function NewCasePage() {
 
     return Number(total.toFixed(2));
   }, [pretensionDrafts]);
+  const normalizedZipCode = useMemo(() => normalizeZipCode(claimantZipCode), [claimantZipCode]);
+  const normalizedDefendantDocument = useMemo(() => normalizeDigits(defendantDocument), [defendantDocument]);
+  const normalizedTimelineEvents = useMemo(
+    () =>
+      timelineEvents
+        .map((item) => ({
+          eventDate: item.eventDate.trim(),
+          description: item.description.trim()
+        }))
+        .filter((item) => item.eventDate.length > 0 || item.description.length > 0),
+    [timelineEvents]
+  );
+  const selectedPretensions = useMemo(
+    () => pretensionDrafts.filter((item) => item.selected),
+    [pretensionDrafts]
+  );
+  const hasValidPretensionSelection = useMemo(() => {
+    return selectedPretensions.every((item) => {
+      const option = getPretensionOption(item.type);
+      const details = item.details.trim();
+      const amount = parseClaimValue(item.amountInput);
+
+      if (option.requiresAmount && amount === null) {
+        return false;
+      }
+
+      if (item.amountInput.trim() && amount === null) {
+        return false;
+      }
+
+      if (option.requiresDetails && details.length < 3) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [selectedPretensions]);
+  const freeRequests = useMemo(
+    () => parseRequests(requestsText).filter((item) => item.length >= 10),
+    [requestsText]
+  );
+  const isDefendantDocumentValid = useMemo(() => {
+    if (defendantType === "pessoa_fisica") {
+      return normalizedDefendantDocument.length === 11;
+    }
+
+    if (defendantType === "pessoa_juridica") {
+      return normalizedDefendantDocument.length === 14;
+    }
+
+    return normalizedDefendantDocument.length === 11 || normalizedDefendantDocument.length === 14;
+  }, [defendantType, normalizedDefendantDocument]);
+  const caseChecklist = useMemo<CaseCreationChecklistItem[]>(
+    () => [
+      {
+        id: "processo",
+        label: "Dados do processo (CPF válido, resumo mín. 20 e assunto mín. 5)",
+        done: Boolean(varaId) && isValidCpf(cpf) && resumo.trim().length >= 20 && claimSubject.trim().length >= 5
+      },
+      {
+        id: "endereco",
+        label: "Endereço completo do requerente (CEP + logradouro + número + cidade/UF)",
+        done:
+          normalizedZipCode.length === 8 &&
+          claimantStreet.trim().length >= 3 &&
+          claimantNumber.trim().length > 0 &&
+          claimantNeighborhood.trim().length >= 2 &&
+          claimantCity.trim().length >= 2 &&
+          claimantState.trim().length === 2
+      },
+      {
+        id: "reclamada",
+        label: "Parte reclamada identificada (nome mín. 2 e CPF/CNPJ válido)",
+        done: defendantName.trim().length >= 2 && isDefendantDocumentValid
+      },
+      {
+        id: "cronologia",
+        label: "Cronologia preenchida (ao menos 1 evento com data válida e descrição mín. 5)",
+        done:
+          normalizedTimelineEvents.length > 0 &&
+          normalizedTimelineEvents.every((item) => isIsoDate(item.eventDate) && item.description.length >= 5)
+      },
+      {
+        id: "pedidos",
+        label: "Pedidos e pretensões (com valores/detalhes quando aplicável)",
+        done: hasValidPretensionSelection && (selectedPretensions.length > 0 || freeRequests.length > 0)
+      },
+      {
+        id: "texto",
+        label: "Fatos e fundamentos (mín. 30 caracteres cada)",
+        done: facts.trim().length >= 30 && legalGrounds.trim().length >= 30
+      },
+      {
+        id: "anexos",
+        label: "Anexos inseridos no clipe (opcional)",
+        done: true
+      }
+    ],
+    [
+      claimSubject,
+      claimantCity,
+      claimantNeighborhood,
+      claimantNumber,
+      claimantState,
+      claimantStreet,
+      cpf,
+      defendantName,
+      facts,
+      freeRequests.length,
+      hasValidPretensionSelection,
+      isDefendantDocumentValid,
+      legalGrounds,
+      normalizedTimelineEvents,
+      normalizedZipCode.length,
+      resumo,
+      selectedPretensions.length,
+      varaId
+    ]
+  );
+  const completedChecklistSteps = useMemo(
+    () => caseChecklist.filter((item) => item.done).length,
+    [caseChecklist]
+  );
+  const isChecklistComplete = completedChecklistSteps === caseChecklist.length;
 
   useEffect(() => {
     setDefendantDocument((current) => formatDefendantDocumentInput(current, defendantType));
@@ -750,6 +880,11 @@ export function NewCasePage() {
       return;
     }
 
+    if (!isChecklistComplete) {
+      setError("Conclua 100% do checklist antes de salvar e gerar a petição.");
+      return;
+    }
+
     if (!isValidCpf(cpf)) {
       setError("Informe um CPF válido.");
       return;
@@ -1047,7 +1182,7 @@ export function NewCasePage() {
             )}
 
             <label>
-              Resumo executivo da reclamação
+              Resumo executivo da reclamação (mín. 20 caracteres)
               <textarea
                 value={resumo}
                 onChange={(event) => setResumo(limitPetitionText(event.target.value))}
@@ -1062,7 +1197,7 @@ export function NewCasePage() {
             </label>
 
             <label>
-              Assunto principal da reclamação
+              Assunto principal da reclamação (mín. 5 caracteres)
               <input
                 type="text"
                 value={claimSubject}
@@ -1216,7 +1351,7 @@ export function NewCasePage() {
             </label>
 
             <label>
-              Nome da reclamada
+              Nome da reclamada (mín. 2 caracteres)
               <input
                 type="text"
                 value={defendantName}
@@ -1271,7 +1406,7 @@ export function NewCasePage() {
                       />
                     </label>
                     <label>
-                      Descrição do evento
+                      Descrição do evento (mín. 5 caracteres)
                       <textarea
                         value={eventItem.description}
                         onChange={(event) =>
@@ -1371,7 +1506,7 @@ export function NewCasePage() {
             </div>
 
             <label>
-              Fatos
+              Fatos (mín. 30 caracteres)
               <textarea
                 value={facts}
                 onChange={(event) => setFacts(limitPetitionText(event.target.value))}
@@ -1386,7 +1521,7 @@ export function NewCasePage() {
             </label>
 
             <label>
-              Fundamentos da reclamação
+              Fundamentos da reclamação (mín. 30 caracteres)
               <textarea
                 value={legalGrounds}
                 onChange={(event) => setLegalGrounds(limitPetitionText(event.target.value))}
@@ -1447,7 +1582,7 @@ export function NewCasePage() {
                 onChange={handleAttachmentInputChange}
               />
               <p className="field-help">
-                Opcional: até {MAX_ATTACHMENTS_PER_CASE} arquivos, limite de{" "}
+                Até {MAX_ATTACHMENTS_PER_CASE} arquivos, limite de{" "}
                 {formatAttachmentSize(MAX_ATTACHMENT_SIZE_BYTES)} por arquivo.
               </p>
               {attachmentFeedback && <p className="success-text">{attachmentFeedback}</p>}
@@ -1493,24 +1628,30 @@ export function NewCasePage() {
 
             {error && <p className="error-text">{error}</p>}
 
-            <button type="submit" disabled={submitting || !hasVaras || !varaId}>
+            <button type="submit" disabled={submitting || !hasVaras || !varaId || !isChecklistComplete}>
               {submitting ? "Salvando..." : "Salvar e gerar petição"}
             </button>
+            {!isChecklistComplete && (
+              <p className="field-help">
+                Checklist incompleto: {completedChecklistSteps}/{caseChecklist.length} etapas concluídas.
+              </p>
+            )}
           </form>
 
           <aside className="workspace-panel tips-card tips-card--compact">
             <h2>Checklist</h2>
+            <p className="tips-checklist-progress">
+              {completedChecklistSteps}/{caseChecklist.length} concluído
+            </p>
             <ul className="tips-checklist" aria-label="Checklist da petição">
-              <li>Confirme vara e CPF do requerente.</li>
-              <li>Preencha CEP e complete número/complemento.</li>
-              <li>Identifique a parte reclamada com nome e CPF/CNPJ obrigatórios.</li>
-              <li>Preencha a cronologia com data e descrição objetiva dos eventos.</li>
-              <li>Selecione as pretensões e detalhe valores quando houver.</li>
-              <li>Descreva fatos e fundamentos com clareza jurídica.</li>
-              <li>Use o clipe para anexar documentos da reclamação.</li>
+              {caseChecklist.map((item) => (
+                <li key={item.id} className={item.done ? "is-done" : "is-pending"}>
+                  {item.label}
+                </li>
+              ))}
             </ul>
             <div className="tips-footer">
-              <p>No detalhe do caso, use o botão de exportação para baixar a petição em PDF.</p>
+              <p>Somente com checklist completo o sistema libera o envio da petição inicial.</p>
             </div>
           </aside>
         </div>

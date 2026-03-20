@@ -126,6 +126,7 @@ const caseChargeUpdateSchema = z
 
 const caseConciliationProgressSchema = z.object({
   contactedDefendant: z.boolean(),
+  details: z.string().trim().max(5000).nullable().optional(),
   defendantContact: z.string().trim().max(300).nullable().optional(),
   defendantEmail: z.string().trim().email("E-mail do reclamado inválido.").nullable().optional(),
   emailDraft: z.string().trim().max(5000).nullable().optional(),
@@ -422,6 +423,7 @@ export function validateCaseChargeUpdatePayload(payload: unknown): {
 
 export function validateCaseConciliationProgressPayload(payload: unknown): {
   contactedDefendant: boolean;
+  details: string | null;
   defendantContact: string | null;
   defendantEmail: string | null;
   emailDraft: string | null;
@@ -432,8 +434,14 @@ export function validateCaseConciliationProgressPayload(payload: unknown): {
     throw new HttpError(400, "Payload inválido para andamento de conciliação.", parsed.error.flatten());
   }
 
+  const details = normalizeOptionalText(parsed.data.details);
+  if (details && details.length < 10) {
+    throw new HttpError(400, "Detalhes da conciliação devem ter pelo menos 10 caracteres.");
+  }
+
   return {
     contactedDefendant: parsed.data.contactedDefendant,
+    details,
     defendantContact: normalizeOptionalText(parsed.data.defendantContact),
     defendantEmail: normalizeOptionalText(parsed.data.defendantEmail),
     emailDraft: normalizeOptionalText(parsed.data.emailDraft),

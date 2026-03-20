@@ -274,6 +274,7 @@ function getDefaultProcedureChecklist(): NonNullable<CaseProcedureProgress["peti
 function getDefaultProcedureProgress(): CaseProcedureProgress {
   return {
     conciliation: {
+      details: null,
       contactedDefendant: false,
       defendantContact: null,
       defendantEmail: null,
@@ -282,7 +283,8 @@ function getDefaultProcedureProgress(): CaseProcedureProgress {
       emailSentAt: null,
       lastUpdatedAt: null,
       agreementReached: false,
-      agreementClosedAt: null
+      agreementClosedAt: null,
+      attempts: []
     },
     petition: {
       petitionPulled: false,
@@ -309,6 +311,7 @@ function resolveProcedureProgress(progress: CaseRecord["procedureProgress"] | un
 
   return {
     conciliation: {
+      details: progress.conciliation?.details ?? null,
       contactedDefendant: progress.conciliation?.contactedDefendant === true,
       defendantContact: progress.conciliation?.defendantContact ?? null,
       defendantEmail: progress.conciliation?.defendantEmail ?? null,
@@ -317,7 +320,10 @@ function resolveProcedureProgress(progress: CaseRecord["procedureProgress"] | un
       emailSentAt: progress.conciliation?.emailSentAt ?? null,
       lastUpdatedAt: progress.conciliation?.lastUpdatedAt ?? null,
       agreementReached: progress.conciliation?.agreementReached === true,
-      agreementClosedAt: progress.conciliation?.agreementClosedAt ?? null
+      agreementClosedAt: progress.conciliation?.agreementClosedAt ?? null,
+      attempts: Array.isArray(progress.conciliation?.attempts)
+        ? [...progress.conciliation.attempts].sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+        : []
     },
     petition: {
       petitionPulled: progress.petition?.petitionPulled === true,
@@ -1364,6 +1370,12 @@ export function CaseDetailPage() {
       return;
     }
 
+    const trimmedDetails = conciliationForm.details?.trim() ?? "";
+    if (trimmedDetails.length > 0 && trimmedDetails.length < 10) {
+      setConciliationError("Detalhes da conciliação devem ter pelo menos 10 caracteres.");
+      return;
+    }
+
     if (conciliationForm.defendantEmail && !/\S+@\S+\.\S+/.test(conciliationForm.defendantEmail)) {
       setConciliationError("Informe um e-mail válido do reclamado.");
       return;
@@ -1388,6 +1400,7 @@ export function CaseDetailPage() {
         token,
         body: {
           contactedDefendant: conciliationForm.contactedDefendant,
+          details: trimmedDetails.length > 0 ? trimmedDetails : null,
           defendantContact: conciliationForm.defendantContact?.trim() ? conciliationForm.defendantContact : null,
           defendantEmail: conciliationForm.defendantEmail?.trim() ? conciliationForm.defendantEmail : null,
           emailDraft: conciliationForm.emailDraft?.trim() ? conciliationForm.emailDraft : null,
@@ -1998,6 +2011,18 @@ export function CaseDetailPage() {
                     <div className="progress-panel-content">
                       {canManageOperatorActions ? (
                         <>
+                          <label>
+                            Detalhes da tentativa (mín. 10 caracteres)
+                            <textarea
+                              rows={3}
+                              value={conciliationForm.details ?? ""}
+                              onChange={(event) =>
+                                setConciliationForm((current) => ({ ...current, details: event.target.value }))
+                              }
+                              placeholder="Descreva o que foi tentado nesta rodada de conciliação."
+                              disabled={savingConciliation || closingByAgreement}
+                            />
+                          </label>
                           <label className="checkbox-inline">
                             <input
                               type="checkbox"
@@ -2045,7 +2070,7 @@ export function CaseDetailPage() {
                             Marcar envio de e-mail ao reclamado pela plataforma
                           </label>
                           <label>
-                            Redação do e-mail
+                            Redação do e-mail (mín. 10 caracteres)
                             <textarea
                               rows={4}
                               value={conciliationForm.emailDraft ?? ""}
@@ -2081,6 +2106,10 @@ export function CaseDetailPage() {
                       ) : (
                         <div className="detail-list">
                           <div className="detail-item">
+                            <span>Detalhes da última tentativa</span>
+                            <strong>{procedureProgress.conciliation.details ?? "Não informado"}</strong>
+                          </div>
+                          <div className="detail-item">
                             <span>Contato do reclamado</span>
                             <strong>{procedureProgress.conciliation.contactedDefendant ? "Realizado" : "Pendente"}</strong>
                           </div>
@@ -2103,6 +2132,33 @@ export function CaseDetailPage() {
                             </div>
                           )}
                         </div>
+                      )}
+                      {(procedureProgress.conciliation.attempts ?? []).length > 0 && (
+                        <>
+                          <strong>Tentativas de conciliação registradas</strong>
+                          <ul className="movement-list">
+                            {(procedureProgress.conciliation.attempts ?? []).map((attempt, index) => (
+                              <li key={attempt.id}>
+                                <div className="movement-list-head">
+                                  <span className={attempt.emailSent ? "info-pill info-pill--success" : "info-pill"}>
+                                    {attempt.emailSent ? "E-mail enviado" : "Registro interno"}
+                                  </span>
+                                  <strong>Tentativa {index + 1} • {formatDate(attempt.createdAt)}</strong>
+                                </div>
+                                <p>
+                                  <strong>Responsável:</strong> {attempt.createdByName ?? "Operador"}
+                                </p>
+                                <p>
+                                  <strong>Detalhes:</strong> {attempt.details ?? "Sem detalhes informados."}
+                                </p>
+                                <p>
+                                  <strong>Contato:</strong> {attempt.defendantContact ?? "Não informado"} |{" "}
+                                  <strong>E-mail:</strong> {attempt.defendantEmail ?? "Não informado"}
+                                </p>
+                              </li>
+                            ))}
+                          </ul>
+                        </>
                       )}
                       {conciliationFeedback && <p className="success-text">{conciliationFeedback}</p>}
                       {conciliationError && <p className="error-text">{conciliationError}</p>}

@@ -311,9 +311,46 @@ function defaultProcedureChecklist(): NonNullable<CaseRecord["procedureProgress"
   ];
 }
 
+function normalizeConciliationAttempts(
+  value: NonNullable<CaseRecord["procedureProgress"]>["conciliation"]["attempts"] | null | undefined
+): NonNullable<NonNullable<CaseRecord["procedureProgress"]>["conciliation"]["attempts"]> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      return {
+        id: item.id ?? randomUUID(),
+        details: item.details ?? null,
+        contactedDefendant: item.contactedDefendant === true,
+        defendantContact: item.defendantContact ?? null,
+        defendantEmail: item.defendantEmail ?? null,
+        emailDraft: item.emailDraft ?? null,
+        emailSent: item.emailSent === true,
+        emailSentAt: item.emailSentAt ?? null,
+        createdAt: item.createdAt ?? new Date(0).toISOString(),
+        createdByUserId: item.createdByUserId ?? null,
+        createdByName: item.createdByName ?? null
+      };
+    })
+    .filter(
+      (
+        item
+      ): item is NonNullable<NonNullable<CaseRecord["procedureProgress"]>["conciliation"]["attempts"]>[number] =>
+        item !== null
+    )
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
 function defaultProcedureProgress(): NonNullable<CaseRecord["procedureProgress"]> {
   return {
     conciliation: {
+      details: null,
       contactedDefendant: false,
       defendantContact: null,
       defendantEmail: null,
@@ -322,7 +359,8 @@ function defaultProcedureProgress(): NonNullable<CaseRecord["procedureProgress"]
       emailSentAt: null,
       lastUpdatedAt: null,
       agreementReached: false,
-      agreementClosedAt: null
+      agreementClosedAt: null,
+      attempts: []
     },
     petition: {
       petitionPulled: false,
@@ -346,6 +384,7 @@ function resolveProcedureProgress(caseItem: CaseRecord): NonNullable<CaseRecord[
 
   return {
     conciliation: {
+      details: base.conciliation?.details ?? null,
       contactedDefendant: base.conciliation?.contactedDefendant === true,
       defendantContact: base.conciliation?.defendantContact ?? null,
       defendantEmail: base.conciliation?.defendantEmail ?? null,
@@ -354,7 +393,8 @@ function resolveProcedureProgress(caseItem: CaseRecord): NonNullable<CaseRecord[
       emailSentAt: base.conciliation?.emailSentAt ?? null,
       lastUpdatedAt: base.conciliation?.lastUpdatedAt ?? null,
       agreementReached: base.conciliation?.agreementReached === true,
-      agreementClosedAt: base.conciliation?.agreementClosedAt ?? null
+      agreementClosedAt: base.conciliation?.agreementClosedAt ?? null,
+      attempts: normalizeConciliationAttempts(base.conciliation?.attempts)
     },
     petition: {
       petitionPulled: base.petition?.petitionPulled === true,
@@ -1376,9 +1416,27 @@ export function createV1Router(deps: AppDependencies) {
         petitionInitial: validated.petitionInitial
       });
 
+      let resultCase = created;
+      if (req.user.isOperator === true && !req.user.isMaster) {
+        const autoAssigned = await deps.repository.assignCaseOperator(
+          created.id,
+          {
+            id: req.user.uid,
+            name: req.user.name ?? req.user.email ?? null
+          },
+          {
+            id: req.user.uid,
+            name: req.user.name ?? req.user.email ?? null
+          }
+        );
+        if (autoAssigned) {
+          resultCase = autoAssigned;
+        }
+      }
+
       res.status(201).json({
         status: "ok",
-        result: created
+        result: resultCase
       });
     } catch (error) {
       next(error);
@@ -2478,15 +2536,30 @@ export function createV1Router(deps: AppDependencies) {
         }
 
         const nextProgress = resolveProcedureProgress(currentCase);
+        const nextAttempt = {
+          id: randomUUID(),
+          details: payload.details,
+          contactedDefendant: payload.contactedDefendant,
+          defendantContact: payload.defendantContact,
+          defendantEmail: payload.defendantEmail,
+          emailDraft: payload.emailDraft,
+          emailSent: emailSentNow,
+          emailSentAt: emailSentNow ? now : null,
+          createdAt: now,
+          createdByUserId: req.user.uid,
+          createdByName: actorName
+        };
         nextProgress.conciliation = {
           ...nextProgress.conciliation,
+          details: payload.details,
           contactedDefendant: payload.contactedDefendant,
           defendantContact: payload.defendantContact,
           defendantEmail: payload.defendantEmail,
           emailDraft: payload.emailDraft,
           emailSent: nextProgress.conciliation.emailSent || emailSentNow,
           emailSentAt: emailSentNow ? now : nextProgress.conciliation.emailSentAt,
-          lastUpdatedAt: now
+          lastUpdatedAt: now,
+          attempts: [nextAttempt, ...(nextProgress.conciliation.attempts ?? [])].slice(0, 30)
         };
 
         const withProgress = await deps.repository.updateCaseWorkflow(req.params.id, {

@@ -141,7 +141,22 @@ export interface CaseProcedureChecklistItem {
   updatedAt: string | null;
 }
 
+export interface CaseConciliationAttempt {
+  id: string;
+  details: string | null;
+  contactedDefendant: boolean;
+  defendantContact: string | null;
+  defendantEmail: string | null;
+  emailDraft: string | null;
+  emailSent: boolean;
+  emailSentAt: string | null;
+  createdAt: string;
+  createdByUserId: string | null;
+  createdByName: string | null;
+}
+
 export interface CaseConciliationProgress {
+  details?: string | null;
   contactedDefendant: boolean;
   defendantContact: string | null;
   defendantEmail: string | null;
@@ -151,6 +166,7 @@ export interface CaseConciliationProgress {
   lastUpdatedAt: string | null;
   agreementReached: boolean;
   agreementClosedAt: string | null;
+  attempts?: CaseConciliationAttempt[];
 }
 
 export interface CasePetitionProgress {

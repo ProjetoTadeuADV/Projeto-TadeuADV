@@ -2622,6 +2622,13 @@ button.sidebar-item {
   gap: 0.46rem;
 }
 
+.tips-checklist-progress {
+  margin: 0;
+  color: #48627e;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
 .tips-checklist li {
   display: grid;
   grid-template-columns: 1rem minmax(0, 1fr);
@@ -2638,11 +2645,21 @@ button.sidebar-item {
 }
 
 .tips-checklist li::before {
-  content: "\2713";
+  content: "\25CB";
   color: var(--primary-color);
   font-weight: 800;
   line-height: 1.2;
   margin-top: 1px;
+}
+
+.tips-checklist li.is-done {
+  background: #edf7f1;
+  border-color: #c4e3d0;
+  color: #274f39;
+}
+
+.tips-checklist li.is-done::before {
+  content: "\2713";
 }
 
 .tips-list strong {

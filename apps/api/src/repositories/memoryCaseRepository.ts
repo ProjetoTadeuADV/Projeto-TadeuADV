@@ -223,12 +223,44 @@ function normalizeProcedureChecklist(
   return normalized;
 }
 
+function normalizeConciliationAttempts(
+  value: CaseProcedureProgress["conciliation"]["attempts"] | null | undefined
+): NonNullable<CaseProcedureProgress["conciliation"]["attempts"]> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      return {
+        id: item.id ?? randomUUID(),
+        details: normalizeOptionalText(item.details),
+        contactedDefendant: item.contactedDefendant === true,
+        defendantContact: normalizeOptionalText(item.defendantContact),
+        defendantEmail: normalizeOptionalText(item.defendantEmail),
+        emailDraft: normalizeOptionalText(item.emailDraft),
+        emailSent: item.emailSent === true,
+        emailSentAt: item.emailSentAt ?? null,
+        createdAt: item.createdAt ?? new Date(0).toISOString(),
+        createdByUserId: item.createdByUserId ?? null,
+        createdByName: normalizeOptionalText(item.createdByName)
+      };
+    })
+    .filter((item): item is NonNullable<CaseProcedureProgress["conciliation"]["attempts"]>[number] => item !== null)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
 function normalizeCaseProcedureProgress(
   value: CaseRecord["procedureProgress"] | null | undefined
 ): CaseProcedureProgress {
   if (!value) {
     return {
       conciliation: {
+        details: null,
         contactedDefendant: false,
         defendantContact: null,
         defendantEmail: null,
@@ -237,7 +269,8 @@ function normalizeCaseProcedureProgress(
         emailSentAt: null,
         lastUpdatedAt: null,
         agreementReached: false,
-        agreementClosedAt: null
+        agreementClosedAt: null,
+        attempts: []
       },
       petition: {
         petitionPulled: false,
@@ -254,6 +287,7 @@ function normalizeCaseProcedureProgress(
 
   return {
     conciliation: {
+      details: normalizeOptionalText(value.conciliation?.details),
       contactedDefendant: value.conciliation?.contactedDefendant === true,
       defendantContact: normalizeOptionalText(value.conciliation?.defendantContact),
       defendantEmail: normalizeOptionalText(value.conciliation?.defendantEmail),
@@ -262,7 +296,8 @@ function normalizeCaseProcedureProgress(
       emailSentAt: value.conciliation?.emailSentAt ?? null,
       lastUpdatedAt: value.conciliation?.lastUpdatedAt ?? null,
       agreementReached: value.conciliation?.agreementReached === true,
-      agreementClosedAt: value.conciliation?.agreementClosedAt ?? null
+      agreementClosedAt: value.conciliation?.agreementClosedAt ?? null,
+      attempts: normalizeConciliationAttempts(value.conciliation?.attempts)
     },
     petition: {
       petitionPulled: value.petition?.petitionPulled === true,
