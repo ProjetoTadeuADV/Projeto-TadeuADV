@@ -1,6 +1,5 @@
 ﻿import { Router, type Request, type Response } from "express";
 import multer from "multer";
-import { promises as fs } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { env, hasFirebaseCredentials, isMasterEmail } from "../config/env.js";
 import { getFirebaseAuth } from "../config/firebaseAdmin.js";
@@ -52,7 +51,7 @@ import {
   MAX_ATTACHMENTS_PER_CASE,
   MAX_ATTACHMENT_SIZE_BYTES,
   formatAttachmentSize,
-  resolveCaseAttachmentReadPaths,
+  readCaseAttachmentBuffer as readStoredCaseAttachmentBuffer,
   storeCaseAttachments,
   storeGeneratedCaseAttachment
 } from "../services/caseAttachmentStorage.js";
@@ -694,22 +693,7 @@ function resolveLatestDate(values: Array<string | null | undefined>, fallback: s
 }
 
 async function readCaseAttachmentBuffer(caseId: string, storedName: string): Promise<Buffer> {
-  const candidatePaths = resolveCaseAttachmentReadPaths(caseId, storedName);
-
-  for (const filePath of candidatePaths) {
-    try {
-      return await fs.readFile(filePath);
-    } catch (error) {
-      const nodeError = error as NodeJS.ErrnoException;
-      if (nodeError?.code === "ENOENT") {
-        continue;
-      }
-
-      throw error;
-    }
-  }
-
-  throw new HttpError(404, "Arquivo de anexo não encontrado no armazenamento.");
+  return readStoredCaseAttachmentBuffer(caseId, storedName);
 }
 
 function sanitizeAbsoluteUrl(value: string | null | undefined): string | null {
