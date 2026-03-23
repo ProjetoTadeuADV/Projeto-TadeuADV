@@ -1,6 +1,7 @@
 ﻿import { z } from "zod";
 import { getVaraById } from "../constants/varas.js";
 import { normalizeCpf, isValidCpf } from "../utils/cpf.js";
+import { isValidCnpj } from "../utils/cnpj.js";
 import { HttpError } from "../utils/httpError.js";
 import type {
   CaseMovementStage,
@@ -10,6 +11,13 @@ import type {
 } from "../types/case.js";
 
 const PETITION_TEXT_MAX_LENGTH = 500;
+const PRIOR_ATTEMPT_CHANNELS = [
+  "reclame_aqui",
+  "procon",
+  "consumidor_gov_br",
+  "direto_reclamado",
+  "outro"
+] as const;
 
 const petitionTimelineEventSchema = z.object({
   eventDate: z
@@ -40,22 +48,77 @@ const petitionPretensionSchema = z
     path: ["details"]
   });
 
-const petitionInitialSchema = z.object({
-  claimantAddress: z.string().trim().min(8).max(300),
-  claimSubject: z.string().trim().min(5).max(160),
-  defendantType: z.enum(["pessoa_fisica", "pessoa_juridica", "nao_informado"]),
-  defendantName: z.string().trim().min(2).max(200),
-  defendantDocument: z.string().trim().min(11).max(32),
-  defendantAddress: z.string().trim().min(8).max(300).nullable().optional(),
-  facts: z.string().trim().min(30).max(PETITION_TEXT_MAX_LENGTH),
-  legalGrounds: z.string().trim().min(30).max(PETITION_TEXT_MAX_LENGTH),
-  requests: z.array(z.string().trim().min(10).max(PETITION_TEXT_MAX_LENGTH)).min(1).max(8),
-  timelineEvents: z.array(petitionTimelineEventSchema).min(1).max(40),
-  pretensions: z.array(petitionPretensionSchema).max(10).optional().default([]),
-  evidence: z.string().trim().max(PETITION_TEXT_MAX_LENGTH).nullable().optional(),
-  claimValue: z.number().min(0).max(100_000_000).nullable().optional(),
-  hearingInterest: z.boolean().optional().default(true)
-});
+const petitionInitialSchema = z
+  .object({
+    claimantAddress: z.string().trim().min(8).max(300),
+    claimSubject: z.string().trim().min(5).max(160),
+    defendantType: z.enum(["pessoa_fisica", "pessoa_juridica", "nao_informado"]),
+    defendantName: z.string().trim().min(2).max(200),
+    defendantDocument: z.string().trim().min(11).max(32),
+    defendantAddress: z.string().trim().min(8).max(300).nullable().optional(),
+    facts: z.string().trim().min(30).max(PETITION_TEXT_MAX_LENGTH),
+    legalGrounds: z.string().trim().min(30).max(PETITION_TEXT_MAX_LENGTH),
+    requests: z.array(z.string().trim().min(10).max(PETITION_TEXT_MAX_LENGTH)).min(1).max(8),
+    timelineEvents: z.array(petitionTimelineEventSchema).min(1).max(40),
+    pretensions: z.array(petitionPretensionSchema).max(10).optional().default([]),
+    evidence: z.string().trim().max(PETITION_TEXT_MAX_LENGTH).nullable().optional(),
+    claimValue: z.number().min(0).max(100_000_000).nullable().optional(),
+    hearingInterest: z.boolean().optional().default(true),
+    priorAttemptMade: z.boolean().optional().default(false),
+    priorAttemptChannel: z.enum(PRIOR_ATTEMPT_CHANNELS).nullable().optional(),
+    priorAttemptChannelOther: z.string().trim().max(120).nullable().optional(),
+    priorAttemptProtocol: z.string().trim().max(120).nullable().optional(),
+    priorAttemptHadProposal: z.boolean().nullable().optional(),
+    priorAttemptProposalDetails: z.string().trim().max(PETITION_TEXT_MAX_LENGTH).nullable().optional()
+  })
+  .superRefine((value, ctx) => {
+    if (!value.priorAttemptMade) {
+      return;
+    }
+
+    if (!value.priorAttemptChannel) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Informe o canal da tratativa prévia.",
+        path: ["priorAttemptChannel"]
+      });
+    }
+
+    const priorAttemptChannelOther = value.priorAttemptChannelOther?.trim() ?? "";
+    if (value.priorAttemptChannel === "outro" && priorAttemptChannelOther.length < 3) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Informe qual foi o canal selecionado em \"Outro\" (mínimo 3 caracteres).",
+        path: ["priorAttemptChannelOther"]
+      });
+    }
+
+    const priorAttemptProtocol = value.priorAttemptProtocol?.trim() ?? "";
+    if (priorAttemptProtocol.length < 3) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Informe o protocolo da tratativa (mínimo 3 caracteres).",
+        path: ["priorAttemptProtocol"]
+      });
+    }
+
+    if (typeof value.priorAttemptHadProposal !== "boolean") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Informe se houve proposta de acordo.",
+        path: ["priorAttemptHadProposal"]
+      });
+    }
+
+    const priorAttemptProposalDetails = value.priorAttemptProposalDetails?.trim() ?? "";
+    if (value.priorAttemptHadProposal && priorAttemptProposalDetails.length < 5) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Descreva a proposta de acordo (mínimo 5 caracteres).",
+        path: ["priorAttemptProposalDetails"]
+      });
+    }
+  });
 
 const createCaseSchema = z.object({
   varaId: z.string().trim().min(1),
@@ -200,16 +263,26 @@ function validateDefendantDocument(
     throw new HttpError(400, "CPF ou CNPJ da parte reclamada é obrigatório.");
   }
 
-  if (defendantType === "pessoa_fisica" && value.length !== 11) {
-    throw new HttpError(400, "Documento da reclamada inválido para pessoa física.");
+  if (defendantType === "pessoa_fisica" && (value.length !== 11 || !isValidCpf(value))) {
+    throw new HttpError(400, "CPF da parte reclamada inválido.");
   }
 
-  if (defendantType === "pessoa_juridica" && value.length !== 14) {
-    throw new HttpError(400, "Documento da reclamada inválido para pessoa jurídica.");
+  if (defendantType === "pessoa_juridica" && (value.length !== 14 || !isValidCnpj(value))) {
+    throw new HttpError(400, "CNPJ da parte reclamada inválido.");
   }
 
-  if (defendantType === "nao_informado" && value.length !== 11 && value.length !== 14) {
-    throw new HttpError(400, "Documento da reclamada deve conter CPF (11) ou CNPJ (14).");
+  if (defendantType === "nao_informado") {
+    if (value.length === 11 && !isValidCpf(value)) {
+      throw new HttpError(400, "CPF da parte reclamada inválido.");
+    }
+
+    if (value.length === 14 && !isValidCnpj(value)) {
+      throw new HttpError(400, "CNPJ da parte reclamada inválido.");
+    }
+
+    if (value.length !== 11 && value.length !== 14) {
+      throw new HttpError(400, "Documento da reclamada deve conter CPF (11) ou CNPJ (14).");
+    }
   }
 
   return value;
@@ -279,7 +352,22 @@ function normalizePetitionInitialData(value: z.infer<typeof petitionInitialSchem
     evidence: normalizeOptionalText(value.evidence),
     attachments: [],
     claimValue: calculateClaimValue(pretensions, value.claimValue),
-    hearingInterest: value.hearingInterest ?? true
+    hearingInterest: value.hearingInterest ?? true,
+    priorAttemptMade: value.priorAttemptMade ?? false,
+    priorAttemptChannel: value.priorAttemptMade ? value.priorAttemptChannel ?? null : null,
+    priorAttemptChannelOther:
+      value.priorAttemptMade && value.priorAttemptChannel === "outro"
+        ? normalizeOptionalText(value.priorAttemptChannelOther)
+        : null,
+    priorAttemptProtocol: value.priorAttemptMade ? normalizeOptionalText(value.priorAttemptProtocol) : null,
+    priorAttemptHadProposal:
+      value.priorAttemptMade && typeof value.priorAttemptHadProposal === "boolean"
+        ? value.priorAttemptHadProposal
+        : null,
+    priorAttemptProposalDetails:
+      value.priorAttemptMade && value.priorAttemptHadProposal
+        ? normalizeOptionalText(value.priorAttemptProposalDetails)
+        : null
   };
 }
 

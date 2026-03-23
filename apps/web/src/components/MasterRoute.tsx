@@ -17,10 +17,6 @@ export function MasterRoute() {
     return <Navigate to="/master/login" replace state={{ from: location }} />;
   }
 
-  if (!user.emailVerified) {
-    return <Navigate to="/verify-email" replace state={{ from: location, email: user.email }} />;
-  }
-
   if (!canAccessAdmin) {
     return <Navigate to="/dashboard" replace />;
   }

@@ -395,7 +395,7 @@ export function MasterDashboardPage() {
                     disabled={!canManageSelectedUser || hasPendingAccessSave}
                   >
                     <option value="user">Padrão</option>
-                    <option value="operator">Operador (somente leitura)</option>
+                    <option value="operator">Operador</option>
                     <option value="master">Master</option>
                   </select>
                 </label>
@@ -410,7 +410,7 @@ export function MasterDashboardPage() {
                     {hasPendingAccessSave ? "Salvando..." : "Salvar tipo de acesso"}
                   </button>
                 ) : (
-                  <p className="helper-text">Perfil operador possui acesso somente leitura neste painel.</p>
+                  <p className="helper-text">Perfil operador com acesso ao painel operacional.</p>
                 )}
 
                 {isMasterUser && (

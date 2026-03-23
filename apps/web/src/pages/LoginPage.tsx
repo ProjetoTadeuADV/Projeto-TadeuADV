@@ -31,7 +31,7 @@ function normalizeIdentifierForSubmit(value: string): string {
 }
 
 export function LoginPage() {
-  const { login, user, refreshUser, refreshAccessProfile, canAccessAdmin } = useAuth();
+  const { login, user, refreshAccessProfile, canAccessAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [identifier, setIdentifier] = useState("");
@@ -42,12 +42,8 @@ export function LoginPage() {
   const [resettingPassword, setResettingPassword] = useState(false);
   const [resetFeedback, setResetFeedback] = useState<string | null>(null);
 
-  if (user?.emailVerified) {
+  if (user) {
     return <Navigate to={canAccessAdmin ? "/master/dashboard" : "/dashboard"} replace />;
-  }
-
-  if (user && !user.emailVerified) {
-    return <Navigate to="/verify-email" replace state={{ email: user.email }} />;
   }
 
   async function resolveIdentifierToEmail(normalizedIdentifier: string): Promise<string> {
@@ -81,19 +77,6 @@ export function LoginPage() {
       const resolvedEmail = await resolveIdentifierToEmail(normalizedIdentifier);
 
       await login(resolvedEmail, password);
-      const nextUser = await refreshUser();
-
-      if (nextUser && !nextUser.emailVerified) {
-        navigate("/verify-email", {
-          replace: true,
-          state: {
-            email: nextUser.email,
-            from: location.state?.from
-          }
-        });
-        return;
-      }
-
       const access = await refreshAccessProfile();
       const target = location.state?.from?.pathname ?? (access?.canAccessAdmin ? "/master/dashboard" : "/dashboard");
       navigate(target, { replace: true });
@@ -216,7 +199,7 @@ export function LoginPage() {
                     onClick={() => void handleForgotPassword()}
                     disabled={resettingPassword || submitting}
                   >
-                    {resettingPassword ? "Enviando recuperação..." : "Esqueci minha senha"}
+                    {resettingPassword ? "Enviando recuperação..." : "Esqueci a minha senha"}
                   </button>
                 </div>
 

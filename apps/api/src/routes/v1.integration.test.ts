@@ -1,4 +1,4 @@
-import request from "supertest";
+﻿import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
 import type { AppDependencies } from "../dependencies.js";
@@ -286,7 +286,7 @@ describe("v1 routes", () => {
           claimSubject: "Cobranca indevida",
           defendantType: "pessoa_juridica",
           defendantName: "Empresa XYZ",
-          defendantDocument: "12.345.678/0001-90",
+          defendantDocument: "12.345.678/0001-95",
           defendantAddress: "Av. B, 200, Sao Paulo/SP",
           facts:
             "Foi identificada cobranca em duplicidade na fatura do cartao, sem estorno apos duas solicitacoes.",
@@ -337,7 +337,7 @@ describe("v1 routes", () => {
     expect(createdPetitionInitial).toMatchObject({
       claimSubject: "Cobranca indevida",
       defendantName: "Empresa XYZ",
-      defendantDocument: "12345678000190",
+      defendantDocument: "12345678000195",
       claimValue: 6300,
       requests: [
         "Restituicao em dobro dos valores cobrados indevidamente.",
@@ -388,7 +388,7 @@ describe("v1 routes", () => {
           claimSubject: "Entrega nao realizada",
           defendantType: "pessoa_juridica",
           defendantName: "Empresa XYZ",
-          defendantDocument: "12.345.678/0001-90",
+          defendantDocument: "12.345.678/0001-95",
           defendantAddress: "Av. B, 200, Sao Paulo/SP",
           facts:
             "O consumidor nao recebeu o produto dentro do prazo e nao obteve solucao no atendimento administrativo.",
@@ -552,7 +552,7 @@ describe("v1 routes", () => {
           claimSubject: "Entrega nao realizada",
           defendantType: "pessoa_juridica",
           defendantName: "Empresa XYZ",
-          defendantDocument: "12.345.678/0001-90",
+          defendantDocument: "12.345.678/0001-95",
           defendantAddress: "Av. B, 200, Sao Paulo/SP",
           facts:
             "O consumidor nao recebeu o produto dentro do prazo e nao obteve solucao no atendimento administrativo.",
@@ -1405,7 +1405,7 @@ describe("v1 routes", () => {
       .set("Authorization", "Bearer token-operator")
       .send({
         decision: "rejected",
-        reason: "Documentos insuficientes e ausência de elementos mínimos para continuidade."
+        reason: "Documentos insuficientes e ausÃªncia de elementos mÃ­nimos para continuidade."
       });
 
     expect(rejectResponse.status).toBe(200);
@@ -1557,7 +1557,7 @@ describe("v1 routes", () => {
       (item: { id: string }) => item.id === publicMovementId
     ) as { attachments: Array<{ id: string }> } | undefined;
     if (!movementFromUserView || movementFromUserView.attachments.length === 0) {
-      throw new Error("Movimentação pública sem anexos para download.");
+      throw new Error("MovimentaÃ§Ã£o pÃºblica sem anexos para download.");
     }
     const movementAttachmentId = movementFromUserView.attachments[0].id;
 

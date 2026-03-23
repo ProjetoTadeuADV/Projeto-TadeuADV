@@ -93,6 +93,30 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
+function validateStrongPassword(value: string): string | null {
+  if (value.length < 8) {
+    return "A senha precisa ter no mínimo 8 caracteres.";
+  }
+
+  if (!/[A-Z]/.test(value)) {
+    return "A senha precisa ter ao menos 1 letra maiúscula.";
+  }
+
+  if (!/[a-z]/.test(value)) {
+    return "A senha precisa ter ao menos 1 letra minúscula.";
+  }
+
+  if (!/\d/.test(value)) {
+    return "A senha precisa ter ao menos 1 número.";
+  }
+
+  if (!/[^A-Za-z0-9]/.test(value)) {
+    return "A senha precisa ter ao menos 1 caractere especial (ex.: !@#$%).";
+  }
+
+  return null;
+}
+
 function extractErrorCode(error: unknown): string | null {
   if (!error || typeof error !== "object") {
     return null;
@@ -117,44 +141,46 @@ export function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [availabilityFeedback, setAvailabilityFeedback] = useState<string | null>(null);
 
   const activeStepIndex = STEPS.findIndex((item) => item.id === step);
   const formattedEmail = useMemo(() => email.trim().toLowerCase(), [email]);
 
-  if (user?.emailVerified) {
+  if (user) {
     return <Navigate to="/dashboard" replace />;
-  }
-
-  if (user && !user.emailVerified) {
-    return <Navigate to="/verify-email" replace state={{ email: user.email }} />;
   }
 
   function validateStepDados(): boolean {
     const normalizedName = name.trim();
     const normalizedCpf = cpf.trim();
 
-    if (!normalizedName || !normalizedCpf || !phone.trim() || !formattedEmail || !birthDate.trim()) {
+    if (!normalizedName || !normalizedCpf || !phone.trim() || !formattedEmail ) {
       setError("Preencha todos os campos obrigatórios para avançar.");
+      setAvailabilityFeedback(null);
       return false;
     }
 
     if (!isValidCpf(normalizedCpf)) {
       setError("Informe um CPF válido.");
+      setAvailabilityFeedback(null);
       return false;
     }
 
     if (!isValidPhone(phone)) {
       setError("Informe um número de telefone válido.");
+      setAvailabilityFeedback(null);
       return false;
     }
 
     if (!isValidEmail(formattedEmail)) {
       setError("Informe um e-mail válido.");
+      setAvailabilityFeedback(null);
       return false;
     }
 
-    if (!isValidBirthDate(birthDate)) {
+    if (birthDate.trim() && !isValidBirthDate(birthDate)) {
       setError("Informe uma data de nascimento válida no formato DD/MM/AAAA.");
+      setAvailabilityFeedback(null);
       return false;
     }
 
@@ -175,13 +201,17 @@ export function RegisterPage() {
 
       if (availability.cpfInUse) {
         setError('Já existe uma conta com este CPF. Faça login ou use "Esqueci minha senha".');
+        setAvailabilityFeedback(null);
         return false;
       }
 
       if (availability.emailInUse) {
         setError('Já existe uma conta com este e-mail. Faça login ou use "Esqueci minha senha".');
+        setAvailabilityFeedback(null);
         return false;
       }
+
+      setAvailabilityFeedback("E-mail localizado e pronto para uso neste cadastro.");
 
       return true;
     } catch (nextError) {
@@ -194,10 +224,12 @@ export function RegisterPage() {
         });
 
         setError('Já existe uma conta com este CPF. Faça login ou use "Esqueci minha senha".');
+        setAvailabilityFeedback(null);
         return false;
       } catch (fallbackError) {
         const fallbackNotFound = fallbackError instanceof ApiError && fallbackError.statusCode === 404;
         if (fallbackNotFound) {
+          setAvailabilityFeedback("E-mail localizado e pronto para uso neste cadastro.");
           return true;
         }
 
@@ -207,6 +239,8 @@ export function RegisterPage() {
           setError("Não foi possível validar o cadastro agora. Verifique a integração da API no Vercel.");
         }
       }
+
+      setAvailabilityFeedback(null);
 
       return false;
     }
@@ -247,8 +281,9 @@ export function RegisterPage() {
       return;
     }
 
-    if (password.length < 6) {
-      setError("A senha precisa ter pelo menos 6 caracteres.");
+    const passwordStrengthError = validateStrongPassword(password);
+    if (passwordStrengthError) {
+      setError(passwordStrengthError);
       return;
     }
 
@@ -274,16 +309,12 @@ export function RegisterPage() {
         }
       });
 
-      navigate("/verify-email", {
-        replace: true,
-        state: {
-          email: formattedEmail
-        }
-      });
+      navigate("/dashboard", { replace: true });
     } catch (nextError) {
       const errorCode = extractErrorCode(nextError);
       if (errorCode === "auth/email-already-in-use") {
         setError('Já existe uma conta com este e-mail. Faça login ou use "Esqueci minha senha".');
+        setAvailabilityFeedback(null);
         setStep("dados");
         return;
       }
@@ -295,6 +326,7 @@ export function RegisterPage() {
       } else {
         setError("Não foi possível criar a conta agora. Tente novamente.");
       }
+      setAvailabilityFeedback(null);
     } finally {
       setSubmitting(false);
     }
@@ -340,7 +372,7 @@ export function RegisterPage() {
               />
               <div className="auth-flow-cta-text">
                 <h2>Abra seu caso com clareza e acompanhamento.</h2>
-                <p>Preencha seus dados, defina sua senha e confirme o e-mail pelo link enviado.</p>
+                <p>Preencha seus dados, defina sua senha e acesse a plataforma imediatamente.</p>
               </div>
             </aside>
 
@@ -407,16 +439,14 @@ export function RegisterPage() {
                       </label>
 
                       <label>
-                        <span className="required-label">
-                          Data de nascimento <span className="required-indicator" aria-hidden="true">*</span>
-                        </span>
+                        <span>Data de nascimento</span>
                         <input
                           type="text"
                           value={birthDate}
                           onChange={(event) => setBirthDate(formatBirthDate(event.target.value))}
                           placeholder="DD/MM/AAAA"
                           inputMode="numeric"
-                          required
+                          
                         />
                       </label>
                     </div>
@@ -442,7 +472,7 @@ export function RegisterPage() {
                             type={showPassword ? "text" : "password"}
                             value={password}
                             onChange={(event) => setPassword(event.target.value)}
-                            minLength={6}
+                            minLength={8}
                             autoComplete="new-password"
                             required
                           />
@@ -455,6 +485,9 @@ export function RegisterPage() {
                             <PasswordVisibilityIcon />
                           </button>
                         </div>
+                        <span className="field-help">
+                          Use 8+ caracteres com maiúscula, minúscula, número e símbolo.
+                        </span>
                       </label>
 
                       <label>
@@ -466,7 +499,7 @@ export function RegisterPage() {
                             type={showPassword ? "text" : "password"}
                             value={confirmPassword}
                             onChange={(event) => setConfirmPassword(event.target.value)}
-                            minLength={6}
+                            minLength={8}
                             autoComplete="new-password"
                             required
                           />
@@ -489,6 +522,7 @@ export function RegisterPage() {
                 )}
 
                 {error && <p className="error-text">{error}</p>}
+                {availabilityFeedback && <p className="success-text">{availabilityFeedback}</p>}
               </form>
 
               <div className="auth-flow-footer">

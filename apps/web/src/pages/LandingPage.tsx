@@ -135,14 +135,15 @@ export function LandingPage() {
         <div className="landing-hero-surface" />
         <div className="landing-container landing-hero-grid">
           <div className="landing-hero-copy">
-            <p className="hero-kicker">Plataforma digital para Juizado Especial Cível</p>
+            <p className="hero-kicker">Minha Causa Minha Vida</p>
             <h1>
-              O Doutor da sua causa é <span className="hero-highlight">você</span>.
+              A plataforma digital que coloca a <span className="hero-highlight">justiça nas suas mãos</span> e o
+              dinheiro no seu bolso.
             </h1>
-            <p className="hero-signature">"O Doutor da Sua Causa é Você."</p>
+            <p className="hero-signature">Fazer justiça com as próprias mãos nunca foi tão fácil.</p>
             <p>
-              Estrutura profissional para abrir demandas, registrar informações com clareza e acompanhar cada caso em
-              um painel simples e direto.
+              Entre na justiça com causas de até 20 salários-mínimos (R$ 32.420,00) em minutos, sem a necessidade de
+              advogados e sem sair de casa.
             </p>
 
             <div className="hero-cta">
@@ -163,9 +164,9 @@ export function LandingPage() {
             </div>
 
             <div className="hero-trust">
-              <span>Cadastro seguro</span>
-              <span>Fluxo guiado por etapas</span>
-              <span>Painel de acompanhamento</span>
+              <span>Acompanhe seu caso em tempo real</span>
+              <span>Venda seus direitos e ganhe dinheiro na hora</span>
+              <span>100% online, sem sair de casa</span>
             </div>
           </div>
 
@@ -188,6 +189,35 @@ export function LandingPage() {
               <h3>Base para crescer</h3>
               <p>Arquitetura pronta para evoluir com integrações e automações futuras.</p>
             </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="sobre-nos" className="landing-block">
+        <div className="landing-container">
+          <div className="landing-section-head">
+            <p className="hero-kicker">Sobre nós</p>
+            <h2>Democratizando o acesso à justiça</h2>
+          </div>
+
+          
+          <div className="landing-tab-panel">
+            <section className="atuacao-panel about-summary">
+              <h3>Sobre nós</h3>
+              <p>
+                Criamos a plataforma para simplificar o acesso à Justiça em causas de até 20 salários mínimos,
+                com uma experiência 100% digital, clara e acessível.
+              </p>
+              <p>
+                Você pode abrir o caso com autonomia, acompanhar cada movimentação em tempo real e, quando fizer
+                sentido, buscar conciliação ou antecipação financeira dos direitos.
+              </p>
+              <ul className="about-summary-list">
+                <li>Ajuizamento simplificado, sem burocracia excessiva.</li>
+                <li>Acompanhamento transparente do início ao fim.</li>
+                <li>Foco em solução rápida, justa e prática.</li>
+              </ul>
+            </section>
           </div>
         </div>
       </section>
@@ -356,18 +386,16 @@ export function LandingPage() {
       <section ref={inlineCtaRef} className="landing-block landing-block-dark landing-block-dark--inline">
         <div className="landing-container cta-band cta-band--active">
           <div>
-            <p className="hero-kicker">Últimas vagas do piloto</p>
-            <h2>Crie sua conta hoje e publique seu primeiro caso em minutos</h2>
-            <p>Entre agora, valide o fluxo com clientes reais e ganhe tração antes dos concorrentes.</p>
-            <div className="cta-band-points">
-              <span>Acesso imediato</span>
-              <span>Sem cartão no plano Free</span>
-              <span>Upgrade para premium quando quiser</span>
-            </div>
+            <p className="hero-kicker">Simplifique o seu acesso à Justiça!</p>
+            <h2>Você tem um problema jurídico de até 20 salários mínimos e não sabe por onde começar?</h2>
+            <p>
+              Nós descomplicamos tudo para você com uma plataforma rápida, segura e 100% online, sem a necessidade de
+              contratar advogado.
+            </p>
           </div>
           <div className="hero-cta">
             <Link to={user ? "/cases/new" : "/register"} className="hero-primary">
-              {user ? "Abrir caso agora" : "Quero criar minha conta agora"}
+              {user ? "Abrir caso agora" : "Clique aqui e conheça a nossa plataforma!"}
             </Link>
             {!user && (
               <Link to="/login" className="hero-secondary">
@@ -394,18 +422,16 @@ export function LandingPage() {
           </button>
           <div className="landing-container cta-band cta-band--active">
             <div>
-              <p className="hero-kicker">Últimas vagas do piloto</p>
-              <h2>Crie sua conta hoje e publique seu primeiro caso em minutos</h2>
-              <p>Entre agora, valide o fluxo com clientes reais e ganhe tração antes dos concorrentes.</p>
-              <div className="cta-band-points">
-                <span>Acesso imediato</span>
-                <span>Sem cartão no plano Free</span>
-                <span>Upgrade para premium quando quiser</span>
-              </div>
+              <p className="hero-kicker">Simplifique o seu acesso à Justiça!</p>
+              <h2>Você tem um problema jurídico de até 20 salários mínimos e não sabe por onde começar?</h2>
+              <p>
+                Nós descomplicamos tudo para você com uma plataforma rápida, segura e 100% online, sem a necessidade
+                de contratar advogado.
+              </p>
             </div>
             <div className="hero-cta">
               <Link to={user ? "/cases/new" : "/register"} className="hero-primary">
-                {user ? "Abrir caso agora" : "Quero criar minha conta agora"}
+                {user ? "Abrir caso agora" : "Clique aqui e conheça a nossa plataforma!"}
               </Link>
               {!user && (
                 <Link to="/login" className="hero-secondary">

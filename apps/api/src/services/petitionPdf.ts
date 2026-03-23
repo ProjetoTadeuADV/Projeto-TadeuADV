@@ -2,6 +2,7 @@
 import type {
   CaseRecord,
   PetitionAttachment,
+  PetitionPriorAttemptChannel,
   PetitionPretension,
   PetitionTimelineEvent,
   UserRecord
@@ -43,6 +44,12 @@ interface PetitionData {
   attachments: PetitionAttachment[];
   claimValue: number | null;
   hearingInterest: boolean;
+  priorAttemptMade: boolean;
+  priorAttemptChannel: PetitionPriorAttemptChannel | null;
+  priorAttemptChannelOther: string | null;
+  priorAttemptProtocol: string | null;
+  priorAttemptHadProposal: boolean | null;
+  priorAttemptProposalDetails: string | null;
   clientName: string | null;
 }
 
@@ -292,6 +299,33 @@ function formatDefendantDocument(value: string | null): string {
   return value;
 }
 
+function formatPriorAttemptChannel(
+  channel: PetitionPriorAttemptChannel | null,
+  customChannel: string | null
+): string {
+  if (!channel) {
+    return "não informado";
+  }
+
+  if (channel === "reclame_aqui") {
+    return "Reclame Aqui";
+  }
+
+  if (channel === "procon") {
+    return "Procon";
+  }
+
+  if (channel === "consumidor_gov_br") {
+    return "Consumidor.gov.br";
+  }
+
+  if (channel === "direto_reclamado") {
+    return "Direto com o reclamado";
+  }
+
+  return customChannel?.trim() || "Outro";
+}
+
 function formatCurrencyBr(value: number | null): string {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return "a definir em liquidação";
@@ -465,6 +499,12 @@ function buildPetitionData(context: PetitionPdfContext): PetitionData {
     attachments: petitionInitial?.attachments ?? [],
     claimValue: petitionInitial?.claimValue ?? null,
     hearingInterest: petitionInitial?.hearingInterest ?? true,
+    priorAttemptMade: petitionInitial?.priorAttemptMade ?? false,
+    priorAttemptChannel: petitionInitial?.priorAttemptChannel ?? null,
+    priorAttemptChannelOther: petitionInitial?.priorAttemptChannelOther ?? null,
+    priorAttemptProtocol: petitionInitial?.priorAttemptProtocol ?? null,
+    priorAttemptHadProposal: petitionInitial?.priorAttemptHadProposal ?? null,
+    priorAttemptProposalDetails: petitionInitial?.priorAttemptProposalDetails ?? null,
     clientName
   };
 }
@@ -565,6 +605,39 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
     lineHeight: 17,
     firstLineIndent: 22
   });
+
+  writer.writeParagraph(
+    `Tratativa prévia: ${
+      data.priorAttemptMade
+        ? `houve tentativa de solução pelo canal ${formatPriorAttemptChannel(
+            data.priorAttemptChannel,
+            data.priorAttemptChannelOther
+          )}, protocolo ${data.priorAttemptProtocol ?? "não informado"}`
+        : "não houve tentativa prévia formal registrada"
+    }.`,
+    {
+      font: regularFont,
+      fontSize: 11,
+      lineHeight: 17,
+      firstLineIndent: 22
+    }
+  );
+
+  if (data.priorAttemptMade) {
+    writer.writeParagraph(
+      `Proposta de acordo apresentada pela reclamada: ${
+        data.priorAttemptHadProposal
+          ? data.priorAttemptProposalDetails ?? "sim, sem detalhamento informado."
+          : "não."
+      }`,
+      {
+        font: regularFont,
+        fontSize: 11,
+        lineHeight: 17,
+        firstLineIndent: 22
+      }
+    );
+  }
 
   writer.writeSectionTitle("III - DO DIREITO");
   writer.writeParagraph(data.legalGrounds, {

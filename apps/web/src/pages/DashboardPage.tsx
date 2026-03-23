@@ -150,8 +150,7 @@ export function DashboardPage() {
 
         if (canAccessAdmin && isMasterUser) {
           const availableOperators = await apiRequest<AdminOperatorOption[]>("/v1/admin/operators", { token });
-          const normalizedOperators = availableOperators.filter((item) => item.isOperator);
-          setOperators(normalizedOperators);
+          setOperators(availableOperators);
 
           setSelectedOperatorByCase((current) => {
             const next: Record<string, string> = {};
@@ -290,7 +289,7 @@ export function DashboardPage() {
     ? myAssignedCases.length + openOtherCases.length + closedCases.length
     : clientOpenCases.length + clientClosedCases.length;
   const hasActiveFilters = normalizedSearch.length > 0 || statusFilter !== "todos" || sortBy !== "updated_desc";
-  const operatorOptions = useMemo(() => operators.filter((item) => item.isOperator), [operators]);
+  const operatorOptions = useMemo(() => operators, [operators]);
 
   function resetFilters() {
     setSearch("");
@@ -441,6 +440,7 @@ export function DashboardPage() {
                       {operatorOptions.map((option) => (
                         <option key={option.id} value={option.id}>
                           {option.name ?? option.email ?? option.id}
+                          {option.isMaster ? " (Master)" : option.isOperator ? " (Operador)" : ""}
                         </option>
                       ))}
                     </select>

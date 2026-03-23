@@ -12,6 +12,9 @@ export function PublicLayout() {
 
           <div className="public-topbar-actions">
             <nav className="public-nav" aria-label="Navegação da landing">
+              <a href="#sobre-nos" className="public-link">
+                Sobre nós
+              </a>
               <a href="#como-funciona" className="public-link">
                 Como Funciona
               </a>

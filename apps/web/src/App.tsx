@@ -17,6 +17,7 @@ import { Pagina1Page } from "./pages/Pagina1Page";
 import { Pagina2Page } from "./pages/Pagina2Page";
 import { Pagina3Page } from "./pages/Pagina3Page";
 import { ProfileSettingsPage } from "./pages/ProfileSettingsPage";
+import { ProfilePasswordPage } from "./pages/ProfilePasswordPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { Subpagina1Page } from "./pages/Subpagina1Page";
 import { Subpagina2Page } from "./pages/Subpagina2Page";
@@ -40,7 +41,7 @@ function PublicOnlyRoute() {
   }
 
   if (user) {
-    return <Navigate to={user.emailVerified ? resolveSignedArea(canAccessAdmin) : "/verify-email"} replace />;
+    return <Navigate to={resolveSignedArea(canAccessAdmin)} replace />;
   }
 
   return <Outlet />;
@@ -58,7 +59,7 @@ function PublicLandingRoute() {
   }
 
   if (user) {
-    return <Navigate to={user.emailVerified ? resolveSignedArea(canAccessAdmin) : "/verify-email"} replace />;
+    return <Navigate to={resolveSignedArea(canAccessAdmin)} replace />;
   }
 
   return <Outlet />;
@@ -101,6 +102,8 @@ export default function App() {
             <Route path="/dados" element={<DadosPage />} />
             <Route path="/settings/profile" element={<ProfileSettingsPage />} />
             <Route path="/app/settings/profile" element={<ProfileSettingsPage />} />
+            <Route path="/settings/profile/password" element={<ProfilePasswordPage />} />
+            <Route path="/app/settings/profile/password" element={<ProfilePasswordPage />} />
           </Route>
         </Route>
 

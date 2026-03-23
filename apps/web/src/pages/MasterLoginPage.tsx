@@ -1,11 +1,13 @@
 import { FormEvent, useState } from "react";
+import { sendPasswordResetEmail } from "firebase/auth";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthBackLink } from "../components/AuthBackLink";
 import { PasswordVisibilityIcon } from "../components/PasswordVisibilityIcon";
 import { useAuth } from "../context/AuthContext";
+import { auth } from "../lib/firebase";
 
 export function MasterLoginPage() {
-  const { login, user, refreshUser, refreshAccessProfile, logout, canAccessAdmin } = useAuth();
+  const { login, user, refreshAccessProfile, logout, canAccessAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState("");
@@ -13,39 +15,25 @@ export function MasterLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [resetFeedback, setResetFeedback] = useState<string | null>(null);
 
-  if (user?.emailVerified && canAccessAdmin) {
+  if (user && canAccessAdmin) {
     return <Navigate to="/master/dashboard" replace />;
   }
 
-  if (user?.emailVerified) {
+  if (user) {
     return <Navigate to="/dashboard" replace />;
-  }
-
-  if (user && !user.emailVerified) {
-    return <Navigate to="/verify-email" replace state={{ email: user.email }} />;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setResetFeedback(null);
     setSubmitting(true);
 
     try {
       await login(email, password);
-      const nextUser = await refreshUser();
-
-      if (nextUser && !nextUser.emailVerified) {
-        navigate("/verify-email", {
-          replace: true,
-          state: {
-            email: nextUser.email,
-            from: location.state?.from
-          }
-        });
-        return;
-      }
-
       const access = await refreshAccessProfile();
       if (!access?.canAccessAdmin) {
         await logout();
@@ -59,6 +47,27 @@ export function MasterLoginPage() {
       setError("Falha no login master. Verifique e-mail e senha.");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    setError(null);
+    setResetFeedback(null);
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError("Informe o e-mail para recuperar a senha.");
+      return;
+    }
+
+    setResettingPassword(true);
+    try {
+      await sendPasswordResetEmail(auth, trimmedEmail);
+      setResetFeedback(`Enviamos um link para redefinir a senha em ${trimmedEmail}.`);
+    } catch {
+      setError("Não foi possível enviar o link de recuperação agora.");
+    } finally {
+      setResettingPassword(false);
     }
   }
 
@@ -107,7 +116,19 @@ export function MasterLoginPage() {
             </div>
           </label>
 
+          <div className="auth-inline-links">
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => void handleForgotPassword()}
+              disabled={resettingPassword || submitting}
+            >
+              {resettingPassword ? "Enviando recuperação..." : "Esqueci a minha senha"}
+            </button>
+          </div>
+
           {error && <p className="error-text">{error}</p>}
+          {resetFeedback && <p className="success-text">{resetFeedback}</p>}
 
           <button type="submit" disabled={submitting}>
             {submitting ? "Entrando..." : "Entrar como master"}

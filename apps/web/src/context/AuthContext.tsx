@@ -67,7 +67,15 @@ function mapVerificationErrorMessage(rawMessage: string): string {
     return "Não foi possível localizar o e-mail informado.";
   }
 
-  return rawMessage;
+  return "Não foi possível reenviar o e-mail de verificação agora. Tente novamente em instantes.";
+}
+
+function resolveVerificationContinueUrl(): string {
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return `${window.location.origin}/verify-email`;
+  }
+
+  return "http://localhost:5173/verify-email";
 }
 
 function resolveVerificationDispatchError(result: VerificationEmailDispatchResult): string {
@@ -125,7 +133,10 @@ async function requestVerificationEmailWithFallback(
 
   try {
     // Fallback para o template padrão do Firebase quando SendGrid/API falhar.
-    await sendEmailVerification(currentUser);
+    await sendEmailVerification(currentUser, {
+      url: resolveVerificationContinueUrl(),
+      handleCodeInApp: false
+    });
     return {
       sent: true,
       provider: "firebase-client-fallback"
@@ -211,11 +222,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const result = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
     await updateProfile(result.user, { displayName: normalizedName });
 
-    const dispatch = await requestVerificationEmailWithFallback(result.user);
-    if (!dispatch.sent && dispatch.reason !== "already-verified") {
-      console.warn("verification-email-dispatch-failed", dispatch);
-    }
-
     await reload(result.user);
     setUser(auth.currentUser);
     setAccessProfile(null);
@@ -271,7 +277,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       isMasterUser: accessProfile?.isMaster ?? false,
-      isOperatorUser: accessProfile?.isOperator ?? false,
+      isOperatorUser: Boolean(accessProfile?.isOperator || accessProfile?.isMaster),
       canAccessAdmin: accessProfile?.canAccessAdmin ?? false,
       canCreateCases: Boolean(user),
       accessProfile,

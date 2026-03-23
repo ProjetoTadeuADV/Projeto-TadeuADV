@@ -20,4 +20,4 @@ if (missingConfig.length > 0) {
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-
+auth.languageCode = "pt-BR";

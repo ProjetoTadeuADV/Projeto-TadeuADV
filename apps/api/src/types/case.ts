@@ -64,6 +64,13 @@ export type PetitionPretensionType =
   | "devolucao_produto"
   | "outro";
 
+export type PetitionPriorAttemptChannel =
+  | "reclame_aqui"
+  | "procon"
+  | "consumidor_gov_br"
+  | "direto_reclamado"
+  | "outro";
+
 export interface PetitionPretension {
   type: PetitionPretensionType;
   amount: number | null;
@@ -224,6 +231,12 @@ export interface PetitionInitialData {
   attachments: PetitionAttachment[];
   claimValue: number | null;
   hearingInterest: boolean;
+  priorAttemptMade: boolean;
+  priorAttemptChannel: PetitionPriorAttemptChannel | null;
+  priorAttemptChannelOther: string | null;
+  priorAttemptProtocol: string | null;
+  priorAttemptHadProposal: boolean | null;
+  priorAttemptProposalDetails: string | null;
 }
 
 export interface CaseRecord {

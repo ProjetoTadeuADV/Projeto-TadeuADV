@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FirebaseError } from "firebase/app";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthBackLink } from "../components/AuthBackLink";
@@ -31,7 +31,7 @@ function mapFriendlyEmailError(message: string): string {
     return "Nao foi possivel localizar o e-mail informado.";
   }
 
-  return message;
+  return "Nao foi possivel reenviar o e-mail de verificacao agora. Tente novamente em instantes.";
 }
 
 function formatFirebaseError(error: unknown) {
@@ -64,9 +64,54 @@ export function VerifyEmailPage() {
   const target = state?.from?.pathname ?? "/dashboard";
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [checking, setChecking] = useState(false);
   const [resending, setResending] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+
+  useEffect(() => {
+    if (!user || user.emailVerified) {
+      return;
+    }
+
+    let active = true;
+
+    async function syncVerificationStatus() {
+      try {
+        const refreshedUser = await refreshUser();
+        if (!active) {
+          return;
+        }
+
+        if (refreshedUser?.emailVerified) {
+          navigate(target, { replace: true });
+        }
+      } catch {
+        // Ignora falhas transitórias de rede durante a checagem automática.
+      }
+    }
+
+    void syncVerificationStatus();
+    const interval = window.setInterval(() => {
+      void syncVerificationStatus();
+    }, 5000);
+    const onFocus = () => {
+      void syncVerificationStatus();
+    };
+    const onVisibilityChange = () => {
+      if (!document.hidden) {
+        void syncVerificationStatus();
+      }
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [navigate, refreshUser, target, user]);
 
   if (loading) {
     return (
@@ -92,36 +137,13 @@ export function VerifyEmailPage() {
     setResending(true);
     try {
       await resendVerificationEmail();
-      setStatus("Reenvio solicitado. Confira sua caixa de entrada e a pasta de spam/lixo eletronico.");
+      setStatus(
+        "Novo link de verificacao enviado. Use sempre o link mais recente e confira tambem spam/lixo eletronico."
+      );
     } catch (nextError) {
       setError(formatFirebaseError(nextError));
     } finally {
       setResending(false);
-    }
-  }
-
-  async function handleCheck() {
-    setError(null);
-    setStatus(null);
-
-    if (!user) {
-      navigate("/login", { replace: true });
-      return;
-    }
-
-    setChecking(true);
-    try {
-      const refreshedUser = await refreshUser();
-      if (refreshedUser?.emailVerified) {
-        navigate(target, { replace: true });
-        return;
-      }
-
-      setStatus("A confirmacao ainda nao apareceu. Abra o link recebido e tente novamente.");
-    } catch {
-      setError("Nao foi possivel validar a confirmacao agora.");
-    } finally {
-      setChecking(false);
     }
   }
 
@@ -173,7 +195,8 @@ export function VerifyEmailPage() {
         </p>
 
         <p className="auth-inline-note">
-          Reenvie a mensagem, abra o link recebido e depois clique em "Ja confirmei meu e-mail".
+          Abra o link recebido no e-mail. Assim que a confirmacao for concluida, o acesso sera liberado
+          automaticamente nesta tela.
         </p>
         <p className="auth-inline-note">Se nao encontrar o e-mail, verifique tambem a pasta de spam.</p>
 
@@ -181,9 +204,6 @@ export function VerifyEmailPage() {
         {error && <p className="error-text">{error}</p>}
 
         <div className="auth-actions auth-actions--compact">
-          <button type="button" onClick={handleCheck} disabled={checking || deletingAccount}>
-            {checking ? "Conferindo..." : "Ja confirmei meu e-mail"}
-          </button>
           <button
             type="button"
             className="secondary-button"

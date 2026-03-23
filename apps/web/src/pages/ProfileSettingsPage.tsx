@@ -1359,6 +1359,8 @@ export function ProfileSettingsPage() {
         )}
       </section>
 
+      
+
       <section className="workspace-panel">
         <header className="page-header">
           <div>
@@ -1375,7 +1377,18 @@ export function ProfileSettingsPage() {
             {deleting ? "Excluindo..." : "Excluir conta"}
           </button>
         </div>
+
       </section>
+
+      <div className="profile-password-dock">
+        <button
+          type="button"
+          className="danger-button profile-password-trigger"
+          onClick={() => navigate("/settings/profile/password")}
+        >
+          Alterar senha
+        </button>
+      </div>
 
       <input
         ref={fileInputRef}

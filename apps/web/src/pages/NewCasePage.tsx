@@ -3,11 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
 import { formatCpf, isValidCpf, normalizeCpf } from "../lib/cpf";
+import { isValidCnpj } from "../lib/cnpj";
 import type {
   AccountProfile,
   CaseRecord,
   CpfConsultaResult,
   PetitionDefendantType,
+  PetitionPriorAttemptChannel,
   PetitionPretensionType,
   VaraOption
 } from "../types";
@@ -23,17 +25,18 @@ const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
 const ATTACHMENT_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.txt,.doc,.docx";
 const PETITION_TEXT_MAX_LENGTH = 500;
 
+interface AccountProfileResponse {
+  user: AccountProfile;
+}
+
 interface ViaCepResponse {
   cep?: string;
   logradouro?: string;
+  complemento?: string;
   bairro?: string;
   localidade?: string;
   uf?: string;
   erro?: boolean;
-}
-
-interface AccountProfileResponse {
-  user: AccountProfile;
 }
 
 interface TimelineEventDraft {
@@ -49,6 +52,16 @@ interface PretensionOptionConfig {
   amountLabel?: string;
   detailsLabel?: string;
   detailsPlaceholder?: string;
+}
+
+interface ClaimSubjectOption {
+  value: string;
+  label: string;
+}
+
+interface PriorAttemptChannelOption {
+  value: PetitionPriorAttemptChannel;
+  label: string;
 }
 
 interface PretensionDraft {
@@ -108,6 +121,28 @@ const PRETENSION_OPTIONS: PretensionOptionConfig[] = [
     detailsLabel: "Descrição do pedido",
     detailsPlaceholder: "Especifique objetivamente o pedido desejado."
   }
+];
+
+const CLAIM_SUBJECT_OTHER_VALUE = "__outro__";
+
+const CLAIM_SUBJECT_OPTIONS: ClaimSubjectOption[] = [
+  { value: "Produto não entregue", label: "Produto não entregue" },
+  { value: "Produto com defeito", label: "Produto com defeito" },
+  { value: "Cobrança indevida", label: "Cobrança indevida" },
+  { value: "Serviço não prestado", label: "Serviço não prestado" },
+  { value: "Cancelamento sem estorno", label: "Cancelamento sem estorno" },
+  { value: "Descumprimento de oferta", label: "Descumprimento de oferta" },
+  { value: CLAIM_SUBJECT_OTHER_VALUE, label: "Outros" }
+];
+
+const AUTO_LEGAL_GROUNDS_TEXT =
+  "Os fundamentos da reclamação serão consolidados pela equipe com base nos fatos, documentos e pedidos informados pelo cliente.";
+
+const PRIOR_ATTEMPT_CHANNEL_OPTIONS: PriorAttemptChannelOption[] = [
+  { value: "reclame_aqui", label: "Reclame Aqui" },
+  { value: "procon", label: "Procon" },
+  { value: "consumidor_gov_br", label: "Consumidor.gov.br" },
+  { value: "outro", label: "Outro" }
 ];
 
 function createInitialPretensionDrafts(): PretensionDraft[] {
@@ -266,6 +301,51 @@ function formatAttachmentSize(sizeBytes: number): string {
   return `${rounded} ${units[unitIndex]}`;
 }
 
+function normalizeTextForMatch(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function resolveVaraIdByCity(city: string, varas: VaraOption[]): string | null {
+  if (!varas.length) {
+    return null;
+  }
+
+  const normalizedCity = normalizeTextForMatch(city);
+  if (!normalizedCity) {
+    return varas[0].id;
+  }
+
+  const specialMap: Array<{ matcher: RegExp; varaId: string }> = [
+    { matcher: /campinas/, varaId: "jec-campinas" },
+    { matcher: /guarulhos/, varaId: "jec-guarulhos" },
+    { matcher: /santos/, varaId: "jec-santos" },
+    { matcher: /sao bernardo|sao bernardo do campo/, varaId: "jec-sao-bernardo" },
+    { matcher: /sao paulo|capital|sp/, varaId: "jec-sp-capital" }
+  ];
+
+  for (const item of specialMap) {
+    if (!item.matcher.test(normalizedCity)) {
+      continue;
+    }
+
+    const found = varas.find((vara) => vara.id === item.varaId);
+    if (found) {
+      return found.id;
+    }
+  }
+
+  const matched = varas.find((vara) => normalizeTextForMatch(vara.nome).includes(normalizedCity));
+  if (matched) {
+    return matched.id;
+  }
+
+  return varas[0].id;
+}
+
 function attachmentFingerprint(file: File): string {
   return `${file.name}:${file.size}:${file.lastModified}`;
 }
@@ -293,14 +373,21 @@ export function NewCasePage() {
   const [loadingVaras, setLoadingVaras] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [consultingCpf, setConsultingCpf] = useState(false);
-  const [lookingUpZipCode, setLookingUpZipCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [zipCodeFeedback, setZipCodeFeedback] = useState<string | null>(null);
+  const [profileReadyForCase, setProfileReadyForCase] = useState(false);
+  const [profileReadyMessage, setProfileReadyMessage] = useState<string | null>(null);
 
   const [varaId, setVaraId] = useState("");
   const [cpf, setCpf] = useState("");
   const [resumo, setResumo] = useState("");
-  const [claimSubject, setClaimSubject] = useState("");
+  const [claimSubjectSelection, setClaimSubjectSelection] = useState(CLAIM_SUBJECT_OPTIONS[0]?.value ?? "");
+  const [claimSubjectCustom, setClaimSubjectCustom] = useState("");
+  const [priorAttemptMade, setPriorAttemptMade] = useState(false);
+  const [priorAttemptChannel, setPriorAttemptChannel] = useState<PetitionPriorAttemptChannel | "">("");
+  const [priorAttemptChannelOther, setPriorAttemptChannelOther] = useState("");
+  const [priorAttemptProtocol, setPriorAttemptProtocol] = useState("");
+  const [priorAttemptHadProposal, setPriorAttemptHadProposal] = useState<boolean | null>(null);
+  const [priorAttemptProposalDetails, setPriorAttemptProposalDetails] = useState("");
 
   const [claimantZipCode, setClaimantZipCode] = useState("");
   const [claimantStreet, setClaimantStreet] = useState("");
@@ -316,7 +403,6 @@ export function NewCasePage() {
   const [defendantAddress, setDefendantAddress] = useState("");
 
   const [facts, setFacts] = useState("");
-  const [legalGrounds, setLegalGrounds] = useState("");
   const [timelineEvents, setTimelineEvents] = useState<TimelineEventDraft[]>([
     { eventDate: "", description: "" }
   ]);
@@ -327,10 +413,7 @@ export function NewCasePage() {
   const [attachmentFeedback, setAttachmentFeedback] = useState<string | null>(null);
   const [hearingInterest, setHearingInterest] = useState(true);
   const [cpfData, setCpfData] = useState<CpfConsultaResult | null>(null);
-  const [cpfLockedByProfile, setCpfLockedByProfile] = useState(false);
-  const [claimantAddressLockedByProfile, setClaimantAddressLockedByProfile] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
-  const lastZipLookupRef = useRef<string>("");
 
   const hasVaras = varas.length > 0;
   const selectedVaraName = useMemo(
@@ -353,7 +436,41 @@ export function NewCasePage() {
 
     return Number(total.toFixed(2));
   }, [pretensionDrafts]);
-  const normalizedZipCode = useMemo(() => normalizeZipCode(claimantZipCode), [claimantZipCode]);
+  const resolvedClaimSubject = useMemo(() => {
+    if (claimSubjectSelection === CLAIM_SUBJECT_OTHER_VALUE) {
+      return claimSubjectCustom.trim();
+    }
+
+    return claimSubjectSelection.trim();
+  }, [claimSubjectCustom, claimSubjectSelection]);
+  const claimantAddressSummary = useMemo(() => {
+    const normalized = normalizeZipCode(claimantZipCode);
+    if (
+      normalized.length !== 8 ||
+      claimantStreet.trim().length < 3 ||
+      claimantNumber.trim().length === 0 ||
+      claimantNeighborhood.trim().length < 2 ||
+      claimantCity.trim().length < 2 ||
+      claimantState.trim().length !== 2
+    ) {
+      return "Endereço do cadastro incompleto.";
+    }
+
+    const complement = claimantComplement.trim();
+    return [
+      `${claimantStreet.trim()}, ${claimantNumber.trim()}${complement ? `, ${complement}` : ""}`,
+      `${claimantNeighborhood.trim()} - ${claimantCity.trim()}/${claimantState.trim().toUpperCase()}`,
+      `CEP ${formatZipCode(normalized)}`
+    ].join(", ");
+  }, [
+    claimantCity,
+    claimantComplement,
+    claimantNeighborhood,
+    claimantNumber,
+    claimantState,
+    claimantStreet,
+    claimantZipCode
+  ]);
   const normalizedDefendantDocument = useMemo(() => normalizeDigits(defendantDocument), [defendantDocument]);
   const normalizedTimelineEvents = useMemo(
     () =>
@@ -396,32 +513,103 @@ export function NewCasePage() {
   );
   const isDefendantDocumentValid = useMemo(() => {
     if (defendantType === "pessoa_fisica") {
-      return normalizedDefendantDocument.length === 11;
+      return normalizedDefendantDocument.length === 11 && isValidCpf(normalizedDefendantDocument);
     }
 
     if (defendantType === "pessoa_juridica") {
-      return normalizedDefendantDocument.length === 14;
+      return normalizedDefendantDocument.length === 14 && isValidCnpj(normalizedDefendantDocument);
     }
 
-    return normalizedDefendantDocument.length === 11 || normalizedDefendantDocument.length === 14;
+    if (normalizedDefendantDocument.length === 11) {
+      return isValidCpf(normalizedDefendantDocument);
+    }
+
+    if (normalizedDefendantDocument.length === 14) {
+      return isValidCnpj(normalizedDefendantDocument);
+    }
+
+    return false;
   }, [defendantType, normalizedDefendantDocument]);
+  const defendantDocumentValidationMessage = useMemo(() => {
+    if (!normalizedDefendantDocument) {
+      return null;
+    }
+
+    if (defendantType === "pessoa_fisica") {
+      if (normalizedDefendantDocument.length < 11) {
+        return {
+          type: "info" as const,
+          message: "Informe os 11 dígitos do CPF."
+        };
+      }
+
+      return {
+        type: isValidCpf(normalizedDefendantDocument) ? ("success" as const) : ("error" as const),
+        message: isValidCpf(normalizedDefendantDocument)
+          ? "CPF válido."
+          : "CPF inválido. Confira os dígitos informados."
+      };
+    }
+
+    if (normalizedDefendantDocument.length < 14) {
+      return {
+        type: "info" as const,
+        message: "Informe os 14 dígitos do CNPJ."
+      };
+    }
+
+    return {
+      type: isValidCnpj(normalizedDefendantDocument) ? ("success" as const) : ("error" as const),
+      message: isValidCnpj(normalizedDefendantDocument)
+        ? "CNPJ válido."
+        : "CNPJ inválido. Confira os dígitos informados."
+    };
+  }, [defendantType, normalizedDefendantDocument]);
+  const isPriorAttemptSectionValid = useMemo(() => {
+    if (!priorAttemptMade) {
+      return true;
+    }
+
+    if (!priorAttemptChannel) {
+      return false;
+    }
+
+    if (priorAttemptChannel === "outro" && priorAttemptChannelOther.trim().length < 3) {
+      return false;
+    }
+
+    if (priorAttemptProtocol.trim().length < 3) {
+      return false;
+    }
+
+    if (priorAttemptHadProposal === null) {
+      return false;
+    }
+
+    if (priorAttemptHadProposal && priorAttemptProposalDetails.trim().length < 5) {
+      return false;
+    }
+
+    return true;
+  }, [
+    priorAttemptChannel,
+    priorAttemptChannelOther,
+    priorAttemptHadProposal,
+    priorAttemptMade,
+    priorAttemptProposalDetails,
+    priorAttemptProtocol
+  ]);
   const caseChecklist = useMemo<CaseCreationChecklistItem[]>(
     () => [
       {
         id: "processo",
-        label: "Dados do processo (CPF válido, resumo mín. 20 e assunto mín. 5)",
-        done: Boolean(varaId) && isValidCpf(cpf) && resumo.trim().length >= 20 && claimSubject.trim().length >= 5
+        label: "Dados do processo (CPF válido, vara automática e resumo/assunto preenchidos)",
+        done: Boolean(varaId) && isValidCpf(cpf) && resumo.trim().length >= 20 && resolvedClaimSubject.length >= 5
       },
       {
         id: "endereco",
-        label: "Endereço completo do requerente (CEP + logradouro + número + cidade/UF)",
-        done:
-          normalizedZipCode.length === 8 &&
-          claimantStreet.trim().length >= 3 &&
-          claimantNumber.trim().length > 0 &&
-          claimantNeighborhood.trim().length >= 2 &&
-          claimantCity.trim().length >= 2 &&
-          claimantState.trim().length === 2
+        label: "Cadastro completo do cliente (CPF e endereço no perfil)",
+        done: profileReadyForCase
       },
       {
         id: "reclamada",
@@ -436,14 +624,19 @@ export function NewCasePage() {
           normalizedTimelineEvents.every((item) => isIsoDate(item.eventDate) && item.description.length >= 5)
       },
       {
+        id: "tratativa",
+        label: "Tratativa prévia informada (canal, protocolo e proposta quando aplicável)",
+        done: isPriorAttemptSectionValid
+      },
+      {
         id: "pedidos",
         label: "Pedidos e pretensões (com valores/detalhes quando aplicável)",
         done: hasValidPretensionSelection && (selectedPretensions.length > 0 || freeRequests.length > 0)
       },
       {
         id: "texto",
-        label: "Fatos e fundamentos (mín. 30 caracteres cada)",
-        done: facts.trim().length >= 30 && legalGrounds.trim().length >= 30
+        label: "Fatos do caso (mín. 30 caracteres)",
+        done: facts.trim().length >= 30
       },
       {
         id: "anexos",
@@ -452,21 +645,16 @@ export function NewCasePage() {
       }
     ],
     [
-      claimSubject,
-      claimantCity,
-      claimantNeighborhood,
-      claimantNumber,
-      claimantState,
-      claimantStreet,
       cpf,
       defendantName,
       facts,
       freeRequests.length,
       hasValidPretensionSelection,
+      isPriorAttemptSectionValid,
       isDefendantDocumentValid,
-      legalGrounds,
       normalizedTimelineEvents,
-      normalizedZipCode.length,
+      profileReadyForCase,
+      resolvedClaimSubject,
       resumo,
       selectedPretensions.length,
       varaId
@@ -481,6 +669,34 @@ export function NewCasePage() {
   useEffect(() => {
     setDefendantDocument((current) => formatDefendantDocumentInput(current, defendantType));
   }, [defendantType]);
+
+  useEffect(() => {
+    if (priorAttemptMade) {
+      return;
+    }
+
+    setPriorAttemptChannel("");
+    setPriorAttemptChannelOther("");
+    setPriorAttemptProtocol("");
+    setPriorAttemptHadProposal(null);
+    setPriorAttemptProposalDetails("");
+  }, [priorAttemptMade]);
+
+  useEffect(() => {
+    if (priorAttemptHadProposal) {
+      return;
+    }
+
+    setPriorAttemptProposalDetails("");
+  }, [priorAttemptHadProposal]);
+
+  useEffect(() => {
+    if (priorAttemptChannel === "outro") {
+      return;
+    }
+
+    setPriorAttemptChannelOther("");
+  }, [priorAttemptChannel]);
 
   async function requestWithAuthRetry<T>(
     path: string,
@@ -682,12 +898,9 @@ export function NewCasePage() {
       try {
         const data = await apiRequest<VaraOption[]>("/v1/varas");
         setVaras(data);
-        if (data.length > 0) {
-          setVaraId(data[0].id);
-          return;
+        if (data.length === 0) {
+          setError("Nenhuma vara foi configurada no sistema.");
         }
-
-        setError("Nenhuma vara foi configurada no sistema.");
       } catch {
         setError("Falha ao carregar a lista de varas.");
       } finally {
@@ -706,10 +919,49 @@ export function NewCasePage() {
 
         if (profile.cpf) {
           setCpf((current) => (current.trim().length === 0 ? formatCpf(profile.cpf ?? "") : current));
-          setCpfLockedByProfile(true);
         }
 
-        const profileAddress = profile.address;
+        const profileAddress = profile.address
+          ? {
+              ...profile.address
+            }
+          : null;
+        const profileZipCode = normalizeZipCode(profileAddress?.cep ?? "");
+
+        if (profileAddress && profileZipCode.length === 8) {
+          const hasMissingAddressFromCep =
+            (profileAddress.street ?? "").trim().length < 3 ||
+            (profileAddress.neighborhood ?? "").trim().length < 2 ||
+            (profileAddress.city ?? "").trim().length < 2 ||
+            (profileAddress.state ?? "").trim().length !== 2;
+
+          if (hasMissingAddressFromCep) {
+            try {
+              const viaCepResponse = await fetch(`https://viacep.com.br/ws/${profileZipCode}/json/`);
+              if (viaCepResponse.ok) {
+                const viaCepData = (await viaCepResponse.json()) as ViaCepResponse;
+                if (!viaCepData.erro) {
+                  if ((profileAddress.street ?? "").trim().length < 3) {
+                    profileAddress.street = viaCepData.logradouro?.trim() ?? profileAddress.street;
+                  }
+                  if ((profileAddress.neighborhood ?? "").trim().length < 2) {
+                    profileAddress.neighborhood = viaCepData.bairro?.trim() ?? profileAddress.neighborhood;
+                  }
+                  if ((profileAddress.city ?? "").trim().length < 2) {
+                    profileAddress.city = viaCepData.localidade?.trim() ?? profileAddress.city;
+                  }
+                  if ((profileAddress.state ?? "").trim().length !== 2) {
+                    profileAddress.state =
+                      viaCepData.uf?.trim().toUpperCase() ?? profileAddress.state;
+                  }
+                }
+              }
+            } catch {
+              // Mantém o fluxo sem bloquear o usuário caso ViaCEP esteja indisponível.
+            }
+          }
+        }
+
         const hasProfileAddress = Boolean(
           profileAddress &&
             (
@@ -722,6 +974,16 @@ export function NewCasePage() {
               profileAddress.state
             )
         );
+        const hasCompleteProfileAddress = Boolean(
+          profileAddress &&
+            normalizeZipCode(profileAddress.cep ?? "").length === 8 &&
+            (profileAddress.street ?? "").trim().length >= 3 &&
+            (profileAddress.number ?? "").trim().length > 0 &&
+            (profileAddress.neighborhood ?? "").trim().length >= 2 &&
+            (profileAddress.city ?? "").trim().length >= 2 &&
+            (profileAddress.state ?? "").trim().length === 2
+        );
+        const hasValidProfileCpf = Boolean(profile.cpf && isValidCpf(profile.cpf));
 
         if (hasProfileAddress && profileAddress) {
           if (profileAddress.cep) {
@@ -754,15 +1016,38 @@ export function NewCasePage() {
             );
           }
 
-          setClaimantAddressLockedByProfile(true);
         }
+
+        if (!hasValidProfileCpf || !hasCompleteProfileAddress) {
+          setProfileReadyForCase(false);
+          setProfileReadyMessage(
+            "Antes de abrir um caso, complete seu cadastro em Minha Conta com CPF e endereço completo."
+          );
+          return;
+        }
+
+        setProfileReadyForCase(true);
+        setProfileReadyMessage(null);
       } catch {
-        // Sem bloqueio: usuário pode preencher manualmente caso perfil não esteja disponível.
+        setProfileReadyForCase(false);
+        setProfileReadyMessage(
+          "Não foi possível carregar seu cadastro agora. Acesse Minha Conta, confirme seus dados e tente novamente."
+        );
       }
     }
 
     void loadProfilePrefill();
   }, []);
+
+  useEffect(() => {
+    if (!varas.length) {
+      setVaraId("");
+      return;
+    }
+
+    const resolved = resolveVaraIdByCity(claimantCity, varas);
+    setVaraId(resolved ?? varas[0].id);
+  }, [claimantCity, varas]);
 
   useEffect(() => {
     if (!cpfData) {
@@ -779,7 +1064,7 @@ export function NewCasePage() {
     setError(null);
 
     if (!hasVaras || !varaId) {
-      setError("Selecione uma vara válida antes de consultar o CPF.");
+      setError("Não foi possível definir a vara automaticamente para sua cidade.");
       return;
     }
 
@@ -808,80 +1093,22 @@ export function NewCasePage() {
     }
   }
 
-  async function handleZipCodeLookup(
-    zipCodeOverride?: string,
-    options?: {
-      silentInvalid?: boolean;
-    }
-  ) {
-    setError(null);
-    setZipCodeFeedback(null);
-
-    const normalizedZipCode = normalizeZipCode(zipCodeOverride ?? claimantZipCode);
-    if (normalizedZipCode.length !== 8) {
-      if (!options?.silentInvalid) {
-        setError("Informe um CEP válido com 8 dígitos.");
-      }
-      return;
-    }
-
-    setLookingUpZipCode(true);
-    try {
-      const response = await fetch(`https://viacep.com.br/ws/${normalizedZipCode}/json/`);
-      if (!response.ok) {
-        throw new Error("Falha ao consultar CEP.");
-      }
-
-      const data = (await response.json()) as ViaCepResponse;
-      if (data.erro) {
-        throw new Error("CEP não encontrado.");
-      }
-
-      setClaimantZipCode(formatZipCode(data.cep ?? normalizedZipCode));
-      setClaimantStreet((data.logradouro ?? "").trim());
-      setClaimantNeighborhood((data.bairro ?? "").trim());
-      setClaimantCity((data.localidade ?? "").trim());
-      setClaimantState((data.uf ?? "").trim().toUpperCase());
-      setZipCodeFeedback("Endereço localizado. Informe número e complemento.");
-      lastZipLookupRef.current = normalizedZipCode;
-    } catch (nextError) {
-      const message = nextError instanceof Error ? nextError.message : "Não foi possível consultar o CEP.";
-      setError(message);
-    } finally {
-      setLookingUpZipCode(false);
-    }
-  }
-
-  useEffect(() => {
-    if (claimantAddressLockedByProfile || lookingUpZipCode) {
-      return;
-    }
-
-    const normalizedZipCode = normalizeZipCode(claimantZipCode);
-    if (normalizedZipCode.length !== 8) {
-      lastZipLookupRef.current = "";
-      return;
-    }
-
-    if (lastZipLookupRef.current === normalizedZipCode) {
-      return;
-    }
-
-    void handleZipCodeLookup(normalizedZipCode, { silentInvalid: true });
-  }, [claimantAddressLockedByProfile, claimantZipCode, lookingUpZipCode]);
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    setZipCodeFeedback(null);
 
     if (!hasVaras || !varaId) {
-      setError("Nenhuma vara disponível para abrir o caso.");
+      setError("Não foi possível definir a vara automaticamente para sua cidade.");
+      return;
+    }
+
+    if (!profileReadyForCase) {
+      setError(profileReadyMessage ?? "Complete seu cadastro em Minha Conta antes de abrir um caso.");
       return;
     }
 
     if (!isChecklistComplete) {
-      setError("Conclua 100% do checklist antes de salvar e gerar a petição.");
+      setError("Conclua 100% do checklist antes de salvar e enviar para análise.");
       return;
     }
 
@@ -892,11 +1119,11 @@ export function NewCasePage() {
 
     const trimmedResumo = resumo.trim();
     if (trimmedResumo.length < 20) {
-      setError("Resumo da reclamação deve ter pelo menos 20 caracteres.");
+      setError("Resumo do caso deve ter pelo menos 20 caracteres.");
       return;
     }
 
-    const trimmedClaimSubject = claimSubject.trim();
+    const trimmedClaimSubject = resolvedClaimSubject.trim();
     if (trimmedClaimSubject.length < 5) {
       setError("Informe o assunto principal da reclamação.");
       return;
@@ -963,13 +1190,38 @@ export function NewCasePage() {
       return;
     }
 
+    if (defendantType === "pessoa_fisica" && !isValidCpf(normalizedDefendantDocument)) {
+      setError("CPF da parte reclamada inválido.");
+      return;
+    }
+
     if (defendantType === "pessoa_juridica" && normalizedDefendantDocument.length !== 14) {
       setError("Para pessoa jurídica, informe CNPJ com 14 dígitos.");
       return;
     }
 
+    if (defendantType === "pessoa_juridica" && !isValidCnpj(normalizedDefendantDocument)) {
+      setError("CNPJ da parte reclamada inválido.");
+      return;
+    }
+
     if (defendantType === "nao_informado" && ![11, 14].includes(normalizedDefendantDocument.length)) {
       setError("Documento da reclamada deve conter 11 ou 14 dígitos.");
+      return;
+    }
+
+    if (defendantType === "nao_informado" && normalizedDefendantDocument.length === 11 && !isValidCpf(normalizedDefendantDocument)) {
+      setError("CPF da parte reclamada inválido.");
+      return;
+    }
+
+    if (defendantType === "nao_informado" && normalizedDefendantDocument.length === 14 && !isValidCnpj(normalizedDefendantDocument)) {
+      setError("CNPJ da parte reclamada inválido.");
+      return;
+    }
+
+    if (!isPriorAttemptSectionValid) {
+      setError("Preencha corretamente os dados de tratativa prévia antes de enviar para análise.");
       return;
     }
 
@@ -1043,11 +1295,16 @@ export function NewCasePage() {
       return;
     }
 
-    const trimmedLegalGrounds = legalGrounds.trim();
-    if (trimmedLegalGrounds.length < 30) {
-      setError("Informe os fundamentos da reclamação com pelo menos 30 caracteres.");
-      return;
-    }
+    const normalizedPriorAttemptChannel: PetitionPriorAttemptChannel | null =
+      priorAttemptMade && priorAttemptChannel ? priorAttemptChannel : null;
+    const normalizedPriorAttemptChannelOther =
+      priorAttemptMade && normalizedPriorAttemptChannel === "outro" ? priorAttemptChannelOther.trim() : null;
+    const normalizedPriorAttemptProtocol = priorAttemptMade ? priorAttemptProtocol.trim() : null;
+    const normalizedPriorAttemptHadProposal = priorAttemptMade ? priorAttemptHadProposal : null;
+    const normalizedPriorAttemptProposalDetails =
+      priorAttemptMade && priorAttemptHadProposal ? priorAttemptProposalDetails.trim() : null;
+
+    const trimmedLegalGrounds = AUTO_LEGAL_GROUNDS_TEXT;
 
     setSubmitting(true);
     try {
@@ -1072,7 +1329,13 @@ export function NewCasePage() {
             evidence: evidence.trim() || null,
             attachments: [],
             claimValue: claimValueTotal,
-            hearingInterest
+            hearingInterest,
+            priorAttemptMade,
+            priorAttemptChannel: normalizedPriorAttemptChannel,
+            priorAttemptChannelOther: normalizedPriorAttemptChannelOther || null,
+            priorAttemptProtocol: normalizedPriorAttemptProtocol || null,
+            priorAttemptHadProposal: normalizedPriorAttemptHadProposal,
+            priorAttemptProposalDetails: normalizedPriorAttemptProposalDetails || null
           }
         }
       });
@@ -1110,7 +1373,7 @@ export function NewCasePage() {
           <div>
             <p className="hero-kicker">Petição inicial</p>
             <h1>Abrir reclamação completa</h1>
-            <p>Preencha os dados para gerar uma petição mais pronta para protocolo.</p>
+            <p>Preencha os dados para enviar seu caso para análise inicial.</p>
           </div>
         </div>
       </section>
@@ -1124,21 +1387,11 @@ export function NewCasePage() {
           <form className="form-grid case-form" onSubmit={handleSubmit}>
             <h2>Dados do processo</h2>
 
-            <label>
-              Vara
-              <select
-                value={varaId}
-                onChange={(event) => setVaraId(event.target.value)}
-                required
-                disabled={!hasVaras}
-              >
-                {varas.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nome}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="info-box">
+              <strong>Vara definida automaticamente pelo endereço do seu cadastro</strong>
+              <span>{selectedVaraName || "Aguardando definição automática..."}</span>
+              <span>Cidade do cadastro: {claimantCity || "Não informada"}</span>
+            </div>
 
             <label>
               CPF do requerente
@@ -1147,34 +1400,26 @@ export function NewCasePage() {
                   type="text"
                   value={cpf}
                   onChange={(event) => setCpf(formatCpf(event.target.value))}
-                  onFocus={() => {
-                    if (cpfLockedByProfile) {
-                      setCpfLockedByProfile(false);
-                    }
-                  }}
                   placeholder="000.000.000-00"
                   inputMode="numeric"
-                  readOnly={cpfLockedByProfile}
+                  readOnly
                   required
                 />
                 <button
                   type="button"
                   className="secondary-button"
                   onClick={() => void handleCpfLookup()}
-                  disabled={consultingCpf || !hasVaras || !varaId}
+                  disabled={consultingCpf || !varaId}
                 >
                   {consultingCpf ? "Consultando..." : "Consultar CPF"}
                 </button>
               </div>
-              {cpfLockedByProfile && (
-                <span className="field-help">CPF preenchido com base no seu perfil. Clique no campo para editar.</span>
-              )}
+              <span className="field-help">CPF carregado do seu perfil. Para alterar, acesse Minha Conta.</span>
             </label>
 
             {cpfData && (
               <div className="info-box">
                 <strong>Consulta de CPF (simulação interna)</strong>
-                <span>Vara selecionada: {selectedVaraName || "Não informada"}</span>
                 <span>Nome: {cpfData.nome}</span>
                 <span>Situação: {CPF_STATUS_LABELS[cpfData.situacao]}</span>
                 <span>Atualizado em: {new Date(cpfData.updatedAt).toLocaleString("pt-BR")}</span>
@@ -1182,12 +1427,12 @@ export function NewCasePage() {
             )}
 
             <label>
-              Resumo executivo da reclamação (mín. 20 caracteres)
+              Resumo do caso (mín. 20 caracteres)
               <textarea
                 value={resumo}
                 onChange={(event) => setResumo(limitPetitionText(event.target.value))}
                 rows={4}
-                placeholder="Resumo curto para identificação rápida do caso."
+                placeholder="Nos conte, bem resumidamente, qual é o caso que você está enfrentando."
                 maxLength={PETITION_TEXT_MAX_LENGTH}
                 required
               />
@@ -1197,145 +1442,53 @@ export function NewCasePage() {
             </label>
 
             <label>
-              Assunto principal da reclamação (mín. 5 caracteres)
-              <input
-                type="text"
-                value={claimSubject}
-                onChange={(event) => setClaimSubject(event.target.value)}
-                placeholder="Ex: cobrança indevida, produto não entregue, cancelamento sem estorno"
+              Assunto principal da reclamação
+              <select
+                value={claimSubjectSelection}
+                onChange={(event) => setClaimSubjectSelection(event.target.value)}
                 required
-              />
+              >
+                {CLAIM_SUBJECT_OPTIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
             </label>
 
-            <h2>Endereço do requerente</h2>
-            <label>
-              CEP
-              <div className="inline-input">
-                <input
-                  type="text"
-                  value={claimantZipCode}
-                  onChange={(event) => setClaimantZipCode(formatZipCode(event.target.value))}
-                  onFocus={() => {
-                    if (claimantAddressLockedByProfile) {
-                      setClaimantAddressLockedByProfile(false);
-                    }
-                  }}
-                  placeholder="00000-000"
-                  inputMode="numeric"
-                  readOnly={claimantAddressLockedByProfile}
-                  required
-                />
-              </div>
-              {claimantAddressLockedByProfile && (
-                <span className="field-help">
-                  Endereço preenchido com base no seu perfil. Clique em qualquer campo para editar.
-                </span>
-              )}
-              {lookingUpZipCode && <span className="field-help">Buscando CEP...</span>}
-            </label>
-
-            <div className="address-grid">
-              <label className="address-grid-span">
-                Logradouro
-                <input
-                  type="text"
-                  value={claimantStreet}
-                  onChange={(event) => setClaimantStreet(event.target.value)}
-                  onFocus={() => {
-                    if (claimantAddressLockedByProfile) {
-                      setClaimantAddressLockedByProfile(false);
-                    }
-                  }}
-                  placeholder="Rua, avenida, travessa..."
-                  readOnly={claimantAddressLockedByProfile}
-                  required
-                />
-              </label>
-
+            {claimSubjectSelection === CLAIM_SUBJECT_OTHER_VALUE && (
               <label>
-                Número
+                Descreva o assunto do caso (mín. 5 caracteres)
                 <input
                   type="text"
-                  value={claimantNumber}
-                  onChange={(event) => setClaimantNumber(event.target.value)}
-                  onFocus={() => {
-                    if (claimantAddressLockedByProfile) {
-                      setClaimantAddressLockedByProfile(false);
-                    }
-                  }}
-                  placeholder="123"
-                  readOnly={claimantAddressLockedByProfile}
+                  value={claimSubjectCustom}
+                  onChange={(event) => setClaimSubjectCustom(event.target.value)}
+                  placeholder="Ex.: bloqueio indevido de conta, cobrança após cancelamento, etc."
                   required
                 />
               </label>
+            )}
 
-              <label className="address-grid-span">
-                Complemento
-                <input
-                  type="text"
-                  value={claimantComplement}
-                  onChange={(event) => setClaimantComplement(event.target.value)}
-                  onFocus={() => {
-                    if (claimantAddressLockedByProfile) {
-                      setClaimantAddressLockedByProfile(false);
-                    }
-                  }}
-                  placeholder="Apartamento, bloco, referência (opcional)"
-                  readOnly={claimantAddressLockedByProfile}
-                />
-              </label>
-
-              <label>
-                Bairro
-                <input
-                  type="text"
-                  value={claimantNeighborhood}
-                  onChange={(event) => setClaimantNeighborhood(event.target.value)}
-                  onFocus={() => {
-                    if (claimantAddressLockedByProfile) {
-                      setClaimantAddressLockedByProfile(false);
-                    }
-                  }}
-                  readOnly={claimantAddressLockedByProfile}
-                  required
-                />
-              </label>
-
-              <label>
-                Cidade
-                <input
-                  type="text"
-                  value={claimantCity}
-                  onChange={(event) => setClaimantCity(event.target.value)}
-                  onFocus={() => {
-                    if (claimantAddressLockedByProfile) {
-                      setClaimantAddressLockedByProfile(false);
-                    }
-                  }}
-                  readOnly={claimantAddressLockedByProfile}
-                  required
-                />
-              </label>
-
-              <label>
-                UF
-                <input
-                  type="text"
-                  value={claimantState}
-                  onChange={(event) => setClaimantState(event.target.value.replace(/[^a-zA-Z]/g, "").slice(0, 2).toUpperCase())}
-                  onFocus={() => {
-                    if (claimantAddressLockedByProfile) {
-                      setClaimantAddressLockedByProfile(false);
-                    }
-                  }}
-                  placeholder="SP"
-                  readOnly={claimantAddressLockedByProfile}
-                  required
-                />
-              </label>
+            <h2>Dados do seu cadastro</h2>
+            <div className="info-box">
+              <strong>Endereço do requerente (pré-carregado do perfil)</strong>
+              <span>{claimantAddressSummary}</span>
+              <span>
+                Para corrigir endereço ou CPF, acesse <strong>Minha Conta</strong> no menu lateral.
+              </span>
             </div>
-
-            {zipCodeFeedback && <p className="success-text">{zipCodeFeedback}</p>}
+            {!profileReadyForCase && (
+              <div className="info-box">
+                <strong>Cadastro incompleto para abrir caso</strong>
+                <span>
+                  {profileReadyMessage ??
+                    "Antes de abrir um caso, complete seu cadastro em Minha Conta com CPF e endereço completo."}
+                </span>
+                <button type="button" className="secondary-button" onClick={() => navigate("/settings/profile")}>
+                  Ir para Minha Conta
+                </button>
+              </div>
+            )}
 
             <h2>Dados da parte reclamada</h2>
             <label>
@@ -1373,9 +1526,22 @@ export function NewCasePage() {
                     : "00.000.000/0000-00"
                 }
                 inputMode="numeric"
+                maxLength={defendantType === "pessoa_fisica" ? 14 : 18}
                 required
               />
-              <span className="field-help">Preencha apenas os números que o campo aplica a máscara automaticamente.</span>
+              {defendantDocumentValidationMessage && (
+                <span
+                  className={
+                    defendantDocumentValidationMessage.type === "error"
+                      ? "error-text"
+                      : defendantDocumentValidationMessage.type === "success"
+                        ? "success-text"
+                        : "field-help"
+                  }
+                >
+                  {defendantDocumentValidationMessage.message}
+                </span>
+              )}
             </label>
 
             <label>
@@ -1389,6 +1555,117 @@ export function NewCasePage() {
             </label>
 
             <h2>Conteúdo da petição</h2>
+            <div className="petition-section">
+              <div className="petition-section-head">
+                <h3>Tentativa de solução antes da ação</h3>
+                <p>Informe se já houve atuação de órgão de proteção ao consumidor ou tratativa direta com o reclamado.</p>
+              </div>
+
+              <label>
+                Houve tratativa para resolver o caso em órgão de proteção ao consumidor? (Sim/Não)
+                <select
+                  value={priorAttemptMade ? "sim" : "nao"}
+                  onChange={(event) => setPriorAttemptMade(event.target.value === "sim")}
+                >
+                  <option value="nao">Não</option>
+                  <option value="sim">Sim</option>
+                </select>
+              </label>
+
+              {priorAttemptMade && (
+                <>
+                  <label>
+                    Qual foi o órgão? (Reclame Aqui, Procon, Consumidor.gov.br ou Outro)
+                    <select
+                      value={priorAttemptChannel}
+                      onChange={(event) =>
+                        setPriorAttemptChannel(event.target.value as PetitionPriorAttemptChannel | "")
+                      }
+                      required
+                    >
+                      <option value="">Selecione</option>
+                      {PRIOR_ATTEMPT_CHANNEL_OPTIONS.map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {priorAttemptChannel === "outro" && (
+                    <label>
+                      Qual foi o órgão/canal? (mín. 3 caracteres)
+                      <input
+                        type="text"
+                        value={priorAttemptChannelOther}
+                        onChange={(event) => setPriorAttemptChannelOther(event.target.value)}
+                        placeholder="Ex.: Direto com o reclamado, SAC da empresa, plataforma regional, etc."
+                        required
+                      />
+                    </label>
+                  )}
+
+                  <label>
+                    Qual o protocolo de atendimento do órgão? (mín. 3 caracteres)
+                    <input
+                      type="text"
+                      value={priorAttemptProtocol}
+                      onChange={(event) => setPriorAttemptProtocol(event.target.value)}
+                      placeholder="Ex.: 2026-00012345"
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Nessa tratativa houve alguma proposta de acordo pelo reclamado? (Sim/Não)
+                    <select
+                      value={
+                        priorAttemptHadProposal === null ? "" : priorAttemptHadProposal ? "sim" : "nao"
+                      }
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (value === "sim") {
+                          setPriorAttemptHadProposal(true);
+                          return;
+                        }
+
+                        if (value === "nao") {
+                          setPriorAttemptHadProposal(false);
+                          return;
+                        }
+
+                        setPriorAttemptHadProposal(null);
+                      }}
+                      required
+                    >
+                      <option value="">Selecione</option>
+                      <option value="sim">Sim</option>
+                      <option value="nao">Não</option>
+                    </select>
+                  </label>
+
+                  {priorAttemptHadProposal && (
+                    <label>
+                      Se sim, qual foi? (mín. 5 caracteres)
+                      <textarea
+                        value={priorAttemptProposalDetails}
+                        onChange={(event) =>
+                          setPriorAttemptProposalDetails(limitPetitionText(event.target.value))
+                        }
+                        rows={3}
+                        placeholder="Descreva objetivamente a proposta de acordo apresentada."
+                        maxLength={PETITION_TEXT_MAX_LENGTH}
+                        required
+                      />
+                      <span className="field-help">
+                        {priorAttemptProposalDetails.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
+                      </span>
+                    </label>
+                  )}
+                </>
+              )}
+            </div>
+
             <div className="petition-section">
               <div className="petition-section-head">
                 <h3>Cronologia dos eventos</h3>
@@ -1521,21 +1798,6 @@ export function NewCasePage() {
             </label>
 
             <label>
-              Fundamentos da reclamação (mín. 30 caracteres)
-              <textarea
-                value={legalGrounds}
-                onChange={(event) => setLegalGrounds(limitPetitionText(event.target.value))}
-                rows={7}
-                placeholder="Base legal e argumentos que justificam os pedidos."
-                maxLength={PETITION_TEXT_MAX_LENGTH}
-                required
-              />
-              <span className="field-help">
-                {legalGrounds.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
-              </span>
-            </label>
-
-            <label>
               Pedidos complementares (opcional, um por linha)
               <textarea
                 value={requestsText}
@@ -1628,8 +1890,11 @@ export function NewCasePage() {
 
             {error && <p className="error-text">{error}</p>}
 
-            <button type="submit" disabled={submitting || !hasVaras || !varaId || !isChecklistComplete}>
-              {submitting ? "Salvando..." : "Salvar e gerar petição"}
+            <button
+              type="submit"
+              disabled={submitting || !profileReadyForCase || !hasVaras || !varaId || !isChecklistComplete}
+            >
+              {submitting ? "Salvando..." : "Salvar e enviar para análise"}
             </button>
             {!isChecklistComplete && (
               <p className="field-help">
@@ -1651,7 +1916,7 @@ export function NewCasePage() {
               ))}
             </ul>
             <div className="tips-footer">
-              <p>Somente com checklist completo o sistema libera o envio da petição inicial.</p>
+              <p>Somente com checklist completo o sistema libera o envio para análise.</p>
             </div>
           </aside>
         </div>

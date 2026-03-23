@@ -6,6 +6,7 @@ export interface SidebarMenuChild {
 
 export type SidebarIconName =
   | "dashboard"
+  | "account"
   | "newCase"
   | "messages"
   | "intake"
@@ -27,6 +28,12 @@ const baseSidebarMenu: SidebarMenuItem[] = [
     path: "/dashboard",
     label: "Dashboard",
     icon: "dashboard"
+  },
+  {
+    id: "minha-conta",
+    path: "/settings/profile",
+    label: "Minha Conta",
+    icon: "account"
   },
   {
     id: "novo-caso",

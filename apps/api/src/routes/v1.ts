@@ -718,7 +718,7 @@ function sanitizeAbsoluteUrl(value: string | null | undefined): string | null {
   }
 }
 
-function resolveVerificationContinueUrl(): string {
+function resolveVerificationContinueUrl(req?: Request): string {
   const explicitContinueUrl = sanitizeAbsoluteUrl(env.VERIFY_EMAIL_CONTINUE_URL);
   if (explicitContinueUrl) {
     return explicitContinueUrl;
@@ -732,6 +732,12 @@ function resolveVerificationContinueUrl(): string {
     }
 
     const parsedOrigin = new URL(validOrigin);
+    return `${parsedOrigin.origin}/verify-email`;
+  }
+
+  const requestOrigin = sanitizeAbsoluteUrl(req?.get("origin"));
+  if (requestOrigin) {
+    const parsedOrigin = new URL(requestOrigin);
     return `${parsedOrigin.origin}/verify-email`;
   }
 
@@ -1169,7 +1175,7 @@ export function createV1Router(deps: AppDependencies) {
         let verificationLink = "";
         try {
           verificationLink = await getFirebaseAuth().generateEmailVerificationLink(req.user.email, {
-            url: resolveVerificationContinueUrl(),
+            url: resolveVerificationContinueUrl(req),
             handleCodeInApp: false
           });
         } catch (linkError) {

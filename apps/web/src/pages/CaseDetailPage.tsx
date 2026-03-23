@@ -82,6 +82,17 @@ const PRETENSION_LABEL: Record<NonNullable<CaseRecord["petitionInitial"]>["prete
     outro: "Outro pedido"
   };
 
+const PRIOR_ATTEMPT_CHANNEL_LABEL: Record<
+  NonNullable<CaseRecord["petitionInitial"]>["priorAttemptChannel"] & string,
+  string
+> = {
+  reclame_aqui: "Reclame Aqui",
+  procon: "Procon",
+  consumidor_gov_br: "Consumidor.gov.br",
+  direto_reclamado: "Direto com o reclamado",
+  outro: "Outro"
+};
+
 const MOVEMENT_STAGE_LABEL: Record<CaseMovementRecord["stage"], string> = {
   triagem: "Triagem",
   conciliacao: "Conciliação",
@@ -238,6 +249,22 @@ function describePretension(item: NonNullable<CaseRecord["petitionInitial"]>["pr
   }
 
   return `${label}${amount}`;
+}
+
+function describePriorAttemptChannel(
+  channel: NonNullable<CaseRecord["petitionInitial"]>["priorAttemptChannel"],
+  channelOther: string | null | undefined
+): string {
+  if (!channel) {
+    return "Não informado";
+  }
+
+  if (channel === "outro") {
+    const custom = channelOther?.trim();
+    return custom?.length ? custom : PRIOR_ATTEMPT_CHANNEL_LABEL.outro;
+  }
+
+  return PRIOR_ATTEMPT_CHANNEL_LABEL[channel];
 }
 
 function formatAttachmentSize(sizeBytes: number): string {
@@ -1726,6 +1753,37 @@ export function CaseDetailPage() {
                     <span>Endereço da reclamada: {caseItem.petitionInitial.defendantAddress ?? "Não informado"}</span>
                     <span>Valor da causa: {formatCurrencyBr(caseItem.petitionInitial.claimValue)}</span>
                     <span>Interesse em audiência: {caseItem.petitionInitial.hearingInterest ? "Sim" : "Não"}</span>
+                  </div>
+
+                  <div className="info-box">
+                    <strong>Tratativa prévia do caso</strong>
+                    <span>
+                      Houve tratativa prévia: {caseItem.petitionInitial.priorAttemptMade ? "Sim" : "Não"}
+                    </span>
+                    {caseItem.petitionInitial.priorAttemptMade && (
+                      <>
+                        <span>
+                          Canal:{" "}
+                          {describePriorAttemptChannel(
+                            caseItem.petitionInitial.priorAttemptChannel,
+                            caseItem.petitionInitial.priorAttemptChannelOther
+                          )}
+                        </span>
+                        <span>
+                          Protocolo: {caseItem.petitionInitial.priorAttemptProtocol ?? "Não informado"}
+                        </span>
+                        <span>
+                          Houve proposta de acordo:{" "}
+                          {caseItem.petitionInitial.priorAttemptHadProposal ? "Sim" : "Não"}
+                        </span>
+                        {caseItem.petitionInitial.priorAttemptHadProposal && (
+                          <span>
+                            Proposta apresentada:{" "}
+                            {caseItem.petitionInitial.priorAttemptProposalDetails ?? "Não informado"}
+                          </span>
+                        )}
+                      </>
+                    )}
                   </div>
 
                   <div className="resumo-box">
