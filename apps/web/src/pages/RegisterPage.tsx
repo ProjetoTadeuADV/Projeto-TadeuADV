@@ -49,41 +49,6 @@ function formatPhone(value: string): string {
   return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
 }
 
-function formatBirthDate(value: string): string {
-  const digits = value.replace(/\D/g, "").slice(0, 8);
-  if (digits.length <= 2) {
-    return digits;
-  }
-
-  if (digits.length <= 4) {
-    return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  }
-
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-}
-
-function isValidBirthDate(value: string): boolean {
-  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!match) {
-    return false;
-  }
-
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const year = Number(match[3]);
-  const date = new Date(year, month - 1, day);
-
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
-  ) {
-    return false;
-  }
-
-  return date.getTime() < Date.now();
-}
-
 function isValidPhone(value: string): boolean {
   const digits = normalizePhone(value);
   return digits.length === 10 || digits.length === 11;
@@ -135,7 +100,6 @@ export function RegisterPage() {
   const [cpf, setCpf] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [birthDate, setBirthDate] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -174,12 +138,6 @@ export function RegisterPage() {
 
     if (!isValidEmail(formattedEmail)) {
       setError("Informe um e-mail válido.");
-      setAvailabilityFeedback(null);
-      return false;
-    }
-
-    if (birthDate.trim() && !isValidBirthDate(birthDate)) {
-      setError("Informe uma data de nascimento válida no formato DD/MM/AAAA.");
       setAvailabilityFeedback(null);
       return false;
     }
@@ -437,18 +395,6 @@ export function RegisterPage() {
                           required
                         />
                       </label>
-
-                      <label>
-                        <span>Data de nascimento</span>
-                        <input
-                          type="text"
-                          value={birthDate}
-                          onChange={(event) => setBirthDate(formatBirthDate(event.target.value))}
-                          placeholder="DD/MM/AAAA"
-                          inputMode="numeric"
-                          
-                        />
-                      </label>
                     </div>
 
                     <button
@@ -546,3 +492,4 @@ export function RegisterPage() {
     </div>
   );
 }
+

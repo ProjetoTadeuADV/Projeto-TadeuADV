@@ -30,10 +30,9 @@ function resolveAvatarInitials(value: string): string {
 export function Layout() {
   const { user, accessProfile, isMasterUser, isOperatorUser, canAccessAdmin } = useAuth();
   const homePath = canAccessAdmin ? "/master/dashboard" : "/dashboard";
-  const profileLabel =
-    accessProfile !== null
-      ? accessProfile.name ?? accessProfile.email ?? user?.email ?? "Perfil"
-      : user?.displayName || user?.email || "Perfil";
+  const profileName = accessProfile?.name?.trim() || user?.displayName?.trim() || null;
+  const profileEmail = accessProfile?.email?.trim() || user?.email?.trim() || null;
+  const profileLabel = profileName || profileEmail || "Perfil";
   const avatarUrl = accessProfile?.avatarUrl ?? user?.photoURL ?? null;
   const avatarInitials = resolveAvatarInitials(profileLabel);
 

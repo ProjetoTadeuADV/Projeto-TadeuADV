@@ -421,6 +421,65 @@ function resolveLocalDateLine(claimantAddress: string | null): string {
   return `${cityHint}, ${today}.`;
 }
 
+function extractAddressCity(claimantAddress: string | null): string | null {
+  if (!claimantAddress) {
+    return null;
+  }
+
+  const parts = claimantAddress
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return null;
+  }
+
+  const cityHint = parts[parts.length - 1];
+  return cityHint.length > 0 ? cityHint : null;
+}
+
+function resolveCaseCompetence(varaNome: string, claimantAddress: string | null): string {
+  const city = extractAddressCity(claimantAddress);
+  if (city) {
+    return city;
+  }
+
+  const normalizedVara = normalizeText(varaNome);
+  if (!normalizedVara) {
+    return "competência não informada";
+  }
+
+  const fromVara = normalizedVara
+    .replace(/^jec\s*/i, "")
+    .replace(/^juizado especial c[ií]vel\s*/i, "")
+    .trim();
+
+  return fromVara || normalizedVara;
+}
+
+function buildClaimantQualification(data: PetitionData): string {
+  const address = data.claimantAddress ?? "endereço não informado";
+  const email = data.authorEmail ?? "e-mail não informado";
+  return `${data.authorName}, inscrito(a) no CPF sob o número ${formatCpf(data.authorCpf)}, e-mail ${email}, residente e domiciliado(a) em ${address}`;
+}
+
+function buildDefendantQualification(data: PetitionData): string {
+  const name = data.defendantName ?? "parte contrária não informada";
+  const document = formatDefendantDocument(data.defendantDocument);
+  const address = data.defendantAddress ?? "endereço não informado";
+  return `${name}, documento ${document}, endereço ${address}`;
+}
+
+function resolveActionLabel(claimSubject: string): string {
+  const subject = normalizeText(claimSubject);
+  if (!subject) {
+    return "Ação XXXX";
+  }
+
+  return `Ação ${subject}`;
+}
+
 function buildPetitionData(context: PetitionPdfContext): PetitionData {
   const caseId = normalizeText(context.caseItem.id);
   const caseCode = normalizeText(context.caseItem.caseCode);
@@ -537,12 +596,23 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
   const boldFont = await pdf.embedFont(StandardFonts.TimesRomanBold);
   const writer = new FormalPdfWriter(pdf, regularFont, boldFont, data.varaNome.toUpperCase());
 
-  writer.writeCentered(`PETIÇÃO INICIAL - ${data.claimSubject.toUpperCase()}`, boldFont, 12.5, 20);
-  writer.writeCentered("Processo n.: ________________________________", regularFont, 11, 18);
+  const competence = resolveCaseCompetence(data.varaNome, data.claimantAddress);
+  const claimantQualification = buildClaimantQualification(data);
+  const defendantQualification = buildDefendantQualification(data);
+  const actionLabel = resolveActionLabel(data.claimSubject);
 
-  writer.addSpace(6);
   writer.writeParagraph(
-    `${data.authorName}, inscrito(a) no CPF sob o número ${formatCpf(data.authorCpf)}, residente em ${data.claimantAddress ?? "endereço não informado"}, vem, respeitosamente, perante Vossa Excelência, ajuizar a presente demanda em face de ${data.defendantName ?? "parte reclamada não informada"}, pelos fatos e fundamentos a seguir expostos.`,
+    `Excelentíssimo Senhor Juiz de Direito da Vara do Juizado Especial Cível da Comarca de ${competence}.`,
+    {
+      font: regularFont,
+      fontSize: 11,
+      lineHeight: 17
+    }
+  );
+
+  writer.addSpace(8);
+  writer.writeParagraph(
+    `${claimantQualification}, em causa própria, vem, respeitosamente à presença de Vossa Excelência, com fundamento no art. XXXX, sem prejuízo dos demais dispositivos aplicáveis ao caso, propor a presente ${actionLabel}, contra ${defendantQualification}, pelos fatos e fundamentos a seguir aduzidos.`,
     {
       font: regularFont,
       fontSize: 11,
@@ -551,39 +621,14 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
     }
   );
 
-  writer.writeSectionTitle("I - DAS PARTES");
-  writer.writeParagraph(`Requerente: ${data.authorName}.`, {
+  writer.writeSectionTitle("Dos Fatos");
+  writer.writeParagraph("Nos diga o que aconteceu, com o máximo de detalhes possível:", {
     font: regularFont,
     fontSize: 11,
-    lineHeight: 17
-  });
-  writer.writeParagraph(`CPF: ${formatCpf(data.authorCpf)}.`, {
-    font: regularFont,
-    fontSize: 11,
-    lineHeight: 17
-  });
-  writer.writeParagraph(`Endereço do requerente: ${data.claimantAddress ?? "não informado"}.`, {
-    font: regularFont,
-    fontSize: 11,
-    lineHeight: 17
-  });
-  writer.writeParagraph(`Reclamada: ${data.defendantName ?? "não informada"}.`, {
-    font: regularFont,
-    fontSize: 11,
-    lineHeight: 17
-  });
-  writer.writeParagraph(`Documento da reclamada: ${formatDefendantDocument(data.defendantDocument)}.`, {
-    font: regularFont,
-    fontSize: 11,
-    lineHeight: 17
-  });
-  writer.writeParagraph(`Endereço da reclamada: ${data.defendantAddress ?? "não informado"}.`, {
-    font: regularFont,
-    fontSize: 11,
-    lineHeight: 17
+    lineHeight: 17,
+    firstLineIndent: 22
   });
 
-  writer.writeSectionTitle("II - DOS FATOS");
   if (data.timelineEvents.length > 0) {
     writer.writeParagraph("Cronologia dos eventos narrados:", {
       font: regularFont,
@@ -599,6 +644,7 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
       16.5
     );
   }
+
   writer.writeParagraph(data.facts, {
     font: regularFont,
     fontSize: 11,
@@ -639,42 +685,17 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
     );
   }
 
-  writer.writeSectionTitle("III - DO DIREITO");
-  writer.writeParagraph(data.legalGrounds, {
+  writer.writeSectionTitle("Do Direito");
+  writer.writeParagraph(data.legalGrounds || "[IA estrutura o direito]", {
     font: regularFont,
     fontSize: 11,
     lineHeight: 17,
     firstLineIndent: 22
   });
 
-  const requestSource =
-    data.requests.length > 0 ? data.requests : data.pretensions.map((item) => formatPretensionSummary(item));
-  const normalizedRequests = new Set<string>();
-  const requestItems: string[] = [];
-  for (const item of requestSource) {
-    const normalizedKey = item.trim().toLocaleLowerCase("pt-BR");
-    if (!normalizedKey || normalizedRequests.has(normalizedKey)) {
-      continue;
-    }
-
-    normalizedRequests.add(normalizedKey);
-    requestItems.push(item.trim());
-  }
-
-  writer.writeSectionTitle("IV - DOS PEDIDOS");
-  writer.writeNumberedList(requestItems, 11, 17);
-
-  writer.writeSectionTitle("V - DO VALOR DA CAUSA");
-  writer.writeParagraph(`Dá-se à causa o valor de ${formatCurrencyBr(data.claimValue)}.`, {
-    font: regularFont,
-    fontSize: 11,
-    lineHeight: 17,
-    firstLineIndent: 22
-  });
-
-  writer.writeSectionTitle("VI - DAS PROVAS E DA AUDIÊNCIA");
+  writer.writeSectionTitle("Das Provas");
   writer.writeParagraph(
-    `Provas indicadas: ${data.evidence ?? "documentos, comprovantes e demais meios admitidos em direito."}`,
+    data.evidence ?? "Documentos, comprovantes e demais meios de prova admitidos em direito.",
     {
       font: regularFont,
       fontSize: 11,
@@ -714,15 +735,34 @@ export async function generateInitialPetitionPdf(context: PetitionPdfContext): P
     });
   }
 
-  writer.addSpace(10);
-  writer.writeParagraph(
-    `Referência interna do caso: ${data.caseCode} (id ${data.caseId}). Cliente identificado na triagem: ${data.clientName ?? "não informado"}. E-mail para contato: ${data.authorEmail ?? "não informado"}.`,
-    {
-      font: regularFont,
-      fontSize: 10.5,
-      lineHeight: 16
+  const requestSource =
+    data.requests.length > 0 ? data.requests : data.pretensions.map((item) => formatPretensionSummary(item));
+  const normalizedRequests = new Set<string>();
+  const requestItems: string[] = [];
+  for (const item of requestSource) {
+    const normalizedKey = item.trim().toLocaleLowerCase("pt-BR");
+    if (!normalizedKey || normalizedRequests.has(normalizedKey)) {
+      continue;
     }
-  );
+
+    normalizedRequests.add(normalizedKey);
+    requestItems.push(item.trim());
+  }
+
+  writer.writeSectionTitle("Do Pedido");
+  writer.writeParagraph("[IA estrutura o pedido]", {
+    font: regularFont,
+    fontSize: 11,
+    lineHeight: 17,
+    firstLineIndent: 22
+  });
+  writer.writeNumberedList(requestItems, 11, 17);
+  writer.addSpace(8);
+  writer.writeParagraph(`Valor da Causa: ${formatCurrencyBr(data.claimValue)}.`, {
+    font: boldFont,
+    fontSize: 11,
+    lineHeight: 17
+  });
 
   writer.addSpace(18);
   writer.writeParagraph("Nesses termos, pede deferimento.", {
