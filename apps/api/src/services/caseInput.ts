@@ -93,6 +93,14 @@ const petitionInitialSchema = z
       });
     }
 
+    if (value.priorAttemptChannel === "direto_reclamado" && priorAttemptChannelOther.length < 5) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Descreva como foi a tentativa direta com a empresa (mínimo 5 caracteres).",
+        path: ["priorAttemptChannelOther"]
+      });
+    }
+
     const priorAttemptProtocol = value.priorAttemptProtocol?.trim() ?? "";
     if (priorAttemptProtocol.length < 3) {
       ctx.addIssue({
@@ -356,7 +364,8 @@ function normalizePetitionInitialData(value: z.infer<typeof petitionInitialSchem
     priorAttemptMade: value.priorAttemptMade ?? false,
     priorAttemptChannel: value.priorAttemptMade ? value.priorAttemptChannel ?? null : null,
     priorAttemptChannelOther:
-      value.priorAttemptMade && value.priorAttemptChannel === "outro"
+      value.priorAttemptMade &&
+      (value.priorAttemptChannel === "outro" || value.priorAttemptChannel === "direto_reclamado")
         ? normalizeOptionalText(value.priorAttemptChannelOther)
         : null,
     priorAttemptProtocol: value.priorAttemptMade ? normalizeOptionalText(value.priorAttemptProtocol) : null,

@@ -410,9 +410,43 @@ function normalizeCaseMessages(value: Partial<CaseMessageRecord>[] | null | unde
   }));
 }
 
+function normalizeAssignedOperatorIds(
+  ids: string[] | null | undefined,
+  legacyId: string | null | undefined
+): string[] {
+  const normalized = (Array.isArray(ids) ? ids : [])
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (normalized.length > 0) {
+    return Array.from(new Set(normalized));
+  }
+
+  const fallback = legacyId?.trim();
+  return fallback ? [fallback] : [];
+}
+
+function normalizeAssignedOperatorNames(
+  names: string[] | null | undefined,
+  legacyName: string | null | undefined
+): string[] {
+  const normalized = (Array.isArray(names) ? names : [])
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (normalized.length > 0) {
+    return Array.from(new Set(normalized));
+  }
+
+  const fallback = legacyName?.trim();
+  return fallback ? [fallback] : [];
+}
+
 function normalizeCaseRecord(data: Partial<CaseRecord>, fallbackId: string): CaseRecord {
   const createdAt = data.createdAt ?? new Date(0).toISOString();
   const caseCode = normalizeOptionalText(data.caseCode) ?? buildCaseCode(data.id ?? fallbackId, createdAt);
+  const assignedOperatorIds = normalizeAssignedOperatorIds(data.assignedOperatorIds, data.assignedOperatorId);
+  const assignedOperatorNames = normalizeAssignedOperatorNames(data.assignedOperatorNames, data.assignedOperatorName);
 
   return {
     id: data.id ?? fallbackId,
@@ -424,8 +458,10 @@ function normalizeCaseRecord(data: Partial<CaseRecord>, fallbackId: string): Cas
     resumo: data.resumo ?? "",
     cpfConsulta: data.cpfConsulta ?? null,
     petitionInitial: normalizePetitionInitialData(data.petitionInitial ?? null),
-    assignedOperatorId: data.assignedOperatorId ?? null,
-    assignedOperatorName: data.assignedOperatorName ?? null,
+    assignedOperatorId: assignedOperatorIds[0] ?? null,
+    assignedOperatorName: assignedOperatorNames[0] ?? null,
+    assignedOperatorIds,
+    assignedOperatorNames,
     assignedAt: data.assignedAt ?? null,
     reviewDecision: data.reviewDecision ?? "pending",
     reviewReason: normalizeOptionalText(data.reviewReason),
@@ -762,6 +798,8 @@ export class FirestoreCaseRepository implements CaseRepository {
       petitionInitial: normalizePetitionInitialData(input.petitionInitial ?? null),
       assignedOperatorId: null,
       assignedOperatorName: null,
+      assignedOperatorIds: [],
+      assignedOperatorNames: [],
       assignedAt: null,
       reviewDecision: "pending",
       reviewReason: null,
@@ -808,11 +846,25 @@ export class FirestoreCaseRepository implements CaseRepository {
     }
 
     const existing = normalizeCaseRecord(snapshot.data() as Partial<CaseRecord>, caseId);
+    const currentAssignedOperatorIds = existing.assignedOperatorIds ?? [];
+    const currentAssignedOperatorNames = existing.assignedOperatorNames ?? [];
+    const alreadyAssigned = currentAssignedOperatorIds.includes(operator.id);
+    const nextAssignedOperatorIds = alreadyAssigned
+      ? currentAssignedOperatorIds
+      : [...currentAssignedOperatorIds, operator.id];
+    const nextAssignedOperatorNames = alreadyAssigned
+      ? currentAssignedOperatorNames
+      : [
+          ...currentAssignedOperatorNames,
+          (operator.name ?? operator.id).trim()
+        ].filter(Boolean);
     const now = new Date().toISOString();
     const movement: CaseMovementRecord = {
       id: randomUUID(),
       stage: "triagem",
-      description: `Caso alocado para ${operator.name ?? operator.id}.`,
+      description: alreadyAssigned
+        ? `${operator.name ?? operator.id} já fazia parte dos responsáveis deste caso.`
+        : `Responsável ${operator.name ?? operator.id} adicionado ao caso.`,
       visibility: "public",
       createdAt: now,
       createdByUserId: actor.id,
@@ -825,6 +877,8 @@ export class FirestoreCaseRepository implements CaseRepository {
       ...existing,
       assignedOperatorId: operator.id,
       assignedOperatorName: operator.name,
+      assignedOperatorIds: nextAssignedOperatorIds,
+      assignedOperatorNames: nextAssignedOperatorNames,
       assignedAt: now,
       movements: [...existing.movements, movement],
       updatedAt: now

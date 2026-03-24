@@ -159,6 +159,18 @@ function toPublicCaseView(caseItem: CaseRecord): CaseRecord {
   };
 }
 
+function isOperatorAssignedToCase(caseItem: CaseRecord, userId: string): boolean {
+  if (!userId) {
+    return false;
+  }
+
+  const legacyAssigned = caseItem.assignedOperatorId === userId;
+  const multipleAssigned =
+    Array.isArray(caseItem.assignedOperatorIds) && caseItem.assignedOperatorIds.includes(userId);
+
+  return legacyAssigned || multipleAssigned;
+}
+
 function findMovementById(caseItem: CaseRecord, movementId: string): CaseMovementRecord | null {
   return (caseItem.movements ?? []).find((item) => item.id === movementId) ?? null;
 }
@@ -190,7 +202,7 @@ async function resolveCaseForMessagingAccess(
     return caseItem;
   }
 
-  if (user.isOperator && caseItem.assignedOperatorId !== user.uid) {
+  if (user.isOperator && !isOperatorAssignedToCase(caseItem, user.uid)) {
     throw new HttpError(403, "Este caso nao esta alocado para voce.");
   }
 
@@ -210,7 +222,11 @@ function ensureOperatorCanManageCase(
     throw new HttpError(403, "Acesso restrito a operadores.");
   }
 
-  if (!caseItem.assignedOperatorId) {
+  const hasAssignments =
+    Boolean(caseItem.assignedOperatorId) ||
+    (Array.isArray(caseItem.assignedOperatorIds) && caseItem.assignedOperatorIds.length > 0);
+
+  if (!hasAssignments) {
     if (options.allowWhenUnassigned) {
       return;
     }
@@ -218,7 +234,7 @@ function ensureOperatorCanManageCase(
     throw new HttpError(403, "Este caso ainda não foi alocado para um operador responsável.");
   }
 
-  if (caseItem.assignedOperatorId !== user.uid) {
+  if (!isOperatorAssignedToCase(caseItem, user.uid)) {
     throw new HttpError(403, "Este caso está alocado para outro operador.");
   }
 }
@@ -242,7 +258,7 @@ function filterAdminVisibleCases(
   }
 
   if (user.isOperator) {
-    return cases.filter((item) => item.assignedOperatorId === user.uid);
+    return cases.filter((item) => isOperatorAssignedToCase(item, user.uid));
   }
 
   return [];
@@ -256,7 +272,7 @@ function ensureAdminCanViewCase(
     return;
   }
 
-  if (user.isOperator && caseItem.assignedOperatorId === user.uid) {
+  if (user.isOperator && isOperatorAssignedToCase(caseItem, user.uid)) {
     return;
   }
 

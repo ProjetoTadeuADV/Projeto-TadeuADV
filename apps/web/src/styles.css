@@ -1127,6 +1127,72 @@ button.sidebar-item {
   letter-spacing: 0.03em;
 }
 
+.case-card-timeline-wrap {
+  position: relative;
+  margin-top: 0.15rem;
+  padding-right: 9.4rem;
+}
+
+.case-card-timeline {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.34rem;
+  text-decoration: none;
+}
+
+.case-card-timeline-step {
+  min-height: 34px;
+  border-radius: 9px;
+  border: 1px solid #f0c6c6;
+  background: #fdeceb;
+  color: #7a3f3f;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1.2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.32rem 0.3rem;
+}
+
+.case-card-timeline-step--current {
+  border-color: #ebd07e;
+  background: #fff2bf;
+  color: #6b5515;
+}
+
+.case-card-timeline-step--done {
+  border-color: #b9d2bf;
+  background: linear-gradient(90deg, #ef7a7a 0%, #f2c55f 45%, #78cb8d 100%);
+  color: #18452b;
+}
+
+.case-card-sale-link {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  border: 1px solid #b7cbe4;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #17395d;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 0.35rem 0.65rem;
+  text-decoration: none;
+  box-shadow: 0 10px 22px rgba(11, 34, 62, 0.15);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.case-card-timeline-wrap:hover .case-card-sale-link {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%) translateX(0);
+}
+
 .case-card-actions {
   display: flex;
   align-items: center;
@@ -4696,6 +4762,23 @@ button.sidebar-item {
 
   .case-card-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .case-card-timeline-wrap {
+    padding-right: 0;
+  }
+
+  .case-card-timeline {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .case-card-sale-link {
+    position: static;
+    transform: none;
+    opacity: 1;
+    pointer-events: auto;
+    margin-top: 0.45rem;
+    display: inline-flex;
   }
 
   .case-filters {

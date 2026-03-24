@@ -1,5 +1,5 @@
 ﻿import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
 import { triggerBrowserDownload } from "../lib/download";
@@ -89,7 +89,7 @@ const PRIOR_ATTEMPT_CHANNEL_LABEL: Record<
   reclame_aqui: "Reclame Aqui",
   procon: "Procon",
   consumidor_gov_br: "Consumidor.gov.br",
-  direto_reclamado: "Direto com o reclamado",
+  direto_reclamado: "Própria empresa (contato direto)",
   outro: "Outro"
 };
 
@@ -109,7 +109,7 @@ const MOVEMENT_VISIBILITY_LABEL: Record<CaseMovementRecord["visibility"], string
 };
 
 type OperatorActionStep = 1 | 2 | 3;
-type CaseDetailTab = "info" | "attachments" | "payments" | "progress" | "evolution";
+type CaseDetailTab = "info" | "attachments" | "payments" | "progress" | "evolution" | "sale";
 type CaseAttachmentItem = {
   key: string;
   source: "petition" | "message" | "movement";
@@ -144,8 +144,17 @@ const CASE_DETAIL_TABS: Array<{ id: CaseDetailTab; label: string }> = [
   { id: "attachments", label: "Anexos" },
   { id: "payments", label: "Pagamentos" },
   { id: "progress", label: "Andamento" },
-  { id: "evolution", label: "Evolução do Caso" }
+  { id: "evolution", label: "Evolução do Caso" },
+  { id: "sale", label: "Venda do Caso" }
 ];
+
+function isCaseDetailTab(value: string | null): value is CaseDetailTab {
+  if (!value) {
+    return false;
+  }
+
+  return CASE_DETAIL_TABS.some((tab) => tab.id === value);
+}
 
 const DEFAULT_CLOSE_REQUEST: CaseRecord["closeRequest"] = {
   status: "none",
@@ -264,6 +273,13 @@ function describePriorAttemptChannel(
     return custom?.length ? custom : PRIOR_ATTEMPT_CHANNEL_LABEL.outro;
   }
 
+  if (channel === "direto_reclamado") {
+    const custom = channelOther?.trim();
+    return custom?.length
+      ? `${PRIOR_ATTEMPT_CHANNEL_LABEL.direto_reclamado} · ${custom}`
+      : PRIOR_ATTEMPT_CHANNEL_LABEL.direto_reclamado;
+  }
+
   return PRIOR_ATTEMPT_CHANNEL_LABEL[channel];
 }
 
@@ -283,6 +299,50 @@ function formatAttachmentSize(sizeBytes: number): string {
 
   const rounded = unitIndex === 0 ? `${Math.round(value)}` : value.toFixed(1);
   return `${rounded} ${units[unitIndex]}`;
+}
+
+function resolveAssignedOperatorIds(caseItem: CaseRecord | null): string[] {
+  if (!caseItem) {
+    return [];
+  }
+
+  const ids = Array.isArray(caseItem.assignedOperatorIds) ? caseItem.assignedOperatorIds : [];
+  const normalized = ids.map((value) => value.trim()).filter(Boolean);
+  if (normalized.length > 0) {
+    return Array.from(new Set(normalized));
+  }
+
+  const legacy = caseItem.assignedOperatorId?.trim();
+  return legacy ? [legacy] : [];
+}
+
+function resolveAssignedOperatorNames(caseItem: CaseRecord | null): string[] {
+  if (!caseItem) {
+    return [];
+  }
+
+  const names = Array.isArray(caseItem.assignedOperatorNames) ? caseItem.assignedOperatorNames : [];
+  const normalized = names.map((value) => value.trim()).filter(Boolean);
+  if (normalized.length > 0) {
+    return Array.from(new Set(normalized));
+  }
+
+  const legacy = caseItem.assignedOperatorName?.trim();
+  return legacy ? [legacy] : [];
+}
+
+function resolveAssignedOperatorLabel(caseItem: CaseRecord | null): string {
+  const names = resolveAssignedOperatorNames(caseItem);
+  if (names.length > 0) {
+    return names.join(", ");
+  }
+
+  const ids = resolveAssignedOperatorIds(caseItem);
+  if (ids.length > 0) {
+    return ids.join(", ");
+  }
+
+  return "Sem responsável";
 }
 
 function fingerprintFile(file: File): string {
@@ -398,6 +458,8 @@ function ArrowLeftIcon() {
 export function CaseDetailPage() {
   const { getToken, canAccessAdmin, isMasterUser, isOperatorUser, user } = useAuth();
   const { id } = useParams<{ id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTabFromQuery = searchParams.get("tab");
 
   const [caseItem, setCaseItem] = useState<CaseRecord | null>(null);
 
@@ -459,7 +521,9 @@ export function CaseDetailPage() {
   const [isOperatorSidebarOpen, setIsOperatorSidebarOpen] = useState(false);
   const [isClientCloseSidebarOpen, setIsClientCloseSidebarOpen] = useState(false);
   const [operatorStep, setOperatorStep] = useState<OperatorActionStep>(1);
-  const [activeDetailTab, setActiveDetailTab] = useState<CaseDetailTab>("info");
+  const [activeDetailTab, setActiveDetailTab] = useState<CaseDetailTab>(() =>
+    isCaseDetailTab(requestedTabFromQuery) ? requestedTabFromQuery : "info"
+  );
   const [closingCase, setClosingCase] = useState(false);
   const [closeFeedback, setCloseFeedback] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
@@ -476,7 +540,7 @@ export function CaseDetailPage() {
   const [isCloseRequestReasonExpanded, setIsCloseRequestReasonExpanded] = useState(false);
   const [isCloseRequestRejectMode, setIsCloseRequestRejectMode] = useState(false);
 
-  const isAssignedOperator = Boolean(user?.uid && caseItem?.assignedOperatorId === user.uid);
+  const isAssignedOperator = Boolean(user?.uid && resolveAssignedOperatorIds(caseItem).includes(user.uid));
   const isRejectedOrClosedCase = Boolean(
     caseItem &&
       (caseItem.reviewDecision === "rejected" ||
@@ -1534,6 +1598,33 @@ export function CaseDetailPage() {
     }
   }
 
+  function handleDetailTabChange(tab: CaseDetailTab) {
+    setActiveDetailTab(tab);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (tab === "info") {
+        next.delete("tab");
+      } else {
+        next.set("tab", tab);
+      }
+      return next;
+    }, { replace: true });
+  }
+
+  useEffect(() => {
+    const nextTab = searchParams.get("tab");
+    if (isCaseDetailTab(nextTab)) {
+      if (activeDetailTab !== nextTab) {
+        setActiveDetailTab(nextTab);
+      }
+      return;
+    }
+
+    if (activeDetailTab !== "info") {
+      setActiveDetailTab("info");
+    }
+  }, [activeDetailTab, searchParams]);
+
   useEffect(() => {
     if (!caseItem) {
       return;
@@ -1544,6 +1635,11 @@ export function CaseDetailPage() {
       (caseItem.workflowStep === "in_progress" || caseItem.workflowStep === "closed");
     if ((activeDetailTab === "payments" || activeDetailTab === "progress") && !isPostInitialFlow) {
       setActiveDetailTab("info");
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current);
+        next.delete("tab");
+        return next;
+      }, { replace: true });
     }
   }, [activeDetailTab, caseItem]);
 
@@ -1576,6 +1672,7 @@ export function CaseDetailPage() {
 
   const operatorCurrentStepTitle =
     OPERATOR_ACTION_STEPS.find((step) => step.id === operatorStep)?.title ?? "Etapa";
+  const caseDisplayTitle = caseItem.petitionInitial?.defendantName?.trim() || caseItem.varaNome;
   const visibleCaseDetailTabs = CASE_DETAIL_TABS.filter((tab) => {
     const isPostInitialFlow =
       caseItem.reviewDecision === "accepted" &&
@@ -1603,7 +1700,7 @@ export function CaseDetailPage() {
             </div>
 
             <div className="case-detail-title-row">
-              <h1>{caseItem.varaNome}</h1>
+              <h1>{caseDisplayTitle}</h1>
               <Link
                 to={`/messages?caseId=${caseItem.id}`}
                 className="case-detail-message-link"
@@ -1612,7 +1709,7 @@ export function CaseDetailPage() {
                 <MessageIcon />
               </Link>
             </div>
-            <p className="helper-text">Código do caso: {caseItem.caseCode}</p>
+            <p className="helper-text">Processo: {caseItem.caseCode}</p>
             {petitionAttachmentError && <p className="error-text">{petitionAttachmentError}</p>}
             {attachmentError && <p className="error-text">{attachmentError}</p>}
             {closeError && <p className="error-text">{closeError}</p>}
@@ -1634,7 +1731,7 @@ export function CaseDetailPage() {
                 key={tab.id}
                 type="button"
                 className={activeDetailTab === tab.id ? "case-detail-tab case-detail-tab--active" : "case-detail-tab"}
-                onClick={() => setActiveDetailTab(tab.id)}
+                onClick={() => handleDetailTabChange(tab.id)}
               >
                 {tab.label}
               </button>
@@ -1676,8 +1773,8 @@ export function CaseDetailPage() {
                   <strong>{caseItem.cpf}</strong>
                 </div>
                 <div className="detail-item">
-                  <span>Operador alocado</span>
-                  <strong>{caseItem.assignedOperatorName ?? caseItem.assignedOperatorId ?? "Sem operador"}</strong>
+                  <span>Responsáveis</span>
+                  <strong>{resolveAssignedOperatorLabel(caseItem)}</strong>
                 </div>
                 <div className="detail-item">
                   <span>Abertura</span>
@@ -2392,6 +2489,21 @@ export function CaseDetailPage() {
                     ))}
                   </ul>
                 )}
+              </div>
+            </>
+          )}
+
+          {activeDetailTab === "sale" && (
+            <>
+              <h2>Venda do Caso</h2>
+              <div className="info-box">
+                <strong>Funcionalidade em construção</strong>
+                <span>
+                  Esta área vai concentrar a análise financeira e as opções para venda do caso.
+                </span>
+                <span>
+                  Enquanto isso, continue acompanhando as etapas em <strong>Evolução do Caso</strong>.
+                </span>
               </div>
             </>
           )}

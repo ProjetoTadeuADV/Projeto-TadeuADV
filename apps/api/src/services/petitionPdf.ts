@@ -320,7 +320,7 @@ function formatPriorAttemptChannel(
   }
 
   if (channel === "direto_reclamado") {
-    return "Direto com o reclamado";
+    return "Própria empresa (contato direto)";
   }
 
   return customChannel?.trim() || "Outro";

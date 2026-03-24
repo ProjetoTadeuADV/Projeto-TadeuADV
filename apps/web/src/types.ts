@@ -235,6 +235,8 @@ export interface CaseRecord {
   petitionInitial?: PetitionInitialData | null;
   assignedOperatorId: string | null;
   assignedOperatorName: string | null;
+  assignedOperatorIds?: string[];
+  assignedOperatorNames?: string[];
   assignedAt: string | null;
   reviewDecision: CaseReviewDecision;
   reviewReason: string | null;

@@ -359,9 +359,48 @@ function normalizeCaseMessages(value: CaseMessageRecord[] | null | undefined): C
   }));
 }
 
+function normalizeAssignedOperatorIds(
+  ids: string[] | null | undefined,
+  legacyId: string | null | undefined
+): string[] {
+  const normalized = (Array.isArray(ids) ? ids : [])
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (normalized.length > 0) {
+    return Array.from(new Set(normalized));
+  }
+
+  const fallback = legacyId?.trim();
+  return fallback ? [fallback] : [];
+}
+
+function normalizeAssignedOperatorNames(
+  names: string[] | null | undefined,
+  legacyName: string | null | undefined
+): string[] {
+  const normalized = (Array.isArray(names) ? names : [])
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (normalized.length > 0) {
+    return Array.from(new Set(normalized));
+  }
+
+  const fallback = legacyName?.trim();
+  return fallback ? [fallback] : [];
+}
+
 function normalizeCaseRecord(value: CaseRecord): CaseRecord {
+  const assignedOperatorIds = normalizeAssignedOperatorIds(value.assignedOperatorIds, value.assignedOperatorId);
+  const assignedOperatorNames = normalizeAssignedOperatorNames(value.assignedOperatorNames, value.assignedOperatorName);
+
   return {
     ...value,
+    assignedOperatorId: assignedOperatorIds[0] ?? null,
+    assignedOperatorName: assignedOperatorNames[0] ?? null,
+    assignedOperatorIds,
+    assignedOperatorNames,
     reviewDecision: value.reviewDecision ?? "pending",
     reviewReason: normalizeOptionalText(value.reviewReason),
     reviewedAt: value.reviewedAt ?? null,
@@ -647,6 +686,8 @@ export class MemoryCaseRepository implements CaseRepository {
       petitionInitial: normalizePetitionInitialData(input.petitionInitial ?? null),
       assignedOperatorId: null,
       assignedOperatorName: null,
+      assignedOperatorIds: [],
+      assignedOperatorNames: [],
       assignedAt: null,
       reviewDecision: "pending",
       reviewReason: null,
@@ -691,12 +732,26 @@ export class MemoryCaseRepository implements CaseRepository {
       return null;
     }
     const normalizedExisting = normalizeCaseRecord(existing);
+    const currentAssignedOperatorIds = normalizedExisting.assignedOperatorIds ?? [];
+    const currentAssignedOperatorNames = normalizedExisting.assignedOperatorNames ?? [];
+    const alreadyAssigned = currentAssignedOperatorIds.includes(operator.id);
+    const nextAssignedOperatorIds = alreadyAssigned
+      ? currentAssignedOperatorIds
+      : [...currentAssignedOperatorIds, operator.id];
+    const nextAssignedOperatorNames = alreadyAssigned
+      ? currentAssignedOperatorNames
+      : [
+          ...currentAssignedOperatorNames,
+          (operator.name ?? operator.id).trim()
+        ].filter(Boolean);
 
     const now = new Date().toISOString();
     const movement: CaseMovementRecord = {
       id: randomUUID(),
       stage: "triagem",
-      description: `Caso alocado para ${operator.name ?? operator.id}.`,
+      description: alreadyAssigned
+        ? `${operator.name ?? operator.id} já fazia parte dos responsáveis deste caso.`
+        : `Responsável ${operator.name ?? operator.id} adicionado ao caso.`,
       visibility: "public",
       createdAt: now,
       createdByUserId: actor.id,
@@ -709,6 +764,8 @@ export class MemoryCaseRepository implements CaseRepository {
       ...normalizedExisting,
       assignedOperatorId: operator.id,
       assignedOperatorName: operator.name,
+      assignedOperatorIds: nextAssignedOperatorIds,
+      assignedOperatorNames: nextAssignedOperatorNames,
       assignedAt: now,
       movements: [...(normalizedExisting.movements ?? []), movement],
       updatedAt: now

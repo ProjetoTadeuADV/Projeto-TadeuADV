@@ -142,6 +142,7 @@ const PRIOR_ATTEMPT_CHANNEL_OPTIONS: PriorAttemptChannelOption[] = [
   { value: "reclame_aqui", label: "Reclame Aqui" },
   { value: "procon", label: "Procon" },
   { value: "consumidor_gov_br", label: "Consumidor.gov.br" },
+  { value: "direto_reclamado", label: "Própria empresa (contato direto)" },
   { value: "outro", label: "Outro" }
 ];
 
@@ -578,6 +579,10 @@ export function NewCasePage() {
       return false;
     }
 
+    if (priorAttemptChannel === "direto_reclamado" && priorAttemptChannelOther.trim().length < 5) {
+      return false;
+    }
+
     if (priorAttemptProtocol.trim().length < 3) {
       return false;
     }
@@ -613,7 +618,7 @@ export function NewCasePage() {
       },
       {
         id: "reclamada",
-        label: "Parte reclamada identificada (nome mín. 2 e CPF/CNPJ válido)",
+        label: "Parte contrária identificada (nome mín. 2 e CPF/CNPJ válido)",
         done: defendantName.trim().length >= 2 && isDefendantDocumentValid
       },
       {
@@ -1175,13 +1180,13 @@ export function NewCasePage() {
 
     const trimmedDefendantName = defendantName.trim();
     if (trimmedDefendantName.length < 2) {
-      setError("Informe o nome da parte reclamada.");
+      setError("Informe o nome da parte contrária.");
       return;
     }
 
     const normalizedDefendantDocument = normalizeDigits(defendantDocument);
     if (!normalizedDefendantDocument) {
-      setError("Informe CPF ou CNPJ da parte reclamada.");
+      setError("Informe CPF ou CNPJ da parte contrária.");
       return;
     }
 
@@ -1191,7 +1196,7 @@ export function NewCasePage() {
     }
 
     if (defendantType === "pessoa_fisica" && !isValidCpf(normalizedDefendantDocument)) {
-      setError("CPF da parte reclamada inválido.");
+      setError("CPF da parte contrária inválido.");
       return;
     }
 
@@ -1201,22 +1206,22 @@ export function NewCasePage() {
     }
 
     if (defendantType === "pessoa_juridica" && !isValidCnpj(normalizedDefendantDocument)) {
-      setError("CNPJ da parte reclamada inválido.");
+      setError("CNPJ da parte contrária inválido.");
       return;
     }
 
     if (defendantType === "nao_informado" && ![11, 14].includes(normalizedDefendantDocument.length)) {
-      setError("Documento da reclamada deve conter 11 ou 14 dígitos.");
+      setError("Documento da parte contrária deve conter 11 ou 14 dígitos.");
       return;
     }
 
     if (defendantType === "nao_informado" && normalizedDefendantDocument.length === 11 && !isValidCpf(normalizedDefendantDocument)) {
-      setError("CPF da parte reclamada inválido.");
+      setError("CPF da parte contrária inválido.");
       return;
     }
 
     if (defendantType === "nao_informado" && normalizedDefendantDocument.length === 14 && !isValidCnpj(normalizedDefendantDocument)) {
-      setError("CNPJ da parte reclamada inválido.");
+      setError("CNPJ da parte contrária inválido.");
       return;
     }
 
@@ -1298,7 +1303,10 @@ export function NewCasePage() {
     const normalizedPriorAttemptChannel: PetitionPriorAttemptChannel | null =
       priorAttemptMade && priorAttemptChannel ? priorAttemptChannel : null;
     const normalizedPriorAttemptChannelOther =
-      priorAttemptMade && normalizedPriorAttemptChannel === "outro" ? priorAttemptChannelOther.trim() : null;
+      priorAttemptMade &&
+      (normalizedPriorAttemptChannel === "outro" || normalizedPriorAttemptChannel === "direto_reclamado")
+        ? priorAttemptChannelOther.trim()
+        : null;
     const normalizedPriorAttemptProtocol = priorAttemptMade ? priorAttemptProtocol.trim() : null;
     const normalizedPriorAttemptHadProposal = priorAttemptMade ? priorAttemptHadProposal : null;
     const normalizedPriorAttemptProposalDetails =
@@ -1490,9 +1498,15 @@ export function NewCasePage() {
               </div>
             )}
 
-            <h2>Dados da parte reclamada</h2>
+            <h2>Dados de quem você está processando (parte contrária)</h2>
+            <div className="info-box">
+              <strong>O que é a parte contrária?</strong>
+              <span>
+                É a empresa ou pessoa que você entende ser responsável pelo problema e contra quem o caso será aberto.
+              </span>
+            </div>
             <label>
-              Tipo da reclamada
+              Tipo da parte contrária
               <select
                 value={defendantType}
                 onChange={(event) => setDefendantType(event.target.value as PetitionDefendantType)}
@@ -1504,18 +1518,18 @@ export function NewCasePage() {
             </label>
 
             <label>
-              Nome da reclamada (mín. 2 caracteres)
+              Nome da parte contrária (mín. 2 caracteres)
               <input
                 type="text"
                 value={defendantName}
                 onChange={(event) => setDefendantName(event.target.value)}
-                placeholder="Nome da empresa ou pessoa reclamada"
+                placeholder="Nome da empresa ou pessoa"
                 required
               />
             </label>
 
             <label>
-              {defendantType === "pessoa_fisica" ? "CPF da reclamada" : "CNPJ da reclamada"}
+              {defendantType === "pessoa_fisica" ? "CPF da parte contrária" : "CNPJ da parte contrária"}
               <input
                 type="text"
                 value={defendantDocument}
@@ -1545,7 +1559,7 @@ export function NewCasePage() {
             </label>
 
             <label>
-              Endereço da reclamada
+              Endereço da parte contrária
               <input
                 type="text"
                 value={defendantAddress}
@@ -1554,11 +1568,11 @@ export function NewCasePage() {
               />
             </label>
 
-            <h2>Conteúdo da petição</h2>
+            <h2>Continue nos contando sobre o caso</h2>
             <div className="petition-section">
               <div className="petition-section-head">
                 <h3>Tentativa de solução antes da ação</h3>
-                <p>Informe se já houve atuação de órgão de proteção ao consumidor ou tratativa direta com o reclamado.</p>
+                <p>Informe se você já tentou resolver antes, seja por órgão de defesa do consumidor ou direto com a empresa.</p>
               </div>
 
               <label>
@@ -1575,7 +1589,7 @@ export function NewCasePage() {
               {priorAttemptMade && (
                 <>
                   <label>
-                    Qual foi o órgão? (Reclame Aqui, Procon, Consumidor.gov.br ou Outro)
+                    Qual foi o órgão/canal da tentativa de solução?
                     <select
                       value={priorAttemptChannel}
                       onChange={(event) =>
@@ -1592,6 +1606,23 @@ export function NewCasePage() {
                     </select>
                   </label>
 
+                  {priorAttemptChannel === "direto_reclamado" && (
+                    <label>
+                      Como foi essa tentativa com a própria empresa? (mín. 5 caracteres)
+                      <textarea
+                        value={priorAttemptChannelOther}
+                        onChange={(event) => setPriorAttemptChannelOther(limitPetitionText(event.target.value))}
+                        rows={3}
+                        placeholder="Conte como foi o contato com a empresa e qual retorno você recebeu."
+                        maxLength={PETITION_TEXT_MAX_LENGTH}
+                        required
+                      />
+                      <span className="field-help">
+                        {priorAttemptChannelOther.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
+                      </span>
+                    </label>
+                  )}
+
                   {priorAttemptChannel === "outro" && (
                     <label>
                       Qual foi o órgão/canal? (mín. 3 caracteres)
@@ -1599,7 +1630,7 @@ export function NewCasePage() {
                         type="text"
                         value={priorAttemptChannelOther}
                         onChange={(event) => setPriorAttemptChannelOther(event.target.value)}
-                        placeholder="Ex.: Direto com o reclamado, SAC da empresa, plataforma regional, etc."
+                        placeholder="Ex.: plataforma regional, associação de defesa local, outro canal."
                         required
                       />
                     </label>
@@ -1617,7 +1648,7 @@ export function NewCasePage() {
                   </label>
 
                   <label>
-                    Nessa tratativa houve alguma proposta de acordo pelo reclamado? (Sim/Não)
+                    Nessa tratativa houve alguma proposta de acordo da empresa/pessoa? (Sim/Não)
                     <select
                       value={
                         priorAttemptHadProposal === null ? "" : priorAttemptHadProposal ? "sim" : "nao"

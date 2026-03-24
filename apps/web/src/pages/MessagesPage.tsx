@@ -110,7 +110,10 @@ function filterCasesForMessages(cases: CaseRecord[], userId: string | undefined,
     return cases;
   }
 
-  return cases.filter((item) => item.assignedOperatorId === userId);
+  return cases.filter((item) => {
+    const ids = Array.isArray(item.assignedOperatorIds) ? item.assignedOperatorIds : [];
+    return ids.includes(userId) || item.assignedOperatorId === userId;
+  });
 }
 
 export function MessagesPage() {

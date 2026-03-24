@@ -43,6 +43,15 @@ const WORKFLOW_LABEL: Record<CaseRecord["workflowStep"], string> = {
 type StatusFilter = "todos" | CaseRecord["status"];
 type SortOption = "updated_desc" | "updated_asc" | "created_desc" | "created_asc";
 
+const CASE_TIMELINE_STEPS = [
+  "Ajuizamento",
+  "Audiência de conciliação",
+  "Sentença",
+  "Acordo",
+  "Trânsito em julgado",
+  "Receber a ação"
+] as const;
+
 function formatDate(dateIso: string): string {
   return new Date(dateIso).toLocaleString("pt-BR");
 }
@@ -85,18 +94,99 @@ function resolveCreatorName(item: CaseRecord): string {
   return "Não informado";
 }
 
-function resolveAssignedOperator(item: CaseRecord): string {
-  const name = item.assignedOperatorName?.trim();
-  if (name) {
-    return name;
+function resolveCounterpartyName(item: CaseRecord): string {
+  const defendantName = item.petitionInitial?.defendantName?.trim();
+  if (defendantName) {
+    return defendantName;
   }
 
-  const id = item.assignedOperatorId?.trim();
-  if (id) {
-    return id;
+  return "Parte contrária não informada";
+}
+
+function resolveAssignedOperatorIds(item: CaseRecord): string[] {
+  const ids = Array.isArray(item.assignedOperatorIds) ? item.assignedOperatorIds : [];
+  const normalized = ids.map((value) => value.trim()).filter(Boolean);
+  if (normalized.length > 0) {
+    return Array.from(new Set(normalized));
+  }
+
+  const legacy = item.assignedOperatorId?.trim();
+  return legacy ? [legacy] : [];
+}
+
+function resolveAssignedOperatorNames(item: CaseRecord): string[] {
+  const names = Array.isArray(item.assignedOperatorNames) ? item.assignedOperatorNames : [];
+  const normalized = names.map((value) => value.trim()).filter(Boolean);
+  if (normalized.length > 0) {
+    return Array.from(new Set(normalized));
+  }
+
+  const legacy = item.assignedOperatorName?.trim();
+  return legacy ? [legacy] : [];
+}
+
+function isUserAssignedToCase(item: CaseRecord, userId: string | undefined): boolean {
+  if (!userId) {
+    return false;
+  }
+
+  return resolveAssignedOperatorIds(item).includes(userId);
+}
+
+function resolveAssignedOperator(item: CaseRecord): string {
+  const names = resolveAssignedOperatorNames(item);
+  if (names.length > 0) {
+    return names.join(", ");
+  }
+
+  const ids = resolveAssignedOperatorIds(item);
+  if (ids.length > 0) {
+    return ids.join(", ");
   }
 
   return "Sem operador";
+}
+
+function resolveTimelineProgress(item: CaseRecord): number {
+  if (item.reviewDecision === "rejected") {
+    return 0;
+  }
+
+  let progress = 0;
+
+  if (item.reviewDecision === "accepted" || item.workflowStep !== "triage") {
+    progress = Math.max(progress, 1);
+  }
+
+  const conciliationAttempts = item.procedureProgress?.conciliation?.attempts ?? [];
+  if (item.procedureProgress?.conciliation?.contactedDefendant || conciliationAttempts.length > 0) {
+    progress = Math.max(progress, 2);
+  }
+
+  const hasSentenceChecklist = Boolean(
+    item.procedureProgress?.petition?.checklist?.some((check) => check.id === "sentenca" && check.done)
+  );
+  if (hasSentenceChecklist) {
+    progress = Math.max(progress, 3);
+  }
+
+  if (item.procedureProgress?.conciliation?.agreementReached) {
+    progress = Math.max(progress, 4);
+  }
+
+  const isClosed = item.workflowStep === "closed" || item.status === "encerrado";
+  if (isClosed) {
+    progress = Math.max(progress, 5);
+  }
+
+  const hasPaymentReceived =
+    item.serviceFee?.status === "paid" ||
+    (item.charges ?? []).some((charge) => charge.status === "received" || charge.status === "confirmed");
+  if (isClosed && hasPaymentReceived) {
+    progress = Math.max(progress, 6);
+  }
+
+  return progress;
 }
 
 function resolveLatestMovement(item: CaseRecord): CaseMovementRecord | null {
@@ -155,7 +245,7 @@ export function DashboardPage() {
           setSelectedOperatorByCase((current) => {
             const next: Record<string, string> = {};
             for (const item of data) {
-              const selected = current[item.id] ?? item.assignedOperatorId ?? "";
+              const selected = current[item.id] ?? resolveAssignedOperatorIds(item)[0] ?? "";
               next[item.id] = selected;
             }
             return next;
@@ -194,6 +284,7 @@ export function DashboardPage() {
         : byStatus.filter((item) => {
             const latestMovement = resolveLatestMovement(item);
             const content = [
+              resolveCounterpartyName(item),
               item.varaNome,
               item.caseCode,
               item.cpf,
@@ -235,7 +326,7 @@ export function DashboardPage() {
       return [];
     }
 
-    return filteredCases.filter((item) => item.assignedOperatorId === user.uid && !isClosedCase(item));
+    return filteredCases.filter((item) => isUserAssignedToCase(item, user.uid) && !isClosedCase(item));
   }, [canAccessAdmin, filteredCases, user?.uid]);
 
   const openOtherCases = useMemo(() => {
@@ -247,7 +338,7 @@ export function DashboardPage() {
       return filteredCases.filter((item) => !isClosedCase(item));
     }
 
-    return filteredCases.filter((item) => item.assignedOperatorId !== user.uid && !isClosedCase(item));
+    return filteredCases.filter((item) => !isUserAssignedToCase(item, user.uid) && !isClosedCase(item));
   }, [canAccessAdmin, filteredCases, isMasterUser, user?.uid]);
 
   const closedCases = useMemo(() => {
@@ -263,7 +354,7 @@ export function DashboardPage() {
       return [];
     }
 
-    return filteredCases.filter((item) => item.assignedOperatorId === user.uid && isClosedCase(item));
+    return filteredCases.filter((item) => isUserAssignedToCase(item, user.uid) && isClosedCase(item));
   }, [canAccessAdmin, filteredCases, isMasterUser, user?.uid]);
 
   const clientOpenCases = useMemo(() => {
@@ -339,26 +430,15 @@ export function DashboardPage() {
       });
 
       setCases((current) =>
-        current.map((item) =>
-          item.id === caseItem.id
-            ? {
-                ...item,
-                assignedOperatorId: updated.assignedOperatorId,
-                assignedOperatorName: updated.assignedOperatorName,
-                assignedAt: updated.assignedAt,
-                movements: updated.movements,
-                updatedAt: updated.updatedAt
-              }
-            : item
-        )
+        current.map((item) => (item.id === caseItem.id ? { ...item, ...updated } : item))
       );
 
       const selectedOperator = operatorOptions.find((item) => item.id === operatorUserId);
       const operatorLabel = selectedOperator?.name ?? selectedOperator?.email ?? updated.assignedOperatorName;
       setAssignmentFeedback(
         operatorLabel
-          ? `Caso ${updated.caseCode} alocado para ${operatorLabel}.`
-          : `Caso ${updated.caseCode} alocado com sucesso.`
+          ? `Responsável ${operatorLabel} adicionado ao processo ${updated.caseCode}.`
+          : `Responsável adicionado ao processo ${updated.caseCode}.`
       );
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Falha ao alocar operador para este caso.";
@@ -383,9 +463,9 @@ export function DashboardPage() {
               <div className="case-card-top">
                 <div className="case-card-title-wrap">
                   <Link to={`/cases/${item.id}`} className="case-card-title-link">
-                    {item.varaNome}
+                    {resolveCounterpartyName(item)}
                   </Link>
-                  <small className="case-card-code">{item.caseCode}</small>
+                  <small className="case-card-code">Processo: {item.caseCode}</small>
                 </div>
                 <div className="case-card-top-actions">
                   {closeRequestStatus === "pending" && (
@@ -411,14 +491,36 @@ export function DashboardPage() {
                   {item.cpf}
                 </span>
                 <span>
-                  <small>Abertura</small>
+                  <small>Abertura do caso</small>
                   {formatDate(item.createdAt)}
                 </span>
               </div>
 
-              {!canAccessAdmin && (
-                <p className="case-card-operator-inline">Operador: {resolveAssignedOperator(item)}</p>
-              )}
+              <div className="case-card-timeline-wrap">
+                <Link to={`/cases/${item.id}?tab=evolution`} className="case-card-timeline" title="Ir para evolução do caso">
+                  {CASE_TIMELINE_STEPS.map((label, index) => {
+                    const progress = resolveTimelineProgress(item);
+                    const stepNumber = index + 1;
+                    const stepClass =
+                      stepNumber <= progress
+                        ? "case-card-timeline-step case-card-timeline-step--done"
+                        : stepNumber === Math.min(progress + 1, CASE_TIMELINE_STEPS.length)
+                          ? "case-card-timeline-step case-card-timeline-step--current"
+                          : "case-card-timeline-step";
+
+                    return (
+                      <span key={`${item.id}-timeline-${label}`} className={stepClass}>
+                        {label}
+                      </span>
+                    );
+                  })}
+                </Link>
+                <Link to={`/cases/${item.id}?tab=sale`} className="case-card-sale-link">
+                  Venda seu caso
+                </Link>
+              </div>
+
+              <p className="case-card-operator-inline">Responsáveis: {resolveAssignedOperator(item)}</p>
 
               <div className="case-card-actions">
                 <button
@@ -436,7 +538,7 @@ export function DashboardPage() {
                       disabled={assigningCaseId === item.id || operatorOptions.length === 0 || isRejectedCase(item)}
                       aria-label={`Selecionar operador para o caso ${item.caseCode}`}
                     >
-                      <option value="">Sem operador</option>
+                      <option value="">Selecionar responsável</option>
                       {operatorOptions.map((option) => (
                         <option key={option.id} value={option.id}>
                           {option.name ?? option.email ?? option.id}
@@ -451,11 +553,16 @@ export function DashboardPage() {
                       disabled={
                         assigningCaseId === item.id ||
                         isRejectedCase(item) ||
-                        !selectedOperatorByCase[item.id]
+                        !selectedOperatorByCase[item.id] ||
+                        resolveAssignedOperatorIds(item).includes(selectedOperatorByCase[item.id])
                       }
                     >
-                      {assigningCaseId === item.id ? "Alocando..." : "Alocar operador"}
+                      {assigningCaseId === item.id ? "Adicionando..." : "Adicionar responsável"}
                     </button>
+                    {selectedOperatorByCase[item.id] &&
+                      resolveAssignedOperatorIds(item).includes(selectedOperatorByCase[item.id]) && (
+                        <span className="field-help">Esse responsável já está vinculado ao caso.</span>
+                    )}
                   </div>
                 )}
               </div>
@@ -468,8 +575,8 @@ export function DashboardPage() {
                       <p>{item.caseCode}</p>
                     </div>
                     <div>
-                      <small>Vara</small>
-                      <p>{item.varaNome}</p>
+                      <small>Parte contrária</small>
+                      <p>{resolveCounterpartyName(item)}</p>
                     </div>
                     <div>
                       <small>Status do CPF</small>
@@ -488,7 +595,7 @@ export function DashboardPage() {
                       <p>{WORKFLOW_LABEL[item.workflowStep]}</p>
                     </div>
                     <div>
-                      <small>Operador alocado</small>
+                      <small>Responsáveis</small>
                       <p>{resolveAssignedOperator(item)}</p>
                     </div>
                     {canAccessAdmin && (
