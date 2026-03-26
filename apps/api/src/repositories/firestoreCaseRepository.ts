@@ -308,8 +308,72 @@ function normalizeConciliationAttempts(
 function normalizeCaseProcedureProgress(
   value: CaseRecord["procedureProgress"] | null | undefined
 ): CaseProcedureProgress {
+  const normalizeTimelineStageStates = (states: unknown) => {
+    if (!states || typeof states !== "object") {
+      return {};
+    }
+
+    const result: NonNullable<CaseProcedureProgress["timeline"]["stageStates"]> = {};
+    for (const [stage, rawState] of Object.entries(states)) {
+      if (!rawState || typeof rawState !== "object") {
+        continue;
+      }
+      const rawStateRecord = rawState as Record<string, unknown>;
+      const rawChecklist = rawStateRecord.checklist;
+
+      const checklist = Array.isArray(rawChecklist)
+        ? rawChecklist
+            .map((item: unknown) => {
+              if (!item || typeof item !== "object") {
+                return null;
+              }
+              const rawChecklistItem = item as Record<string, unknown>;
+
+              const id = typeof rawChecklistItem.id === "string" ? rawChecklistItem.id.trim() : "";
+              const label = typeof rawChecklistItem.label === "string" ? rawChecklistItem.label.trim() : "";
+              if (!id || !label) {
+                return null;
+              }
+
+              return {
+                id,
+                label,
+                done: rawChecklistItem.done === true,
+                updatedAt: typeof rawChecklistItem.updatedAt === "string" ? rawChecklistItem.updatedAt : null
+              };
+            })
+            .filter(
+              (item: { id: string; label: string; done: boolean; updatedAt: string | null } | null): item is {
+                id: string;
+                label: string;
+                done: boolean;
+                updatedAt: string | null;
+              } => item !== null
+            )
+        : [];
+
+      result[stage as keyof typeof result] = {
+        checklist,
+        notes: normalizeOptionalText(rawStateRecord.notes as string | null | undefined),
+        updatedAt: typeof rawStateRecord.updatedAt === "string" ? rawStateRecord.updatedAt : null,
+        updatedByUserId: typeof rawStateRecord.updatedByUserId === "string" ? rawStateRecord.updatedByUserId : null,
+        updatedByName: normalizeOptionalText(rawStateRecord.updatedByName as string | null | undefined)
+      };
+    }
+
+    return result;
+  };
+
   if (!value) {
     return {
+      timeline: {
+        currentStage: "ajuizamento",
+        notes: null,
+        updatedAt: null,
+        updatedByUserId: null,
+        updatedByName: null,
+        stageStates: {}
+      },
       conciliation: {
         details: null,
         contactedDefendant: false,
@@ -337,6 +401,14 @@ function normalizeCaseProcedureProgress(
   }
 
   return {
+    timeline: {
+      currentStage: value.timeline?.currentStage ?? "ajuizamento",
+      notes: normalizeOptionalText(value.timeline?.notes),
+      updatedAt: value.timeline?.updatedAt ?? null,
+      updatedByUserId: value.timeline?.updatedByUserId ?? null,
+      updatedByName: normalizeOptionalText(value.timeline?.updatedByName),
+      stageStates: normalizeTimelineStageStates(value.timeline?.stageStates)
+    },
     conciliation: {
       details: normalizeOptionalText(value.conciliation?.details),
       contactedDefendant: value.conciliation?.contactedDefendant === true,
@@ -880,6 +952,86 @@ export class FirestoreCaseRepository implements CaseRepository {
       assignedOperatorIds: nextAssignedOperatorIds,
       assignedOperatorNames: nextAssignedOperatorNames,
       assignedAt: now,
+      movements: [...existing.movements, movement],
+      updatedAt: now
+    };
+
+    await ref.set(updated, { merge: true });
+    return updated;
+  }
+
+  async setCaseOperators(
+    caseId: string,
+    operators: Array<{ id: string; name: string | null }>,
+    actor: { id: string; name: string | null }
+  ): Promise<CaseRecord | null> {
+    const ref = this.firestore.collection(CASES_COLLECTION).doc(caseId);
+    const snapshot = await ref.get();
+    if (!snapshot.exists) {
+      return null;
+    }
+
+    const existing = normalizeCaseRecord(snapshot.data() as Partial<CaseRecord>, caseId);
+    const currentAssignedOperatorIds = Array.isArray(existing.assignedOperatorIds)
+      ? existing.assignedOperatorIds
+      : [];
+    const currentAssignedOperatorNames = Array.isArray(existing.assignedOperatorNames)
+      ? existing.assignedOperatorNames
+      : [];
+    const currentNameById = new Map<string, string>(
+      currentAssignedOperatorIds.map((id, index) => [id, currentAssignedOperatorNames[index] ?? id])
+    );
+
+    const nextAssignedOperatorIds: string[] = [];
+    const nextAssignedOperatorNames: string[] = [];
+    for (const operator of operators) {
+      const id = operator.id.trim();
+      if (!id || nextAssignedOperatorIds.includes(id)) {
+        continue;
+      }
+
+      const fallbackName = currentNameById.get(id) ?? id;
+      const normalizedName = (operator.name ?? fallbackName).trim() || fallbackName;
+      nextAssignedOperatorIds.push(id);
+      nextAssignedOperatorNames.push(normalizedName);
+    }
+
+    const addedNames = nextAssignedOperatorIds
+      .filter((id) => !currentAssignedOperatorIds.includes(id))
+      .map((id) => nextAssignedOperatorNames[nextAssignedOperatorIds.indexOf(id)] ?? id);
+    const removedNames = currentAssignedOperatorIds
+      .filter((id) => !nextAssignedOperatorIds.includes(id))
+      .map((id) => currentNameById.get(id) ?? id);
+
+    let movementDescription = "Lista de responsaveis revisada sem alteracoes.";
+    if (addedNames.length > 0 && removedNames.length > 0) {
+      movementDescription = `Responsaveis atualizados. Adicionados: ${addedNames.join(", ")}. Removidos: ${removedNames.join(", ")}.`;
+    } else if (addedNames.length > 0) {
+      movementDescription = `Responsaveis adicionados: ${addedNames.join(", ")}.`;
+    } else if (removedNames.length > 0) {
+      movementDescription = `Responsaveis removidos: ${removedNames.join(", ")}.`;
+    }
+
+    const now = new Date().toISOString();
+    const movement: CaseMovementRecord = {
+      id: randomUUID(),
+      stage: "triagem",
+      description: movementDescription,
+      visibility: "public",
+      createdAt: now,
+      createdByUserId: actor.id,
+      createdByName: actor.name,
+      statusAfter: existing.status,
+      attachments: []
+    };
+
+    const updated: CaseRecord = {
+      ...existing,
+      assignedOperatorId: nextAssignedOperatorIds[0] ?? null,
+      assignedOperatorName: nextAssignedOperatorNames[0] ?? null,
+      assignedOperatorIds: nextAssignedOperatorIds,
+      assignedOperatorNames: nextAssignedOperatorNames,
+      assignedAt: nextAssignedOperatorIds.length > 0 ? now : null,
       movements: [...existing.movements, movement],
       updatedAt: now
     };

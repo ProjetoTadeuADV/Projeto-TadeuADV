@@ -97,6 +97,14 @@ export type CaseWorkflowStep =
   | "in_progress"
   | "closed";
 
+export type CaseTimelineStage =
+  | "ajuizamento"
+  | "audiencia-conciliacao"
+  | "sentenca"
+  | "acordo"
+  | "transito-julgado"
+  | "receber-acao";
+
 export type CaseMessageSenderRole = "client" | "operator" | "master" | "system";
 
 export type CaseCloseRequestStatus = "none" | "pending" | "approved" | "denied";
@@ -187,7 +195,32 @@ export interface CasePetitionProgress {
   lastUpdatedAt: string | null;
 }
 
+export interface CaseTimelineProgress {
+  currentStage: CaseTimelineStage;
+  notes: string | null;
+  updatedAt: string | null;
+  updatedByUserId: string | null;
+  updatedByName: string | null;
+  stageStates?: Partial<Record<CaseTimelineStage, CaseTimelineStageState>>;
+}
+
+export interface CaseTimelineStageChecklistItem {
+  id: string;
+  label: string;
+  done: boolean;
+  updatedAt: string | null;
+}
+
+export interface CaseTimelineStageState {
+  checklist: CaseTimelineStageChecklistItem[];
+  notes: string | null;
+  updatedAt: string | null;
+  updatedByUserId: string | null;
+  updatedByName: string | null;
+}
+
 export interface CaseProcedureProgress {
+  timeline: CaseTimelineProgress;
   conciliation: CaseConciliationProgress;
   petition: CasePetitionProgress;
 }

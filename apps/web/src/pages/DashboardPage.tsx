@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
@@ -44,13 +44,45 @@ type StatusFilter = "todos" | CaseRecord["status"];
 type SortOption = "updated_desc" | "updated_asc" | "created_desc" | "created_asc";
 
 const CASE_TIMELINE_STEPS = [
-  "Ajuizamento",
-  "Audiência de conciliação",
-  "Sentença",
-  "Acordo",
-  "Trânsito em julgado",
-  "Receber a ação"
+  {
+    key: "ajuizamento",
+    label: "Ajuizamento",
+    symbol: "AJ",
+    description: "Protocolo inicial da ação para abertura formal do processo."
+  },
+  {
+    key: "audiencia-conciliacao",
+    label: "Audiência de conciliação",
+    symbol: "AC",
+    description: "Tentativa de acordo entre as partes para solução amigável."
+  },
+  {
+    key: "sentenca",
+    label: "Sentença",
+    symbol: "ST",
+    description: "Decisão judicial proferida sobre o mérito do caso."
+  },
+  {
+    key: "acordo",
+    label: "Acordo",
+    symbol: "AO",
+    description: "Composição firmada entre as partes para encerramento da disputa."
+  },
+  {
+    key: "transito-julgado",
+    label: "Trânsito em julgado",
+    symbol: "TJ",
+    description: "Momento em que não cabem mais recursos contra a decisão."
+  },
+  {
+    key: "receber-acao",
+    label: "Receber a ação",
+    symbol: "RX",
+    description: "Fase de liquidação/recebimento do resultado financeiro da ação."
+  }
 ] as const;
+
+type CaseTimelineStageKey = (typeof CASE_TIMELINE_STEPS)[number]["key"];
 
 function formatDate(dateIso: string): string {
   return new Date(dateIso).toLocaleString("pt-BR");
@@ -147,9 +179,18 @@ function resolveAssignedOperator(item: CaseRecord): string {
   return "Sem operador";
 }
 
-function resolveTimelineProgress(item: CaseRecord): number {
-  if (item.reviewDecision === "rejected") {
-    return 0;
+function getTimelineStepIndex(stage: string | null | undefined): number {
+  if (!stage) {
+    return -1;
+  }
+
+  return CASE_TIMELINE_STEPS.findIndex((item) => item.key === stage);
+}
+
+function resolveTimelineStage(item: CaseRecord): CaseTimelineStageKey {
+  const manualStage = item.procedureProgress?.timeline?.currentStage;
+  if (manualStage && getTimelineStepIndex(manualStage) >= 0) {
+    return manualStage as CaseTimelineStageKey;
   }
 
   let progress = 0;
@@ -186,7 +227,18 @@ function resolveTimelineProgress(item: CaseRecord): number {
     progress = Math.max(progress, 6);
   }
 
-  return progress;
+  const normalizedProgress = Math.min(Math.max(progress, 1), CASE_TIMELINE_STEPS.length);
+  return CASE_TIMELINE_STEPS[normalizedProgress - 1].key;
+}
+
+function resolveTimelineProgress(item: CaseRecord): number {
+  if (item.reviewDecision === "rejected") {
+    return 0;
+  }
+
+  const timelineStage = resolveTimelineStage(item);
+  const stageIndex = getTimelineStepIndex(timelineStage);
+  return stageIndex >= 0 ? stageIndex + 1 : 1;
 }
 
 function resolveLatestMovement(item: CaseRecord): CaseMovementRecord | null {
@@ -212,6 +264,16 @@ function isClosedCase(item: CaseRecord): boolean {
   return item.status === "encerrado" || item.workflowStep === "closed";
 }
 
+function hasSameResponsibleSelection(left: string[], right: string[]): boolean {
+  const normalizedLeft = Array.from(new Set(left.map((value) => value.trim()).filter(Boolean))).sort();
+  const normalizedRight = Array.from(new Set(right.map((value) => value.trim()).filter(Boolean))).sort();
+  if (normalizedLeft.length !== normalizedRight.length) {
+    return false;
+  }
+
+  return normalizedLeft.every((value, index) => value === normalizedRight[index]);
+}
+
 export function DashboardPage() {
   const { getToken, canCreateCases, canAccessAdmin, isMasterUser, user } = useAuth();
   const [cases, setCases] = useState<CaseRecord[]>([]);
@@ -221,7 +283,8 @@ export function DashboardPage() {
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [assignmentFeedback, setAssignmentFeedback] = useState<string | null>(null);
   const [assigningCaseId, setAssigningCaseId] = useState<string | null>(null);
-  const [selectedOperatorByCase, setSelectedOperatorByCase] = useState<Record<string, string>>({});
+  const [responsiblePickerCaseId, setResponsiblePickerCaseId] = useState<string | null>(null);
+  const [responsibleDraftByCaseId, setResponsibleDraftByCaseId] = useState<Record<string, string[]>>({});
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos");
   const [sortBy, setSortBy] = useState<SortOption>("updated_desc");
@@ -241,18 +304,8 @@ export function DashboardPage() {
         if (canAccessAdmin && isMasterUser) {
           const availableOperators = await apiRequest<AdminOperatorOption[]>("/v1/admin/operators", { token });
           setOperators(availableOperators);
-
-          setSelectedOperatorByCase((current) => {
-            const next: Record<string, string> = {};
-            for (const item of data) {
-              const selected = current[item.id] ?? resolveAssignedOperatorIds(item)[0] ?? "";
-              next[item.id] = selected;
-            }
-            return next;
-          });
         } else {
           setOperators([]);
-          setSelectedOperatorByCase({});
         }
       } catch (err) {
         const message = err instanceof ApiError ? err.message : "Erro ao carregar casos.";
@@ -265,18 +318,33 @@ export function DashboardPage() {
     void loadCases();
   }, [canAccessAdmin, getToken, isMasterUser]);
 
-  const totalCases = cases.length;
-  const recebidos = useMemo(() => cases.filter((item) => item.status === "recebido").length, [cases]);
-  const emAnalise = useMemo(() => cases.filter((item) => item.status === "em_analise").length, [cases]);
-  const encerrados = useMemo(() => cases.filter((item) => item.status === "encerrado").length, [cases]);
+  const visibleCases = useMemo(() => {
+    if (canAccessAdmin && !isMasterUser) {
+      if (!user?.uid) {
+        return [];
+      }
+
+      return cases.filter((item) => isUserAssignedToCase(item, user.uid));
+    }
+
+    return cases;
+  }, [canAccessAdmin, cases, isMasterUser, user?.uid]);
+
+  const totalCases = visibleCases.length;
+  const recebidos = useMemo(() => visibleCases.filter((item) => item.status === "recebido").length, [visibleCases]);
+  const emAnalise = useMemo(() => visibleCases.filter((item) => item.status === "em_analise").length, [visibleCases]);
+  const encerrados = useMemo(() => visibleCases.filter((item) => item.status === "encerrado").length, [visibleCases]);
   const publicUpdates = useMemo(
-    () => cases.reduce((total, item) => total + countPublicUpdates(item), 0),
-    [cases]
+    () => visibleCases.reduce((total, item) => total + countPublicUpdates(item), 0),
+    [visibleCases]
   );
   const normalizedSearch = useMemo(() => search.trim().toLowerCase(), [search]);
 
   const filteredCases = useMemo(() => {
-    const byStatus = statusFilter === "todos" ? cases : cases.filter((item) => item.status === statusFilter);
+    const byStatus =
+      statusFilter === "todos"
+        ? visibleCases
+        : visibleCases.filter((item) => item.status === statusFilter);
 
     const bySearch =
       normalizedSearch.length === 0
@@ -314,9 +382,18 @@ export function DashboardPage() {
 
       return a.createdAt > b.createdAt ? 1 : -1;
     });
-  }, [cases, normalizedSearch, sortBy, statusFilter]);
+  }, [normalizedSearch, sortBy, statusFilter, visibleCases]);
 
-  const hasCases = cases.length > 0;
+  const operatorOptions = useMemo(() => operators, [operators]);
+  const hasCases = visibleCases.length > 0;
+  const sortedOperatorOptions = useMemo(() => {
+    return [...operatorOptions].sort((left, right) => {
+      const leftLabel = (left.name ?? left.email ?? left.id).trim();
+      const rightLabel = (right.name ?? right.email ?? right.id).trim();
+      return leftLabel.localeCompare(rightLabel, "pt-BR", { sensitivity: "base" });
+    });
+  }, [operatorOptions]);
+
   const myAssignedCases = useMemo(() => {
     if (!canAccessAdmin) {
       return [];
@@ -380,7 +457,6 @@ export function DashboardPage() {
     ? myAssignedCases.length + openOtherCases.length + closedCases.length
     : clientOpenCases.length + clientClosedCases.length;
   const hasActiveFilters = normalizedSearch.length > 0 || statusFilter !== "todos" || sortBy !== "updated_desc";
-  const operatorOptions = useMemo(() => operators, [operators]);
 
   function resetFilters() {
     setSearch("");
@@ -392,27 +468,64 @@ export function DashboardPage() {
     setExpandedCaseId((current) => (current === caseId ? null : caseId));
   }
 
-  function handleOperatorSelection(caseId: string, operatorUserId: string) {
-    setSelectedOperatorByCase((current) => ({
+  function toggleResponsiblePicker(caseItem: CaseRecord) {
+    const caseId = caseItem.id;
+    const isOpen = responsiblePickerCaseId === caseId;
+
+    if (isOpen) {
+      setResponsiblePickerCaseId(null);
+      setResponsibleDraftByCaseId((current) => {
+        const next = { ...current };
+        delete next[caseId];
+        return next;
+      });
+      return;
+    }
+
+    setResponsiblePickerCaseId(caseId);
+    setResponsibleDraftByCaseId((current) => ({
       ...current,
-      [caseId]: operatorUserId
+      [caseId]: resolveAssignedOperatorIds(caseItem)
     }));
   }
 
-  async function handleAssignOperator(caseItem: CaseRecord) {
-    if (!isMasterUser) {
+  function updateResponsibleDraftSelection(caseItem: CaseRecord, operatorId: string, checked: boolean) {
+    setResponsibleDraftByCaseId((current) => {
+      const baseSelection = current[caseItem.id] ?? resolveAssignedOperatorIds(caseItem);
+      const nextSelection = checked
+        ? [...baseSelection, operatorId]
+        : baseSelection.filter((value) => value !== operatorId);
+
+      return {
+        ...current,
+        [caseItem.id]: Array.from(new Set(nextSelection))
+      };
+    });
+  }
+
+  async function applyResponsibleSelection(caseItem: CaseRecord) {
+    const nextSelection = responsibleDraftByCaseId[caseItem.id] ?? resolveAssignedOperatorIds(caseItem);
+    const saved = await handleUpdateCaseOperators(caseItem, nextSelection);
+    if (!saved) {
       return;
+    }
+
+    setResponsiblePickerCaseId(null);
+    setResponsibleDraftByCaseId((current) => {
+      const next = { ...current };
+      delete next[caseItem.id];
+      return next;
+    });
+  }
+
+  async function handleUpdateCaseOperators(caseItem: CaseRecord, operatorUserIds: string[]): Promise<boolean> {
+    if (!isMasterUser) {
+      return false;
     }
 
     if (isRejectedCase(caseItem) || caseItem.status === "encerrado") {
       setAssignmentError("Casos rejeitados/encerrados nao podem receber nova alocacao no momento.");
-      return;
-    }
-
-    const operatorUserId = selectedOperatorByCase[caseItem.id] ?? "";
-    if (!operatorUserId) {
-      setAssignmentError("Selecione um operador antes de alocar o caso.");
-      return;
+      return false;
     }
 
     setAssignmentError(null);
@@ -420,12 +533,14 @@ export function DashboardPage() {
     setAssigningCaseId(caseItem.id);
 
     try {
+      const currentOperatorIds = resolveAssignedOperatorIds(caseItem);
+      const nextOperatorIds = Array.from(new Set(operatorUserIds.map((value) => value.trim()).filter(Boolean)));
       const token = await getToken();
       const updated = await apiRequest<CaseRecord>(`/v1/cases/${caseItem.id}/assign-operator`, {
         method: "POST",
         token,
         body: {
-          operatorUserId
+          operatorUserIds: nextOperatorIds
         }
       });
 
@@ -433,16 +548,35 @@ export function DashboardPage() {
         current.map((item) => (item.id === caseItem.id ? { ...item, ...updated } : item))
       );
 
-      const selectedOperator = operatorOptions.find((item) => item.id === operatorUserId);
-      const operatorLabel = selectedOperator?.name ?? selectedOperator?.email ?? updated.assignedOperatorName;
-      setAssignmentFeedback(
-        operatorLabel
-          ? `Responsável ${operatorLabel} adicionado ao processo ${updated.caseCode}.`
-          : `Responsável adicionado ao processo ${updated.caseCode}.`
-      );
+      const resolveOperatorLabel = (operatorId: string): string => {
+        const found = operatorOptions.find((item) => item.id === operatorId);
+        return found?.name ?? found?.email ?? operatorId;
+      };
+      const addedIds = nextOperatorIds.filter((value) => !currentOperatorIds.includes(value));
+      const removedIds = currentOperatorIds.filter((value) => !nextOperatorIds.includes(value));
+      const addedLabels = addedIds.map(resolveOperatorLabel);
+      const removedLabels = removedIds.map(resolveOperatorLabel);
+
+      if (addedLabels.length > 0 && removedLabels.length > 0) {
+        setAssignmentFeedback(
+          `Responsáveis atualizados no processo ${updated.caseCode}. Adicionados: ${addedLabels.join(", ")}. Removidos: ${removedLabels.join(", ")}.`
+        );
+      } else if (addedLabels.length > 0) {
+        setAssignmentFeedback(
+          `Responsáveis adicionados ao processo ${updated.caseCode}: ${addedLabels.join(", ")}.`
+        );
+      } else if (removedLabels.length > 0) {
+        setAssignmentFeedback(
+          `Responsáveis removidos do processo ${updated.caseCode}: ${removedLabels.join(", ")}.`
+        );
+      } else {
+        setAssignmentFeedback(`Responsáveis mantidos sem alterações no processo ${updated.caseCode}.`);
+      }
+      return true;
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Falha ao alocar operador para este caso.";
+      const message = err instanceof ApiError ? err.message : "Falha ao atualizar responsáveis deste caso.";
       setAssignmentError(message);
+      return false;
     } finally {
       setAssigningCaseId(null);
     }
@@ -457,9 +591,24 @@ export function DashboardPage() {
           const latestMovement = resolveLatestMovement(item);
           const isExpanded = expandedCaseId === item.id;
           const closeRequestStatus = item.closeRequest?.status ?? "none";
+          const timelineProgress = resolveTimelineProgress(item);
+          const timelineTrackProgress =
+            CASE_TIMELINE_STEPS.length > 1 ? Math.max(timelineProgress - 1, 0) / (CASE_TIMELINE_STEPS.length - 1) : 0;
+          const timelineOffset = 100 / (CASE_TIMELINE_STEPS.length * 2);
+          const currentTimelineStage = resolveTimelineStage(item);
+          const currentTimelineIndex = getTimelineStepIndex(currentTimelineStage);
+          const isResponsiblePickerOpen = responsiblePickerCaseId === item.id;
+          const assignedOperatorIds = resolveAssignedOperatorIds(item);
+          const draftOperatorIds = responsibleDraftByCaseId[item.id] ?? assignedOperatorIds;
+          const hasResponsibleChanges = !hasSameResponsibleSelection(draftOperatorIds, assignedOperatorIds);
 
           return (
-            <article key={item.id} className={`case-card ${isExpanded ? "case-card--expanded" : ""}`}>
+            <article
+              key={item.id}
+              className={`case-card ${isExpanded ? "case-card--expanded" : ""} ${
+                isResponsiblePickerOpen ? "case-card--responsible-open" : ""
+              }`}
+            >
               <div className="case-card-top">
                 <div className="case-card-title-wrap">
                   <Link to={`/cases/${item.id}`} className="case-card-title-link">
@@ -497,28 +646,56 @@ export function DashboardPage() {
               </div>
 
               <div className="case-card-timeline-wrap">
-                <Link to={`/cases/${item.id}?tab=evolution`} className="case-card-timeline" title="Ir para evolução do caso">
-                  {CASE_TIMELINE_STEPS.map((label, index) => {
-                    const progress = resolveTimelineProgress(item);
+                <Link
+                  to={`/cases/${item.id}?tab=evolution`}
+                  className="case-card-timeline"
+                  aria-label="Ir para evolução do caso"
+                  style={
+                    {
+                      "--timeline-progress": `${timelineTrackProgress}`,
+                      "--timeline-offset": `${timelineOffset}%`
+                    } as CSSProperties
+                  }
+                >
+                  <span className="case-card-timeline-progress" />
+                  {CASE_TIMELINE_STEPS.map((step, index) => {
                     const stepNumber = index + 1;
-                    const stepClass =
-                      stepNumber <= progress
-                        ? "case-card-timeline-step case-card-timeline-step--done"
-                        : stepNumber === Math.min(progress + 1, CASE_TIMELINE_STEPS.length)
-                          ? "case-card-timeline-step case-card-timeline-step--current"
-                          : "case-card-timeline-step";
+                    const isDone = stepNumber <= timelineProgress;
+                    const isCurrent = timelineProgress > 0 && stepNumber === timelineProgress;
+                    const stepClass = isDone
+                      ? isCurrent
+                        ? "case-card-timeline-node case-card-timeline-node--done case-card-timeline-node--current"
+                        : "case-card-timeline-node case-card-timeline-node--done"
+                      : "case-card-timeline-node";
+                    const stepStatus = isCurrent ? "Etapa atual" : isDone ? "Concluída" : "Pendente";
 
                     return (
-                      <span key={`${item.id}-timeline-${label}`} className={stepClass}>
-                        {label}
+                      <span
+                        key={`${item.id}-timeline-${step.key}`}
+                        className={stepClass}
+                        aria-label={`${step.label}: ${step.description}`}
+                      >
+                        <span className="case-card-timeline-dot" aria-hidden="true">
+                          <span className="case-card-timeline-symbol">{step.symbol}</span>
+                        </span>
+                        <span className="case-card-timeline-label">{step.label}</span>
+                        <span className="case-card-timeline-tooltip">
+                          <strong>{step.label}</strong>
+                          <span>{step.description}</span>
+                          <em>{stepStatus}</em>
+                        </span>
                       </span>
                     );
                   })}
                 </Link>
-                <Link to={`/cases/${item.id}?tab=sale`} className="case-card-sale-link">
-                  Venda seu caso
-                </Link>
               </div>
+
+              <p className="case-card-timeline-current">
+                Etapa atual:{" "}
+                <strong>
+                  {currentTimelineIndex >= 0 ? CASE_TIMELINE_STEPS[currentTimelineIndex].label : "Não definida"}
+                </strong>
+              </p>
 
               <p className="case-card-operator-inline">Responsáveis: {resolveAssignedOperator(item)}</p>
 
@@ -532,38 +709,70 @@ export function DashboardPage() {
                 </button>
                 {canAccessAdmin && isMasterUser && (
                   <div className="case-card-assign">
-                    <select
-                      value={selectedOperatorByCase[item.id] ?? ""}
-                      onChange={(event) => handleOperatorSelection(item.id, event.target.value)}
-                      disabled={assigningCaseId === item.id || operatorOptions.length === 0 || isRejectedCase(item)}
-                      aria-label={`Selecionar operador para o caso ${item.caseCode}`}
-                    >
-                      <option value="">Selecionar responsável</option>
-                      {operatorOptions.map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.name ?? option.email ?? option.id}
-                          {option.isMaster ? " (Master)" : option.isOperator ? " (Operador)" : ""}
-                        </option>
-                      ))}
-                    </select>
                     <button
                       type="button"
                       className="secondary-button case-card-detail-button"
-                      onClick={() => void handleAssignOperator(item)}
-                      disabled={
-                        assigningCaseId === item.id ||
-                        isRejectedCase(item) ||
-                        !selectedOperatorByCase[item.id] ||
-                        resolveAssignedOperatorIds(item).includes(selectedOperatorByCase[item.id])
-                      }
+                      onClick={() => toggleResponsiblePicker(item)}
+                      disabled={assigningCaseId === item.id || operatorOptions.length === 0 || isRejectedCase(item)}
                     >
-                      {assigningCaseId === item.id ? "Adicionando..." : "Adicionar responsável"}
+                      Responsáveis
                     </button>
-                    {selectedOperatorByCase[item.id] &&
-                      resolveAssignedOperatorIds(item).includes(selectedOperatorByCase[item.id]) && (
-                        <span className="field-help">Esse responsável já está vinculado ao caso.</span>
+
+                    {isResponsiblePickerOpen && (
+                      <div className="case-card-responsible-picker">
+                        <strong>Escolha os responsáveis do caso</strong>
+                        <div className="case-card-responsible-list">
+                          {sortedOperatorOptions.map((option) => {
+                            const optionLabel = `${option.name ?? option.email ?? option.id}${
+                              option.isMaster ? " (Master)" : option.isOperator ? " (Operador)" : ""
+                            }`;
+                            const isChecked = draftOperatorIds.includes(option.id);
+
+                            return (
+                              <label key={`${item.id}-responsible-${option.id}`} className="case-card-responsible-option">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  disabled={assigningCaseId === item.id}
+                                  onChange={(event) => {
+                                    updateResponsibleDraftSelection(item, option.id, event.target.checked);
+                                  }}
+                                />
+                                <span>{optionLabel}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                        <p className="helper-text">Marque ou desmarque os nomes para atualizar os responsáveis do caso.</p>
+                        <div className="case-card-responsible-actions">
+                          <button
+                            type="button"
+                            className="secondary-button secondary-button--small"
+                            onClick={() => toggleResponsiblePicker(item)}
+                            disabled={assigningCaseId === item.id}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            className="hero-primary case-card-responsible-save"
+                            onClick={() => void applyResponsibleSelection(item)}
+                            disabled={assigningCaseId === item.id || !hasResponsibleChanges}
+                          >
+                            {assigningCaseId === item.id ? "Salvando..." : "Salvar responsáveis"}
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
+                )}
+                {!canAccessAdmin && (
+                  <Link
+                    to={`/cases/${item.id}?tab=sale`}
+                    className="case-card-sell-button"
+                  >
+                    Vender caso
+                  </Link>
                 )}
               </div>
 
@@ -621,6 +830,7 @@ export function DashboardPage() {
                     <small>Descrição do pedido</small>
                     <p>{item.resumo}</p>
                   </div>
+
                 </div>
               )}
             </article>
@@ -739,7 +949,7 @@ export function DashboardPage() {
 
         {hasCases && (
           <p className="case-filters-count">
-            Mostrando {displayedCasesCount} de {cases.length} casos.
+            Mostrando {displayedCasesCount} de {visibleCases.length} casos.
           </p>
         )}
 
@@ -859,6 +1069,10 @@ export function DashboardPage() {
             </div>
           ))}
       </section>
+
     </section>
   );
 }
+
+
+

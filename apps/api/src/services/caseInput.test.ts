@@ -241,6 +241,16 @@ describe("validateAssignOperatorPayload", () => {
     });
 
     expect(parsed.operatorUserId).toBe("operator-user");
+    expect(parsed.operatorUserIds).toBeNull();
+  });
+
+  it("deve validar lista completa de operadores para sincronizacao", () => {
+    const parsed = validateAssignOperatorPayload({
+      operatorUserIds: ["operator-a", "operator-b", "operator-a"]
+    });
+
+    expect(parsed.operatorUserId).toBeNull();
+    expect(parsed.operatorUserIds).toEqual(["operator-a", "operator-b"]);
   });
 });
 

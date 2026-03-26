@@ -12,6 +12,7 @@ import {
   CASE_STATUS_LABELS,
   type CaseMovementRecord,
   type CaseRecord,
+  type CaseTimelineStage,
   type UserRecord
 } from "../types/case.js";
 import {
@@ -25,6 +26,7 @@ import {
   validateCaseCloseRequestDecisionPayload,
   validateCaseCloseRequestPayload,
   validateCasePetitionProgressPayload,
+  validateCaseTimelineStagePayload,
   validateCaseReviewPayload,
   validateCaseServiceFeePayload,
   validateCreateCaseInput,
@@ -64,6 +66,24 @@ const caseAttachmentUpload = multer({
     fileSize: MAX_ATTACHMENT_SIZE_BYTES
   }
 });
+
+const CASE_TIMELINE_STAGE_LABELS: Record<CaseTimelineStage, string> = {
+  ajuizamento: "Ajuizamento",
+  "audiencia-conciliacao": "Audiência de conciliação",
+  sentenca: "Sentença",
+  acordo: "Acordo",
+  "transito-julgado": "Trânsito em julgado",
+  "receber-acao": "Receber a ação"
+};
+
+const TIMELINE_STAGE_TO_MOVEMENT_STAGE: Record<CaseTimelineStage, CaseMovementRecord["stage"]> = {
+  ajuizamento: "triagem",
+  "audiencia-conciliacao": "conciliacao",
+  sentenca: "peticao",
+  acordo: "solucao",
+  "transito-julgado": "andamento",
+  "receber-acao": "solucao"
+};
 
 function runCaseAttachmentUpload(req: Request, res: Response): Promise<Express.Multer.File[]> {
   return new Promise((resolve, reject) => {
@@ -364,6 +384,14 @@ function normalizeConciliationAttempts(
 
 function defaultProcedureProgress(): NonNullable<CaseRecord["procedureProgress"]> {
   return {
+    timeline: {
+      currentStage: "ajuizamento",
+      notes: null,
+      updatedAt: null,
+      updatedByUserId: null,
+      updatedByName: null,
+      stageStates: {}
+    },
     conciliation: {
       details: null,
       contactedDefendant: false,
@@ -398,6 +426,14 @@ function resolveProcedureProgress(caseItem: CaseRecord): NonNullable<CaseRecord[
       : defaultProcedureChecklist();
 
   return {
+    timeline: {
+      currentStage: base.timeline?.currentStage ?? "ajuizamento",
+      notes: base.timeline?.notes ?? null,
+      updatedAt: base.timeline?.updatedAt ?? null,
+      updatedByUserId: base.timeline?.updatedByUserId ?? null,
+      updatedByName: base.timeline?.updatedByName ?? null,
+      stageStates: base.timeline?.stageStates ?? {}
+    },
     conciliation: {
       details: base.conciliation?.details ?? null,
       contactedDefendant: base.conciliation?.contactedDefendant === true,
@@ -1591,26 +1627,50 @@ export function createV1Router(deps: AppDependencies) {
         ensureCaseIsEditable(currentCase);
 
         const payload = validateAssignOperatorPayload(req.body);
-        const operator = await deps.repository.getUserById(payload.operatorUserId);
-        if (!operator) {
-          throw new HttpError(404, "Operador não encontrado.");
-        }
+        const actor = {
+          id: req.user.uid,
+          name: req.user.name ?? req.user.email ?? null
+        };
+        let updated: CaseRecord | null = null;
 
-        if (!operator.isMaster && operator.isOperator !== true) {
-          throw new HttpError(400, "Selecione um usuário com perfil operador ou master para alocação.");
-        }
+        if (payload.operatorUserIds) {
+          const operators: Array<{ id: string; name: string | null }> = [];
+          for (const operatorId of payload.operatorUserIds) {
+            const operator = await deps.repository.getUserById(operatorId);
+            if (!operator) {
+              throw new HttpError(404, "Operador não encontrado.");
+            }
 
-        const updated = await deps.repository.assignCaseOperator(
-          req.params.id,
-          {
-            id: operator.id,
-            name: operator.name ?? operator.email ?? null
-          },
-          {
-            id: req.user.uid,
-            name: req.user.name ?? req.user.email ?? null
+            if (!operator.isMaster && operator.isOperator !== true) {
+              throw new HttpError(400, "Selecione um usuário com perfil operador ou master para alocação.");
+            }
+
+            operators.push({
+              id: operator.id,
+              name: operator.name ?? operator.email ?? null
+            });
           }
-        );
+
+          updated = await deps.repository.setCaseOperators(req.params.id, operators, actor);
+        } else if (payload.operatorUserId) {
+          const operator = await deps.repository.getUserById(payload.operatorUserId);
+          if (!operator) {
+            throw new HttpError(404, "Operador não encontrado.");
+          }
+
+          if (!operator.isMaster && operator.isOperator !== true) {
+            throw new HttpError(400, "Selecione um usuário com perfil operador ou master para alocação.");
+          }
+
+          updated = await deps.repository.assignCaseOperator(
+            req.params.id,
+            {
+              id: operator.id,
+              name: operator.name ?? operator.email ?? null
+            },
+            actor
+          );
+        }
 
         if (!updated) {
           throw new HttpError(404, "Caso não encontrado.");
@@ -2760,6 +2820,127 @@ export function createV1Router(deps: AppDependencies) {
         });
 
         const latestCase = appendedMovement?.caseItem ?? withProgress;
+        res.status(200).json({
+          status: "ok",
+          result: latestCase
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/progress/timeline",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        ensureAdminPanelAccess(req.user);
+
+        const payload = validateCaseTimelineStagePayload(req.body);
+        const allCases = await deps.repository.listAllCases();
+        const currentCase = allCases.find((item) => item.id === req.params.id);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+        ensureOperatorCanManageCase(req.user, currentCase);
+        ensureCaseIsEditable(currentCase);
+
+        const now = new Date().toISOString();
+        const actorName = req.user.name ?? req.user.email ?? null;
+        const nextProgress = resolveProcedureProgress(currentCase);
+        const previousStage = nextProgress.timeline.currentStage;
+        const existingStageState = nextProgress.timeline.stageStates?.[payload.stage];
+        const nextStageStates = {
+          ...(nextProgress.timeline.stageStates ?? {})
+        };
+
+        if (payload.checklist || payload.details !== null) {
+          const checklist =
+            payload.checklist?.map((item) => {
+              const previousItem = existingStageState?.checklist.find((entry) => entry.id === item.id);
+              const changed =
+                !previousItem || previousItem.done !== item.done || previousItem.label !== item.label;
+
+              return {
+                id: item.id,
+                label: item.label,
+                done: item.done,
+                updatedAt: changed ? now : previousItem?.updatedAt ?? null
+              };
+            }) ?? existingStageState?.checklist ?? [];
+
+          nextStageStates[payload.stage] = {
+            checklist,
+            notes: payload.details ?? existingStageState?.notes ?? null,
+            updatedAt: now,
+            updatedByUserId: req.user.uid,
+            updatedByName: actorName
+          };
+        }
+
+        nextProgress.timeline = {
+          currentStage: payload.stage,
+          notes: payload.details,
+          updatedAt: now,
+          updatedByUserId: req.user.uid,
+          updatedByName: actorName,
+          stageStates: nextStageStates
+        };
+
+        const nextWorkflow =
+          currentCase.reviewDecision === "accepted" &&
+          currentCase.workflowStep === "triage" &&
+          payload.stage !== "ajuizamento"
+            ? "in_progress"
+            : currentCase.workflowStep;
+
+        const withProgress = await deps.repository.updateCaseWorkflow(req.params.id, {
+          status: currentCase.status,
+          workflowStep: nextWorkflow,
+          procedureProgress: nextProgress
+        });
+        if (!withProgress) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const stageLabel = CASE_TIMELINE_STAGE_LABELS[payload.stage];
+        let movementDescription = payload.details
+          ? `Estágio atualizado para ${stageLabel}. ${payload.details}`
+          : `Estágio atualizado para ${stageLabel}.`;
+
+        if (previousStage === payload.stage && payload.checklist) {
+          const doneCount = payload.checklist.filter((item) => item.done).length;
+          movementDescription = `Checklist da etapa ${stageLabel} atualizado (${doneCount}/${payload.checklist.length} concluídos).`;
+        }
+
+        const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
+          stage: TIMELINE_STAGE_TO_MOVEMENT_STAGE[payload.stage],
+          description: movementDescription,
+          visibility: "public",
+          createdByUserId: req.user.uid,
+          createdByName: actorName,
+          statusAfter: withProgress.status
+        });
+
+        const latestCase = appendedMovement?.caseItem ?? withProgress;
+
+        void notifyCaseOwnerByCustomUpdate(deps, latestCase, {
+          stageLabel: `Linha do tempo: ${stageLabel}`,
+          description: movementDescription,
+          statusAfter: latestCase.status
+        }).catch((error) => {
+          const details = error instanceof Error ? error.message : "unknown";
+          console.error("case-notification-email-failed", {
+            caseId: latestCase.id,
+            details
+          });
+        });
+
         res.status(200).json({
           status: "ok",
           result: latestCase

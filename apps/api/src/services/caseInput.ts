@@ -7,6 +7,7 @@ import type {
   CaseMovementStage,
   CaseMovementVisibility,
   CaseStatus,
+  CaseTimelineStage,
   PetitionInitialData
 } from "../types/case.js";
 
@@ -135,9 +136,22 @@ const createCaseSchema = z.object({
   petitionInitial: petitionInitialSchema.optional()
 });
 
-const assignOperatorSchema = z.object({
-  operatorUserId: z.string().trim().min(1)
-});
+const assignOperatorSchema = z
+  .object({
+    operatorUserId: z.string().trim().min(1).optional(),
+    operatorUserIds: z.array(z.string().trim().min(1)).max(100).optional()
+  })
+  .superRefine((value, ctx) => {
+    if (value.operatorUserId || value.operatorUserIds) {
+      return;
+    }
+
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Informe ao menos um operador para alocacao.",
+      path: ["operatorUserId"]
+    });
+  });
 
 const caseMovementSchema = z.object({
   stage: z.enum(["triagem", "conciliacao", "peticao", "protocolo", "andamento", "solucao", "outro"]),
@@ -216,6 +230,28 @@ const casePetitionProgressSchema = z.object({
   jusiaProtocolChecked: z.boolean(),
   protocolCode: z.string().trim().max(120).nullable().optional(),
   checklist: z.array(casePetitionChecklistItemSchema).min(1).max(20)
+});
+
+const caseTimelineStageSchema = z.object({
+  stage: z.enum([
+    "ajuizamento",
+    "audiencia-conciliacao",
+    "sentenca",
+    "acordo",
+    "transito-julgado",
+    "receber-acao"
+  ]),
+  details: z.string().trim().max(5000).nullable().optional(),
+  checklist: z
+    .array(
+      z.object({
+        id: z.string().trim().min(1).max(80),
+        label: z.string().trim().min(2).max(140),
+        done: z.boolean()
+      })
+    )
+    .max(20)
+    .optional()
 });
 
 const caseCloseRequestSchema = z.object({
@@ -426,14 +462,22 @@ export function validateCpfLookupPayload(payload: unknown): { cpf: string } {
   return { cpf };
 }
 
-export function validateAssignOperatorPayload(payload: unknown): { operatorUserId: string } {
+export function validateAssignOperatorPayload(payload: unknown): {
+  operatorUserId: string | null;
+  operatorUserIds: string[] | null;
+} {
   const parsed = assignOperatorSchema.safeParse(payload);
   if (!parsed.success) {
     throw new HttpError(400, "Payload inválido para alocação de operador.", parsed.error.flatten());
   }
 
+  const operatorUserIds = parsed.data.operatorUserIds
+    ? Array.from(new Set(parsed.data.operatorUserIds.map((value) => value.trim()).filter(Boolean)))
+    : null;
+
   return {
-    operatorUserId: parsed.data.operatorUserId
+    operatorUserId: parsed.data.operatorUserId?.trim() ?? null,
+    operatorUserIds
   };
 }
 
@@ -567,6 +611,29 @@ export function validateCasePetitionProgressPayload(payload: unknown): {
       done: item.done,
       notes: normalizeOptionalText(item.notes)
     }))
+  };
+}
+
+export function validateCaseTimelineStagePayload(payload: unknown): {
+  stage: CaseTimelineStage;
+  details: string | null;
+  checklist: { id: string; label: string; done: boolean }[] | null;
+} {
+  const parsed = caseTimelineStageSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new HttpError(400, "Payload inválido para atualização do estágio do caso.", parsed.error.flatten());
+  }
+
+  return {
+    stage: parsed.data.stage,
+    details: normalizeOptionalText(parsed.data.details),
+    checklist: parsed.data.checklist
+      ? parsed.data.checklist.map((item) => ({
+          id: item.id,
+          label: item.label,
+          done: item.done
+        }))
+      : null
   };
 }
 

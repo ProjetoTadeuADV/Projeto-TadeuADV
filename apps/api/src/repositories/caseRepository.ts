@@ -57,6 +57,11 @@ export interface CaseRepository {
     operator: { id: string; name: string | null },
     actor: { id: string; name: string | null }
   ): Promise<CaseRecord | null>;
+  setCaseOperators(
+    caseId: string,
+    operators: Array<{ id: string; name: string | null }>,
+    actor: { id: string; name: string | null }
+  ): Promise<CaseRecord | null>;
   updateCaseWorkflow(
     caseId: string,
     patch: {

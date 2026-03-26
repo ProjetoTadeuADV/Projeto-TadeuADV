@@ -1,4 +1,4 @@
-﻿import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { type CSSProperties, ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
@@ -11,6 +11,7 @@ import type {
   CaseMovementRecord,
   CaseProcedureProgress,
   CaseRecord,
+  CaseTimelineStage,
   PetitionAttachment
 } from "../types";
 
@@ -36,6 +37,174 @@ const WORKFLOW_LABEL: Record<CaseRecord["workflowStep"], string> = {
   awaiting_initial_fee: "Aguardando pagamento inicial",
   in_progress: "Em andamento",
   closed: "Encerrado"
+};
+
+const CASE_TIMELINE_STEPS = [
+  {
+    key: "ajuizamento",
+    label: "Ajuizamento",
+    symbol: "AJ",
+    description: "Protocolo inicial da ação no processo.",
+    connectionLabel: "Petição",
+    checklistTemplate: [
+      { id: "peticao-criada", label: "Petição criada" },
+      { id: "peticao-enviada", label: "Petição enviada/protocolada" },
+      { id: "caso-aceito", label: "Aceite formal do caso" }
+    ]
+  },
+  {
+    key: "audiencia-conciliacao",
+    label: "Audiência de conciliação",
+    symbol: "AC",
+    description: "Tentativa formal de conciliação entre as partes.",
+    connectionLabel: "Conciliação",
+    checklistTemplate: [
+      { id: "audiencia-confirmada", label: "Audiência confirmada" },
+      { id: "solicitacao-audiencia", label: "Solicitação de audiência enviada" },
+      { id: "partes-notificadas", label: "Partes notificadas" }
+    ]
+  },
+  {
+    key: "sentenca",
+    label: "Sentença",
+    symbol: "ST",
+    description: "Decisão judicial sobre o mérito da causa.",
+    connectionLabel: "Petição",
+    checklistTemplate: [
+      { id: "provas-juntadas", label: "Provas e peças complementares juntadas" },
+      { id: "manifestacao-final", label: "Manifestação final registrada" },
+      { id: "sentenca-publicada", label: "Sentença publicada" }
+    ]
+  },
+  {
+    key: "acordo",
+    label: "Acordo",
+    symbol: "AO",
+    description: "Composição amigável registrada pelas partes.",
+    connectionLabel: "Conciliação",
+    checklistTemplate: [
+      { id: "proposta-enviada", label: "Proposta de acordo enviada" },
+      { id: "termos-validados", label: "Termos validados pelas partes" },
+      { id: "acordo-assinado", label: "Acordo assinado" }
+    ]
+  },
+  {
+    key: "transito-julgado",
+    label: "Trânsito em julgado",
+    symbol: "TJ",
+    description: "Fim do prazo recursal, decisão definitiva.",
+    connectionLabel: "Petição",
+    checklistTemplate: [
+      { id: "prazo-recursal", label: "Prazo recursal encerrado" },
+      { id: "certidao-transito", label: "Certidão de trânsito registrada" },
+      { id: "cumprimento-iniciado", label: "Cumprimento de sentença iniciado" }
+    ]
+  },
+  {
+    key: "receber-acao",
+    label: "Receber a ação",
+    symbol: "RX",
+    description: "Etapa financeira para efetivo recebimento do resultado.",
+    connectionLabel: "Pagamentos",
+    checklistTemplate: [
+      { id: "cobranca-gerada", label: "Cobrança/execução financeira registrada" },
+      { id: "recebimento-confirmado", label: "Recebimento confirmado" },
+      { id: "caso-finalizado", label: "Caso finalizado com quitação" }
+    ]
+  }
+] as const;
+
+type CaseTimelineStageKey = (typeof CASE_TIMELINE_STEPS)[number]["key"];
+type TimelineConnectionTarget = "conciliation" | "petition" | "payments" | "evolution" | "attachments";
+
+const CASE_TIMELINE_STAGE_MODULES: Record<
+  CaseTimelineStageKey,
+  Array<{ id: string; title: string; description: string; target: TimelineConnectionTarget }>
+> = {
+  ajuizamento: [
+    {
+      id: "ajuizamento-peticao",
+      title: "Preparar petição",
+      description: "Conferir conteúdo inicial, gerar e revisar a petição.",
+      target: "petition"
+    },
+    {
+      id: "ajuizamento-anexos",
+      title: "Conferir anexos",
+      description: "Validar documentos enviados antes do protocolo.",
+      target: "attachments"
+    }
+  ],
+  "audiencia-conciliacao": [
+    {
+      id: "audiencia-conciliacao",
+      title: "Organizar audiência",
+      description: "Registrar contato, confirmação e notificações da audiência.",
+      target: "conciliation"
+    },
+    {
+      id: "audiencia-evolucao",
+      title: "Registrar evolução",
+      description: "Documentar os próximos marcos após a audiência.",
+      target: "evolution"
+    }
+  ],
+  sentenca: [
+    {
+      id: "sentenca-peticao",
+      title: "Atualizar petição",
+      description: "Consolidar protocolo, peças e documentos para sentença.",
+      target: "petition"
+    },
+    {
+      id: "sentenca-evolucao",
+      title: "Linha de evolução",
+      description: "Registrar publicação e observações da sentença.",
+      target: "evolution"
+    }
+  ],
+  acordo: [
+    {
+      id: "acordo-conciliacao",
+      title: "Formalizar acordo",
+      description: "Salvar termos e status de acordo com as partes.",
+      target: "conciliation"
+    },
+    {
+      id: "acordo-pagamentos",
+      title: "Conferir pagamentos",
+      description: "Acompanhar cobranças vinculadas ao acordo.",
+      target: "payments"
+    }
+  ],
+  "transito-julgado": [
+    {
+      id: "transito-peticao",
+      title: "Documentos finais",
+      description: "Registrar certidões e confirmação de trânsito em julgado.",
+      target: "petition"
+    },
+    {
+      id: "transito-evolucao",
+      title: "Andamento final",
+      description: "Atualizar histórico para fechamento processual.",
+      target: "evolution"
+    }
+  ],
+  "receber-acao": [
+    {
+      id: "receber-pagamento",
+      title: "Recebimento da ação",
+      description: "Conferir liquidação, baixa e confirmação financeira.",
+      target: "payments"
+    },
+    {
+      id: "receber-evolucao",
+      title: "Fechamento do caso",
+      description: "Concluir a trilha de movimentações finais.",
+      target: "evolution"
+    }
+  ]
 };
 
 const CLOSE_REQUEST_STATUS_LABEL: Record<CaseRecord["closeRequest"]["status"], string> = {
@@ -360,6 +529,14 @@ function getDefaultProcedureChecklist(): NonNullable<CaseProcedureProgress["peti
 
 function getDefaultProcedureProgress(): CaseProcedureProgress {
   return {
+    timeline: {
+      currentStage: "ajuizamento",
+      notes: null,
+      updatedAt: null,
+      updatedByUserId: null,
+      updatedByName: null,
+      stageStates: {}
+    },
     conciliation: {
       details: null,
       contactedDefendant: false,
@@ -386,6 +563,58 @@ function getDefaultProcedureProgress(): CaseProcedureProgress {
   };
 }
 
+function getTimelineStepIndex(stage: string | null | undefined): number {
+  if (!stage) {
+    return -1;
+  }
+
+  return CASE_TIMELINE_STEPS.findIndex((item) => item.key === stage);
+}
+
+function normalizeTimelineStage(stage: CaseTimelineStage | null | undefined): CaseTimelineStageKey {
+  const index = getTimelineStepIndex(stage);
+  if (index >= 0) {
+    return CASE_TIMELINE_STEPS[index].key;
+  }
+
+  return "ajuizamento";
+}
+
+type TimelineChecklistItemDraft = {
+  id: string;
+  label: string;
+  done: boolean;
+  updatedAt: string | null;
+};
+
+function buildStageChecklist(
+  stageKey: CaseTimelineStageKey,
+  progress: CaseProcedureProgress
+): TimelineChecklistItemDraft[] {
+  const template = CASE_TIMELINE_STEPS.find((item) => item.key === stageKey)?.checklistTemplate ?? [];
+  const persisted = progress.timeline?.stageStates?.[stageKey]?.checklist ?? [];
+
+  if (template.length === 0 && persisted.length === 0) {
+    return [];
+  }
+
+  return template.map((templateItem) => {
+    const persistedItem = persisted.find((item) => item.id === templateItem.id);
+    return {
+      id: templateItem.id,
+      label: persistedItem?.label ?? templateItem.label,
+      done: persistedItem?.done === true,
+      updatedAt: persistedItem?.updatedAt ?? null
+    };
+  });
+}
+
+function buildTimelineChecklistState(progress: CaseProcedureProgress): Record<CaseTimelineStageKey, TimelineChecklistItemDraft[]> {
+  return Object.fromEntries(
+    CASE_TIMELINE_STEPS.map((step) => [step.key, buildStageChecklist(step.key, progress)])
+  ) as Record<CaseTimelineStageKey, TimelineChecklistItemDraft[]>;
+}
+
 function resolveProcedureProgress(progress: CaseRecord["procedureProgress"] | undefined): CaseProcedureProgress {
   if (!progress) {
     return getDefaultProcedureProgress();
@@ -397,6 +626,14 @@ function resolveProcedureProgress(progress: CaseRecord["procedureProgress"] | un
       : getDefaultProcedureChecklist();
 
   return {
+    timeline: {
+      currentStage: progress.timeline?.currentStage ?? "ajuizamento",
+      notes: progress.timeline?.notes ?? null,
+      updatedAt: progress.timeline?.updatedAt ?? null,
+      updatedByUserId: progress.timeline?.updatedByUserId ?? null,
+      updatedByName: progress.timeline?.updatedByName ?? null,
+      stageStates: progress.timeline?.stageStates ?? {}
+    },
     conciliation: {
       details: progress.conciliation?.details ?? null,
       contactedDefendant: progress.conciliation?.contactedDefendant === true,
@@ -512,6 +749,15 @@ export function CaseDetailPage() {
   const [savingPetitionProgress, setSavingPetitionProgress] = useState(false);
   const [petitionProgressFeedback, setPetitionProgressFeedback] = useState<string | null>(null);
   const [petitionProgressError, setPetitionProgressError] = useState<string | null>(null);
+  const [timelineStagePreview, setTimelineStagePreview] = useState<CaseTimelineStageKey>("ajuizamento");
+  const [timelineStageNotesInput, setTimelineStageNotesInput] = useState("");
+  const [timelineChecklistByStage, setTimelineChecklistByStage] = useState<Record<
+    CaseTimelineStageKey,
+    TimelineChecklistItemDraft[]
+  >>(() => buildTimelineChecklistState(getDefaultProcedureProgress()));
+  const [savingTimelineStage, setSavingTimelineStage] = useState(false);
+  const [timelineStageFeedback, setTimelineStageFeedback] = useState<string | null>(null);
+  const [timelineStageError, setTimelineStageError] = useState<string | null>(null);
   const [isConciliationPanelOpen, setIsConciliationPanelOpen] = useState(false);
   const [isPetitionPanelOpen, setIsPetitionPanelOpen] = useState(false);
 
@@ -629,6 +875,21 @@ export function CaseDetailPage() {
     ];
   }, [caseItem]);
   const procedureProgress = useMemo(() => resolveProcedureProgress(caseItem?.procedureProgress), [caseItem?.procedureProgress]);
+  const currentTimelineStage = normalizeTimelineStage(procedureProgress.timeline?.currentStage);
+  const currentTimelineIndex = getTimelineStepIndex(currentTimelineStage);
+  const previewTimelineIndex = getTimelineStepIndex(timelineStagePreview);
+  const previewTimelineStep = CASE_TIMELINE_STEPS[previewTimelineIndex >= 0 ? previewTimelineIndex : 0];
+  const previewTimelineChecklist = timelineChecklistByStage[timelineStagePreview] ?? [];
+  const previewTimelineModules = CASE_TIMELINE_STAGE_MODULES[previewTimelineStep.key] ?? [];
+  const previewTimelineDoneCount = previewTimelineChecklist.filter((item) => item.done).length;
+  const isPreviewStageCurrent = timelineStagePreview === currentTimelineStage;
+  const canEditPreviewTimelineStage = canManageOperatorActions && isPreviewStageCurrent;
+  const isLastTimelineStage = currentTimelineIndex >= CASE_TIMELINE_STEPS.length - 1;
+  const canAdvanceCurrentTimelineStage =
+    isPreviewStageCurrent &&
+    previewTimelineChecklist.length > 0 &&
+    previewTimelineDoneCount === previewTimelineChecklist.length &&
+    !isLastTimelineStage;
   const hasGeneratedPetitionAttachment = petitionAttachments.some((attachment) =>
     attachment.originalName.toLowerCase().startsWith("peticao-inicial-")
   );
@@ -720,6 +981,10 @@ export function CaseDetailPage() {
   useEffect(() => {
     setConciliationForm(procedureProgress.conciliation);
     setPetitionProgressForm(procedureProgress.petition);
+    const nextStage = normalizeTimelineStage(procedureProgress.timeline?.currentStage);
+    setTimelineStagePreview(nextStage);
+    setTimelineStageNotesInput(procedureProgress.timeline?.notes ?? "");
+    setTimelineChecklistByStage(buildTimelineChecklistState(procedureProgress));
   }, [procedureProgress]);
 
   useEffect(() => {
@@ -1598,6 +1863,145 @@ export function CaseDetailPage() {
     }
   }
 
+  function handleOpenTimelineTarget(target: TimelineConnectionTarget) {
+    if (target === "conciliation") {
+      setIsConciliationPanelOpen(true);
+      return;
+    }
+
+    if (target === "petition") {
+      setIsPetitionPanelOpen(true);
+      return;
+    }
+
+    if (target === "payments") {
+      handleDetailTabChange("payments");
+      return;
+    }
+
+    if (target === "attachments") {
+      handleDetailTabChange("attachments");
+      return;
+    }
+
+    handleDetailTabChange("evolution");
+  }
+
+  function handleOpenTimelineConnection(stageKey: CaseTimelineStageKey) {
+    const defaultModule = CASE_TIMELINE_STAGE_MODULES[stageKey]?.[0];
+    if (defaultModule) {
+      handleOpenTimelineTarget(defaultModule.target);
+      return;
+    }
+
+    handleOpenTimelineTarget("evolution");
+  }
+
+  function handleTimelineChecklistToggle(stageKey: CaseTimelineStageKey, itemId: string, done: boolean) {
+    setTimelineChecklistByStage((current) => ({
+      ...current,
+      [stageKey]: (current[stageKey] ?? []).map((item) =>
+        item.id === itemId ? { ...item, done, updatedAt: new Date().toISOString() } : item
+      )
+    }));
+  }
+
+  async function handleSaveTimelineStage(stageKey: CaseTimelineStageKey = currentTimelineStage): Promise<boolean> {
+    if (!id || !canManageOperatorActions) {
+      return false;
+    }
+
+    const details = timelineStageNotesInput.trim();
+    const checklist = timelineChecklistByStage[stageKey] ?? [];
+
+    setTimelineStageError(null);
+    setTimelineStageFeedback(null);
+    setSavingTimelineStage(true);
+
+    try {
+      const token = await getToken();
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${id}/progress/timeline`, {
+        method: "POST",
+        token,
+        body: {
+          stage: stageKey,
+          details: details.length > 0 ? details : null,
+          checklist: checklist.map((item) => ({
+            id: item.id,
+            label: item.label,
+            done: item.done
+          }))
+        }
+      });
+
+      setCaseItem(updated);
+      const nextStage = normalizeTimelineStage(updated.procedureProgress?.timeline?.currentStage);
+      setTimelineStagePreview(nextStage);
+      setTimelineStageNotesInput(updated.procedureProgress?.timeline?.notes ?? "");
+      setTimelineChecklistByStage(buildTimelineChecklistState(resolveProcedureProgress(updated.procedureProgress)));
+      setTimelineStageFeedback("Etapa da linha do tempo atualizada com sucesso.");
+      return true;
+    } catch (nextError) {
+      const message = nextError instanceof ApiError ? nextError.message : "Falha ao atualizar etapa da linha do tempo.";
+      setTimelineStageError(message);
+      return false;
+    } finally {
+      setSavingTimelineStage(false);
+    }
+  }
+
+  async function handleAdvanceTimelineStage() {
+    if (!id || !canManageOperatorActions) {
+      return;
+    }
+
+    const stageIndex = getTimelineStepIndex(currentTimelineStage);
+    const nextStage = CASE_TIMELINE_STEPS[stageIndex + 1];
+    if (!nextStage) {
+      return;
+    }
+
+    const currentChecklist = timelineChecklistByStage[currentTimelineStage] ?? [];
+    if (currentChecklist.length === 0 || currentChecklist.some((item) => !item.done)) {
+      setTimelineStageError("Conclua todos os checkpoints da fase atual para avançar.");
+      return;
+    }
+
+    const saved = await handleSaveTimelineStage(currentTimelineStage);
+    if (!saved) {
+      return;
+    }
+
+    setTimelineStageError(null);
+    setTimelineStageFeedback(null);
+    setSavingTimelineStage(true);
+
+    try {
+      const token = await getToken();
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${id}/progress/timeline`, {
+        method: "POST",
+        token,
+        body: {
+          stage: nextStage.key,
+          details: `Fase avançada para ${nextStage.label}.`,
+          checklist: []
+        }
+      });
+
+      const normalized = resolveProcedureProgress(updated.procedureProgress);
+      setCaseItem(updated);
+      setTimelineStagePreview(nextStage.key);
+      setTimelineStageNotesInput(normalized.timeline.stageStates?.[nextStage.key]?.notes ?? "");
+      setTimelineChecklistByStage(buildTimelineChecklistState(normalized));
+      setTimelineStageFeedback(`Fase avançada para ${nextStage.label}.`);
+    } catch (nextError) {
+      const message = nextError instanceof ApiError ? nextError.message : "Falha ao avançar para a próxima fase.";
+      setTimelineStageError(message);
+    } finally {
+      setSavingTimelineStage(false);
+    }
+  }
+
   function handleDetailTabChange(tab: CaseDetailTab) {
     setActiveDetailTab(tab);
     setSearchParams((current) => {
@@ -2152,6 +2556,163 @@ export function CaseDetailPage() {
             <>
               <h2>Andamento</h2>
               <div className="page-stack page-stack--tight">
+                <section className="info-box progress-timeline-panel">
+                  <div className="progress-timeline-header">
+                    <div>
+                      <strong>Linha do tempo do caso</strong>
+                      <p>
+                        Etapa atual:{" "}
+                        <strong>
+                          {currentTimelineIndex >= 0 ? CASE_TIMELINE_STEPS[currentTimelineIndex].label : "Não definida"}
+                        </strong>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="progress-timeline-track" role="list">
+                    {CASE_TIMELINE_STEPS.map((step, index) => {
+                      const stepNumber = index + 1;
+                      const isDone = currentTimelineIndex >= 0 && stepNumber <= currentTimelineIndex + 1;
+                      const isCurrent = currentTimelineIndex >= 0 && stepNumber === currentTimelineIndex + 1;
+                      const isPreview = timelineStagePreview === step.key;
+                      const nodeClass = [
+                        "progress-timeline-node",
+                        isDone ? "progress-timeline-node--done" : "",
+                        isCurrent ? "progress-timeline-node--current" : "",
+                        isPreview ? "progress-timeline-node--preview" : ""
+                      ]
+                        .filter(Boolean)
+                        .join(" ");
+
+                      return (
+                        <button
+                          key={`progress-timeline-${step.key}`}
+                          type="button"
+                          className={nodeClass}
+                          onClick={() => {
+                            setTimelineStagePreview(step.key);
+                            if (canManageOperatorActions && step.key === currentTimelineStage) {
+                              const stageNotes = procedureProgress.timeline.stageStates?.[step.key]?.notes ?? "";
+                              setTimelineStageNotesInput(stageNotes);
+                            }
+                          }}
+                          title={`${step.label}: ${step.description}`}
+                        >
+                          <span className="progress-timeline-dot">{step.symbol}</span>
+                          <span className="progress-timeline-label">{step.label}</span>
+                        </button>
+                      );
+                    })}
+                    <span className="progress-timeline-line" aria-hidden="true" />
+                    <span
+                      className="progress-timeline-line progress-timeline-line--done"
+                      style={
+                        {
+                          "--timeline-step-count": CASE_TIMELINE_STEPS.length,
+                          "--timeline-current-step": Math.max(currentTimelineIndex + 1, 1)
+                        } as CSSProperties
+                      }
+                      aria-hidden="true"
+                    />
+                  </div>
+
+                  <div className="progress-timeline-detail">
+                    <strong>{previewTimelineStep.label}</strong>
+                    <p>{previewTimelineStep.description}</p>
+                    <p className="helper-text">
+                      Fase {previewTimelineIndex + 1}/{CASE_TIMELINE_STEPS.length} • Checkpoints concluídos:{" "}
+                      {previewTimelineDoneCount}/{previewTimelineChecklist.length}
+                    </p>
+
+                    <div className="progress-timeline-checklist">
+                      {previewTimelineChecklist.map((item) => (
+                        <label key={`timeline-check-${previewTimelineStep.key}-${item.id}`} className="checkbox-inline">
+                          <input
+                            type="checkbox"
+                            checked={item.done}
+                            onChange={(event) =>
+                              handleTimelineChecklistToggle(previewTimelineStep.key, item.id, event.target.checked)
+                            }
+                            disabled={!canEditPreviewTimelineStage || savingTimelineStage}
+                          />
+                          {item.label}
+                        </label>
+                      ))}
+                    </div>
+                    <div className="progress-timeline-modules">
+                      <strong>Sessões da fase</strong>
+                      <div className="progress-timeline-modules-grid">
+                        {previewTimelineModules.map((module) => (
+                          <button
+                            key={`timeline-module-${previewTimelineStep.key}-${module.id}`}
+                            type="button"
+                            className="secondary-button secondary-button--small progress-timeline-module-button"
+                            onClick={() => handleOpenTimelineTarget(module.target)}
+                          >
+                            <span>{module.title}</span>
+                            <small>{module.description}</small>
+                          </button>
+                        ))}
+                      </div>
+                      {previewTimelineModules.length === 0 && (
+                        <button
+                          type="button"
+                          className="secondary-button secondary-button--small"
+                          onClick={() => handleOpenTimelineConnection(previewTimelineStep.key)}
+                        >
+                          Abrir conexão da fase
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {canManageOperatorActions && (
+                    <div className="progress-timeline-actions">
+                      <label>
+                        Fase ativa para atualização
+                        <input type="text" value={CASE_TIMELINE_STEPS[currentTimelineIndex]?.label ?? "Ajuizamento"} readOnly />
+                      </label>
+                      <label>
+                        Observações da fase ativa (opcional)
+                        <textarea
+                          rows={3}
+                          value={timelineStageNotesInput}
+                          onChange={(event) => setTimelineStageNotesInput(event.target.value)}
+                          maxLength={500}
+                          placeholder="Registre o contexto da fase atual para o cliente e para o operador."
+                          disabled={savingTimelineStage || !isPreviewStageCurrent}
+                        />
+                      </label>
+                      {!isPreviewStageCurrent && (
+                        <p className="helper-text">
+                          Para editar ou avançar, selecione a fase atual na linha do tempo.
+                        </p>
+                      )}
+                      <div className="operator-action-buttons">
+                        <button
+                          type="button"
+                          className="hero-primary"
+                          onClick={() => void handleSaveTimelineStage()}
+                          disabled={savingTimelineStage || !isPreviewStageCurrent}
+                        >
+                          {savingTimelineStage ? "Atualizando..." : "Salvar fase"}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button secondary-button--small"
+                          onClick={() => void handleAdvanceTimelineStage()}
+                          disabled={savingTimelineStage || !canAdvanceCurrentTimelineStage || !isPreviewStageCurrent}
+                        >
+                          Avançar fase
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {timelineStageFeedback && <p className="success-text">{timelineStageFeedback}</p>}
+                  {timelineStageError && <p className="error-text">{timelineStageError}</p>}
+                </section>
+
                 <section className="info-box progress-panel">
                   <button
                     type="button"
