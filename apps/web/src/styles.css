@@ -1970,6 +1970,68 @@ button.sidebar-item {
   padding-top: 0.8rem;
 }
 
+.sale-case-shell {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.sale-case-card {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid #d7e3f2;
+  border-radius: 14px;
+  background: #f8fbff;
+  padding: 0.85rem;
+}
+
+.sale-case-card--pending {
+  border-color: #ecdcae;
+  background: #fffdf4;
+}
+
+.sale-case-card--proposal {
+  max-width: 760px;
+  margin: 0 auto;
+  border-color: #c9daef;
+  background: #f6faff;
+}
+
+.sale-case-card--accepted {
+  border-color: #b9e2c7;
+  background: #f4fff8;
+}
+
+.sale-case-card--rejected {
+  border-color: #e8c9c9;
+  background: #fff7f7;
+}
+
+.sale-case-action-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.sale-case-action-center--row {
+  width: 100%;
+}
+
+.sale-case-value {
+  margin: 0;
+  text-align: center;
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.sale-case-helper {
+  margin: 0;
+  font-size: 0.84rem;
+  color: #5c6c7e;
+}
+
 .empty-state {
   background: var(--surface);
   border: 1px dashed #b8c8da;

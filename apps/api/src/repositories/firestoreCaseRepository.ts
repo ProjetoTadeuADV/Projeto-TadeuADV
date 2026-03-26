@@ -465,6 +465,55 @@ function normalizeCaseCloseRequest(
   };
 }
 
+function normalizeCaseSaleRequest(
+  value: CaseRecord["saleRequest"] | null | undefined
+): CaseRecord["saleRequest"] {
+  if (!value) {
+    return {
+      status: "none",
+      requestedAt: null,
+      requestedByUserId: null,
+      requestedByName: null,
+      requestMessage: null,
+      reviewedAt: null,
+      reviewedByUserId: null,
+      reviewedByName: null,
+      reviewSummary: null,
+      suggestedAmount: null,
+      opinionMessage: null,
+      proposalSentAt: null,
+      clientDecision: "pending",
+      clientDecisionAt: null,
+      clientDecisionByUserId: null,
+      clientDecisionByName: null,
+      clientDecisionReason: null
+    };
+  }
+
+  return {
+    status: value.status ?? "none",
+    requestedAt: value.requestedAt ?? null,
+    requestedByUserId: value.requestedByUserId ?? null,
+    requestedByName: normalizeOptionalText(value.requestedByName),
+    requestMessage: normalizeOptionalText(value.requestMessage),
+    reviewedAt: value.reviewedAt ?? null,
+    reviewedByUserId: value.reviewedByUserId ?? null,
+    reviewedByName: normalizeOptionalText(value.reviewedByName),
+    reviewSummary: normalizeOptionalText(value.reviewSummary),
+    suggestedAmount:
+      typeof value.suggestedAmount === "number" && Number.isFinite(value.suggestedAmount)
+        ? value.suggestedAmount
+        : null,
+    opinionMessage: normalizeOptionalText(value.opinionMessage),
+    proposalSentAt: value.proposalSentAt ?? null,
+    clientDecision: value.clientDecision ?? "pending",
+    clientDecisionAt: value.clientDecisionAt ?? null,
+    clientDecisionByUserId: value.clientDecisionByUserId ?? null,
+    clientDecisionByName: normalizeOptionalText(value.clientDecisionByName),
+    clientDecisionReason: normalizeOptionalText(value.clientDecisionReason)
+  };
+}
+
 function normalizeCaseMessages(value: Partial<CaseMessageRecord>[] | null | undefined): CaseMessageRecord[] {
   if (!Array.isArray(value)) {
     return [];
@@ -544,6 +593,7 @@ function normalizeCaseRecord(data: Partial<CaseRecord>, fallbackId: string): Cas
     clientDataRequestedAt: data.clientDataRequestedAt ?? null,
     workflowStep: data.workflowStep ?? "triage",
     closeRequest: normalizeCaseCloseRequest(data.closeRequest),
+    saleRequest: normalizeCaseSaleRequest(data.saleRequest),
     serviceFee: normalizeCaseServiceFee(data.serviceFee),
     charges: normalizeCaseCharges(data.charges),
     procedureProgress: normalizeCaseProcedureProgress(data.procedureProgress),
@@ -892,6 +942,25 @@ export class FirestoreCaseRepository implements CaseRepository {
         decidedByName: null,
         decisionReason: null
       },
+      saleRequest: {
+        status: "none",
+        requestedAt: null,
+        requestedByUserId: null,
+        requestedByName: null,
+        requestMessage: null,
+        reviewedAt: null,
+        reviewedByUserId: null,
+        reviewedByName: null,
+        reviewSummary: null,
+        suggestedAmount: null,
+        opinionMessage: null,
+        proposalSentAt: null,
+        clientDecision: "pending",
+        clientDecisionAt: null,
+        clientDecisionByUserId: null,
+        clientDecisionByName: null,
+        clientDecisionReason: null
+      },
       serviceFee: null,
       charges: [],
       procedureProgress: normalizeCaseProcedureProgress(null),
@@ -1056,6 +1125,7 @@ export class FirestoreCaseRepository implements CaseRepository {
       charges?: CaseRecord["charges"];
       procedureProgress?: CaseRecord["procedureProgress"];
       closeRequest?: CaseRecord["closeRequest"];
+      saleRequest?: CaseRecord["saleRequest"];
     }
   ): Promise<CaseRecord | null> {
     const ref = this.firestore.collection(CASES_COLLECTION).doc(caseId);
@@ -1100,6 +1170,9 @@ export class FirestoreCaseRepository implements CaseRepository {
         : {}),
       ...(Object.prototype.hasOwnProperty.call(patch, "closeRequest")
         ? { closeRequest: normalizeCaseCloseRequest(patch.closeRequest) }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, "saleRequest")
+        ? { saleRequest: normalizeCaseSaleRequest(patch.saleRequest) }
         : {}),
       updatedAt: now
     };

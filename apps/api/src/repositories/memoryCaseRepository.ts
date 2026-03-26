@@ -414,6 +414,55 @@ function normalizeCaseCloseRequest(
   };
 }
 
+function normalizeCaseSaleRequest(
+  value: CaseRecord["saleRequest"] | null | undefined
+): CaseRecord["saleRequest"] {
+  if (!value) {
+    return {
+      status: "none",
+      requestedAt: null,
+      requestedByUserId: null,
+      requestedByName: null,
+      requestMessage: null,
+      reviewedAt: null,
+      reviewedByUserId: null,
+      reviewedByName: null,
+      reviewSummary: null,
+      suggestedAmount: null,
+      opinionMessage: null,
+      proposalSentAt: null,
+      clientDecision: "pending",
+      clientDecisionAt: null,
+      clientDecisionByUserId: null,
+      clientDecisionByName: null,
+      clientDecisionReason: null
+    };
+  }
+
+  return {
+    status: value.status ?? "none",
+    requestedAt: value.requestedAt ?? null,
+    requestedByUserId: value.requestedByUserId ?? null,
+    requestedByName: normalizeOptionalText(value.requestedByName),
+    requestMessage: normalizeOptionalText(value.requestMessage),
+    reviewedAt: value.reviewedAt ?? null,
+    reviewedByUserId: value.reviewedByUserId ?? null,
+    reviewedByName: normalizeOptionalText(value.reviewedByName),
+    reviewSummary: normalizeOptionalText(value.reviewSummary),
+    suggestedAmount:
+      typeof value.suggestedAmount === "number" && Number.isFinite(value.suggestedAmount)
+        ? value.suggestedAmount
+        : null,
+    opinionMessage: normalizeOptionalText(value.opinionMessage),
+    proposalSentAt: value.proposalSentAt ?? null,
+    clientDecision: value.clientDecision ?? "pending",
+    clientDecisionAt: value.clientDecisionAt ?? null,
+    clientDecisionByUserId: value.clientDecisionByUserId ?? null,
+    clientDecisionByName: normalizeOptionalText(value.clientDecisionByName),
+    clientDecisionReason: normalizeOptionalText(value.clientDecisionReason)
+  };
+}
+
 function normalizeCaseMessages(value: CaseMessageRecord[] | null | undefined): CaseMessageRecord[] {
   if (!Array.isArray(value)) {
     return [];
@@ -482,6 +531,7 @@ function normalizeCaseRecord(value: CaseRecord): CaseRecord {
     clientDataRequestedAt: value.clientDataRequestedAt ?? null,
     workflowStep: (value.workflowStep ?? "triage") as CaseWorkflowStep,
     closeRequest: normalizeCaseCloseRequest(value.closeRequest),
+    saleRequest: normalizeCaseSaleRequest(value.saleRequest),
     serviceFee: normalizeCaseServiceFee(value.serviceFee),
     charges: normalizeCaseCharges(value.charges),
     procedureProgress: normalizeCaseProcedureProgress(value.procedureProgress),
@@ -780,6 +830,25 @@ export class MemoryCaseRepository implements CaseRepository {
         decidedByName: null,
         decisionReason: null
       },
+      saleRequest: {
+        status: "none",
+        requestedAt: null,
+        requestedByUserId: null,
+        requestedByName: null,
+        requestMessage: null,
+        reviewedAt: null,
+        reviewedByUserId: null,
+        reviewedByName: null,
+        reviewSummary: null,
+        suggestedAmount: null,
+        opinionMessage: null,
+        proposalSentAt: null,
+        clientDecision: "pending",
+        clientDecisionAt: null,
+        clientDecisionByUserId: null,
+        clientDecisionByName: null,
+        clientDecisionReason: null
+      },
       serviceFee: null,
       charges: [],
       procedureProgress: normalizeCaseProcedureProgress(null),
@@ -1052,6 +1121,7 @@ export class MemoryCaseRepository implements CaseRepository {
       charges?: CaseRecord["charges"];
       procedureProgress?: CaseRecord["procedureProgress"];
       closeRequest?: CaseRecord["closeRequest"];
+      saleRequest?: CaseRecord["saleRequest"];
     }
   ): Promise<CaseRecord | null> {
     const existing = this.cases.get(caseId);
@@ -1095,6 +1165,9 @@ export class MemoryCaseRepository implements CaseRepository {
         : {}),
       ...(Object.prototype.hasOwnProperty.call(patch, "closeRequest")
         ? { closeRequest: normalizeCaseCloseRequest(patch.closeRequest) }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, "saleRequest")
+        ? { saleRequest: normalizeCaseSaleRequest(patch.saleRequest) }
         : {}),
       updatedAt: now
     };

@@ -273,6 +273,31 @@ const caseCloseRequestDecisionSchema = z
     }
   });
 
+const caseSaleRequestSchema = z.object({
+  requestMessage: z.string().trim().max(5000).nullable().optional()
+});
+
+const caseSaleProposalSchema = z.object({
+  reviewSummary: z.string().trim().min(10).max(5000),
+  suggestedAmount: z.number().positive().max(100_000_000),
+  opinionMessage: z.string().trim().min(10).max(5000)
+});
+
+const caseSaleDecisionSchema = z
+  .object({
+    decision: z.enum(["accepted", "rejected"]),
+    reason: z.string().trim().max(5000).nullable().optional()
+  })
+  .superRefine((value, ctx) => {
+    if (value.decision === "rejected" && !value.reason?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Informe o motivo da recusa da proposta.",
+        path: ["reason"]
+      });
+    }
+  });
+
 export interface ValidatedCreateCaseInput {
   varaId: string;
   varaNome: string;
@@ -655,6 +680,51 @@ export function validateCaseCloseRequestDecisionPayload(payload: unknown): {
   const parsed = caseCloseRequestDecisionSchema.safeParse(payload);
   if (!parsed.success) {
     throw new HttpError(400, "Payload inválido para decisão de encerramento.", parsed.error.flatten());
+  }
+
+  return {
+    decision: parsed.data.decision,
+    reason: normalizeOptionalText(parsed.data.reason)
+  };
+}
+
+export function validateCaseSaleRequestPayload(payload: unknown): {
+  requestMessage: string | null;
+} {
+  const parsed = caseSaleRequestSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new HttpError(400, "Payload inválido para solicitação de venda do caso.", parsed.error.flatten());
+  }
+
+  return {
+    requestMessage: normalizeOptionalText(parsed.data.requestMessage)
+  };
+}
+
+export function validateCaseSaleProposalPayload(payload: unknown): {
+  reviewSummary: string;
+  suggestedAmount: number;
+  opinionMessage: string;
+} {
+  const parsed = caseSaleProposalSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new HttpError(400, "Payload inválido para proposta de venda do caso.", parsed.error.flatten());
+  }
+
+  return {
+    reviewSummary: parsed.data.reviewSummary.trim(),
+    suggestedAmount: parsed.data.suggestedAmount,
+    opinionMessage: parsed.data.opinionMessage.trim()
+  };
+}
+
+export function validateCaseSaleDecisionPayload(payload: unknown): {
+  decision: "accepted" | "rejected";
+  reason: string | null;
+} {
+  const parsed = caseSaleDecisionSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new HttpError(400, "Payload inválido para decisão da venda do caso.", parsed.error.flatten());
   }
 
   return {

@@ -92,6 +92,8 @@ export type CaseTimelineStage =
 export type CaseMessageSenderRole = "client" | "operator" | "master" | "system";
 
 export type CaseCloseRequestStatus = "none" | "pending" | "approved" | "denied";
+export type CaseSaleStatus = "none" | "requested" | "proposal_sent" | "accepted" | "rejected";
+export type CaseSaleClientDecision = "pending" | "accepted" | "rejected";
 
 export interface CaseCloseRequest {
   status: CaseCloseRequestStatus;
@@ -103,6 +105,26 @@ export interface CaseCloseRequest {
   decidedByUserId: string | null;
   decidedByName: string | null;
   decisionReason: string | null;
+}
+
+export interface CaseSaleRequest {
+  status: CaseSaleStatus;
+  requestedAt: string | null;
+  requestedByUserId: string | null;
+  requestedByName: string | null;
+  requestMessage: string | null;
+  reviewedAt: string | null;
+  reviewedByUserId: string | null;
+  reviewedByName: string | null;
+  reviewSummary: string | null;
+  suggestedAmount: number | null;
+  opinionMessage: string | null;
+  proposalSentAt: string | null;
+  clientDecision: CaseSaleClientDecision;
+  clientDecisionAt: string | null;
+  clientDecisionByUserId: string | null;
+  clientDecisionByName: string | null;
+  clientDecisionReason: string | null;
 }
 
 export interface CaseServiceFee {
@@ -280,6 +302,7 @@ export interface CaseRecord {
   clientDataRequestedAt: string | null;
   workflowStep: CaseWorkflowStep;
   closeRequest: CaseCloseRequest;
+  saleRequest: CaseSaleRequest;
   serviceFee: CaseServiceFee | null;
   charges?: CaseChargeRecord[];
   procedureProgress?: CaseProcedureProgress;

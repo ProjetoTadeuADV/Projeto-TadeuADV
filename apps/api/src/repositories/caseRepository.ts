@@ -78,6 +78,7 @@ export interface CaseRepository {
       charges?: CaseChargeRecord[] | null;
       procedureProgress?: CaseProcedureProgress | null;
       closeRequest?: CaseRecord["closeRequest"];
+      saleRequest?: CaseRecord["saleRequest"];
     }
   ): Promise<CaseRecord | null>;
   appendCaseMovement(

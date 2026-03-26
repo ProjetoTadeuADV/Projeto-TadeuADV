@@ -337,6 +337,26 @@ const DEFAULT_CLOSE_REQUEST: CaseRecord["closeRequest"] = {
   decisionReason: null
 };
 
+const DEFAULT_SALE_REQUEST: CaseRecord["saleRequest"] = {
+  status: "none",
+  requestedAt: null,
+  requestedByUserId: null,
+  requestedByName: null,
+  requestMessage: null,
+  reviewedAt: null,
+  reviewedByUserId: null,
+  reviewedByName: null,
+  reviewSummary: null,
+  suggestedAmount: null,
+  opinionMessage: null,
+  proposalSentAt: null,
+  clientDecision: "pending",
+  clientDecisionAt: null,
+  clientDecisionByUserId: null,
+  clientDecisionByName: null,
+  clientDecisionReason: null
+};
+
 function resolveOperatorStepFromWorkflow(workflowStep: CaseRecord["workflowStep"]): OperatorActionStep {
   if (workflowStep === "awaiting_client_data" || workflowStep === "awaiting_initial_fee") {
     return 2;
@@ -468,6 +488,43 @@ function formatAttachmentSize(sizeBytes: number): string {
 
   const rounded = unitIndex === 0 ? `${Math.round(value)}` : value.toFixed(1);
   return `${rounded} ${units[unitIndex]}`;
+}
+
+function buildCaseSaleSummary(caseItem: CaseRecord): string {
+  const lines: string[] = [];
+  lines.push(`Processo ${caseItem.caseCode}.`);
+
+  const subject = caseItem.petitionInitial?.claimSubject?.trim();
+  if (subject) {
+    lines.push(`Assunto principal: ${subject}.`);
+  }
+
+  const defendant = caseItem.petitionInitial?.defendantName?.trim();
+  if (defendant) {
+    lines.push(`Parte contrária: ${defendant}.`);
+  }
+
+  const resumo = caseItem.resumo?.trim();
+  if (resumo) {
+    lines.push(`Resumo informado pelo cliente: ${resumo}.`);
+  }
+
+  const facts = caseItem.petitionInitial?.facts?.trim();
+  if (facts) {
+    lines.push(`Fatos principais: ${facts}.`);
+  }
+
+  const claimValue = caseItem.petitionInitial?.claimValue;
+  if (typeof claimValue === "number" && Number.isFinite(claimValue) && claimValue > 0) {
+    lines.push(`Valor da causa declarado: ${formatCurrencyBr(claimValue)}.`);
+  }
+
+  const text = lines.join(" ");
+  if (text.length <= 900) {
+    return text;
+  }
+
+  return `${text.slice(0, 900).trim()}...`;
 }
 
 function resolveAssignedOperatorIds(caseItem: CaseRecord | null): string[] {
@@ -785,6 +842,17 @@ export function CaseDetailPage() {
   const [isClientDataRequestPopupOpen, setIsClientDataRequestPopupOpen] = useState(false);
   const [isCloseRequestReasonExpanded, setIsCloseRequestReasonExpanded] = useState(false);
   const [isCloseRequestRejectMode, setIsCloseRequestRejectMode] = useState(false);
+  const [saleRequestMessageInput, setSaleRequestMessageInput] = useState("");
+  const [saleReviewSummaryInput, setSaleReviewSummaryInput] = useState("");
+  const [saleSuggestedAmountInput, setSaleSuggestedAmountInput] = useState("");
+  const [saleOpinionMessageInput, setSaleOpinionMessageInput] = useState("");
+  const [saleDecisionReasonInput, setSaleDecisionReasonInput] = useState("");
+  const [isSaleRejectMode, setIsSaleRejectMode] = useState(false);
+  const [requestingCaseSale, setRequestingCaseSale] = useState(false);
+  const [sendingCaseSaleProposal, setSendingCaseSaleProposal] = useState(false);
+  const [decidingCaseSale, setDecidingCaseSale] = useState(false);
+  const [caseSaleFeedback, setCaseSaleFeedback] = useState<string | null>(null);
+  const [caseSaleError, setCaseSaleError] = useState<string | null>(null);
 
   const isAssignedOperator = Boolean(user?.uid && resolveAssignedOperatorIds(caseItem).includes(user.uid));
   const isRejectedOrClosedCase = Boolean(
@@ -802,6 +870,7 @@ export function CaseDetailPage() {
   );
   const canUseLegacyOperatorFlow = canManageOperatorActions && !hasAdvancedCaseFlow;
   const closeRequest = caseItem?.closeRequest ?? DEFAULT_CLOSE_REQUEST;
+  const saleRequest = caseItem?.saleRequest ?? DEFAULT_SALE_REQUEST;
   const hasPendingCloseRequest = closeRequest.status === "pending";
   const shouldShowOperatorCloseRequestPopup = Boolean(canManageOperatorActions && hasPendingCloseRequest);
   const hasClientDocumentRequestPending = Boolean(
@@ -817,6 +886,26 @@ export function CaseDetailPage() {
       !isRejectedOrClosedCase &&
       closeRequest.status !== "pending"
   );
+  const canClientRequestSale = Boolean(
+    caseItem &&
+      !canAccessAdmin &&
+      !isRejectedOrClosedCase &&
+      (saleRequest.status === "none" || saleRequest.status === "rejected")
+  );
+  const hasCaseSaleUnderReview = saleRequest.status === "requested";
+  const hasCaseSaleProposalPending = saleRequest.status === "proposal_sent";
+  const canClientDecideSaleProposal = Boolean(!canAccessAdmin && hasCaseSaleProposalPending);
+  const canManageSaleProposal = Boolean(canManageOperatorActions);
+  const canSendSaleProposal = Boolean(
+    canManageSaleProposal && (saleRequest.status === "requested" || saleRequest.status === "proposal_sent")
+  );
+  const caseSaleSummary = useMemo(() => {
+    if (!caseItem) {
+      return "";
+    }
+
+    return buildCaseSaleSummary(caseItem);
+  }, [caseItem]);
   const closeRequestReasonPreview = useMemo(() => {
     const normalized = (closeRequest.reason ?? "Não informada.").trim();
     if (!normalized) {
@@ -986,6 +1075,24 @@ export function CaseDetailPage() {
     setTimelineStageNotesInput(procedureProgress.timeline?.notes ?? "");
     setTimelineChecklistByStage(buildTimelineChecklistState(procedureProgress));
   }, [procedureProgress]);
+
+  useEffect(() => {
+    if (!caseItem) {
+      return;
+    }
+
+    const sale = caseItem.saleRequest ?? DEFAULT_SALE_REQUEST;
+    setSaleRequestMessageInput(sale.requestMessage ?? "");
+    setSaleReviewSummaryInput(sale.reviewSummary ?? buildCaseSaleSummary(caseItem));
+    setSaleSuggestedAmountInput(
+      typeof sale.suggestedAmount === "number" && Number.isFinite(sale.suggestedAmount)
+        ? sale.suggestedAmount.toFixed(2).replace(".", ",")
+        : ""
+    );
+    setSaleOpinionMessageInput(sale.opinionMessage ?? "");
+    setSaleDecisionReasonInput("");
+    setIsSaleRejectMode(false);
+  }, [caseItem]);
 
   useEffect(() => {
     if (!isOperatorSidebarOpen && !isClientCloseSidebarOpen) {
@@ -1557,6 +1664,152 @@ export function CaseDetailPage() {
     }
 
     void handleCloseRequestDecision("denied");
+  }
+
+  async function handleRequestCaseSale() {
+    if (!id || !caseItem || !canClientRequestSale) {
+      return;
+    }
+
+    const requestMessage = saleRequestMessageInput.trim();
+    const confirmation = window.confirm("Confirma o envio da solicitação de venda do caso para análise da equipe?");
+    if (!confirmation) {
+      return;
+    }
+
+    setCaseSaleError(null);
+    setCaseSaleFeedback(null);
+    setRequestingCaseSale(true);
+
+    try {
+      const token = await getToken();
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${id}/sale/request`, {
+        method: "POST",
+        token,
+        body: {
+          requestMessage: requestMessage.length > 0 ? requestMessage : null
+        }
+      });
+
+      setCaseItem(updated);
+      setSaleDecisionReasonInput("");
+      setIsSaleRejectMode(false);
+      setCaseSaleFeedback("Solicitação enviada. O pedido está em análise e você será notificado.");
+    } catch (nextError) {
+      const message = nextError instanceof ApiError ? nextError.message : "Falha ao solicitar venda do caso.";
+      setCaseSaleError(message);
+    } finally {
+      setRequestingCaseSale(false);
+    }
+  }
+
+  async function handleSendCaseSaleProposal() {
+    if (!id || !caseItem || !canSendSaleProposal) {
+      return;
+    }
+
+    const reviewSummary = saleReviewSummaryInput.trim();
+    const opinionMessage = saleOpinionMessageInput.trim();
+    const suggestedAmount = parseMoneyInput(saleSuggestedAmountInput);
+
+    if (reviewSummary.length < 10) {
+      setCaseSaleError("Preencha um resumo da avaliação com pelo menos 10 caracteres.");
+      return;
+    }
+
+    if (suggestedAmount === null) {
+      setCaseSaleError("Informe um valor sugerido válido para a proposta.");
+      return;
+    }
+
+    if (opinionMessage.length < 10) {
+      setCaseSaleError("Preencha o parecer ao cliente com pelo menos 10 caracteres.");
+      return;
+    }
+
+    const confirmation = window.confirm("Confirma o envio da proposta de venda para o cliente?");
+    if (!confirmation) {
+      return;
+    }
+
+    setCaseSaleError(null);
+    setCaseSaleFeedback(null);
+    setSendingCaseSaleProposal(true);
+
+    try {
+      const token = await getToken();
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${id}/sale/proposal`, {
+        method: "POST",
+        token,
+        body: {
+          reviewSummary,
+          suggestedAmount,
+          opinionMessage
+        }
+      });
+
+      setCaseItem(updated);
+      setIsSaleRejectMode(false);
+      setSaleDecisionReasonInput("");
+      setCaseSaleFeedback("Proposta enviada ao cliente por mensagem e e-mail.");
+    } catch (nextError) {
+      const message = nextError instanceof ApiError ? nextError.message : "Falha ao enviar proposta de venda.";
+      setCaseSaleError(message);
+    } finally {
+      setSendingCaseSaleProposal(false);
+    }
+  }
+
+  async function handleDecideCaseSale(decision: "accepted" | "rejected") {
+    if (!id || !caseItem || !canClientDecideSaleProposal) {
+      return;
+    }
+
+    const reason = saleDecisionReasonInput.trim();
+    if (decision === "rejected" && reason.length < 5) {
+      setCaseSaleError("Informe o motivo da recusa com pelo menos 5 caracteres.");
+      return;
+    }
+
+    const confirmation = window.confirm(
+      decision === "accepted"
+        ? "Confirma o aceite da proposta de venda do caso?"
+        : "Confirma a recusa da proposta de venda do caso?"
+    );
+    if (!confirmation) {
+      return;
+    }
+
+    setCaseSaleError(null);
+    setCaseSaleFeedback(null);
+    setDecidingCaseSale(true);
+
+    try {
+      const token = await getToken();
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${id}/sale/decision`, {
+        method: "POST",
+        token,
+        body: {
+          decision,
+          reason: decision === "rejected" ? reason : null
+        }
+      });
+
+      setCaseItem(updated);
+      setIsSaleRejectMode(false);
+      setSaleDecisionReasonInput("");
+      setCaseSaleFeedback(
+        decision === "accepted"
+          ? "Proposta aceita. A etapa de pagamento da venda via Asaas será habilitada em breve."
+          : "Proposta recusada. A equipe poderá enviar nova análise quando necessário."
+      );
+    } catch (nextError) {
+      const message =
+        nextError instanceof ApiError ? nextError.message : "Falha ao registrar decisão da proposta de venda.";
+      setCaseSaleError(message);
+    } finally {
+      setDecidingCaseSale(false);
+    }
   }
 
   async function handleSaveServiceFee() {
@@ -3057,14 +3310,247 @@ export function CaseDetailPage() {
           {activeDetailTab === "sale" && (
             <>
               <h2>Venda do Caso</h2>
-              <div className="info-box">
-                <strong>Funcionalidade em construção</strong>
-                <span>
-                  Esta área vai concentrar a análise financeira e as opções para venda do caso.
-                </span>
-                <span>
-                  Enquanto isso, continue acompanhando as etapas em <strong>Evolução do Caso</strong>.
-                </span>
+              {caseSaleError && <p className="error-text">{caseSaleError}</p>}
+              {caseSaleFeedback && <p className="success-text">{caseSaleFeedback}</p>}
+
+              <div className="sale-case-shell">
+                {!canAccessAdmin && canClientRequestSale && (
+                  <div className="sale-case-card">
+                    <strong>Solicitar venda do caso</strong>
+                    <p>
+                      Envie o pedido para análise da equipe responsável. Você receberá retorno por mensagem e e-mail.
+                    </p>
+                    <label>
+                      Observações para avaliação (opcional)
+                      <textarea
+                        rows={4}
+                        maxLength={5000}
+                        value={saleRequestMessageInput}
+                        onChange={(event) => setSaleRequestMessageInput(event.target.value)}
+                        placeholder="Inclua detalhes que possam ajudar na avaliação."
+                        disabled={requestingCaseSale}
+                      />
+                    </label>
+                    <div className="sale-case-action-center">
+                      <button
+                        type="button"
+                        className="hero-primary"
+                        onClick={() => void handleRequestCaseSale()}
+                        disabled={requestingCaseSale}
+                      >
+                        {requestingCaseSale ? "Enviando..." : "Solicitar venda"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {hasCaseSaleUnderReview && (
+                  <div className="sale-case-card sale-case-card--pending">
+                    <strong>Pedido em análise</strong>
+                    <p>
+                      Sua solicitação de venda está em avaliação pela equipe responsável do caso.
+                      Você será notificado assim que houver parecer.
+                    </p>
+                    {saleRequest.requestedAt && (
+                      <p className="sale-case-helper">Solicitado em: {formatDate(saleRequest.requestedAt)}</p>
+                    )}
+                  </div>
+                )}
+
+                {canClientDecideSaleProposal && (
+                  <div className="sale-case-card sale-case-card--proposal">
+                    <strong>Proposta de venda disponível</strong>
+                    <p className="sale-case-value">{formatCurrencyBr(saleRequest.suggestedAmount)}</p>
+                    <div className="info-box">
+                      <strong>Resumo da avaliação</strong>
+                      <span>{saleRequest.reviewSummary ?? "Resumo não informado."}</span>
+                      <strong>Parecer da equipe</strong>
+                      <span>{saleRequest.opinionMessage ?? "Parecer não informado."}</span>
+                      {saleRequest.proposalSentAt && (
+                        <span>Proposta enviada em: {formatDate(saleRequest.proposalSentAt)}</span>
+                      )}
+                    </div>
+                    <div className="sale-case-action-center sale-case-action-center--row">
+                      <button
+                        type="button"
+                        className="hero-primary"
+                        onClick={() => {
+                          setIsSaleRejectMode(false);
+                          setSaleDecisionReasonInput("");
+                          void handleDecideCaseSale("accepted");
+                        }}
+                        disabled={decidingCaseSale}
+                      >
+                        {decidingCaseSale ? "Salvando..." : "Aceitar proposta"}
+                      </button>
+                      <button
+                        type="button"
+                        className="danger-button danger-button--small"
+                        onClick={() => setIsSaleRejectMode((current) => !current)}
+                        disabled={decidingCaseSale}
+                      >
+                        Recusar proposta
+                      </button>
+                    </div>
+                    {isSaleRejectMode && (
+                      <label>
+                        Motivo da recusa
+                        <textarea
+                          rows={3}
+                          maxLength={5000}
+                          value={saleDecisionReasonInput}
+                          onChange={(event) => setSaleDecisionReasonInput(event.target.value)}
+                          placeholder="Informe o motivo da recusa."
+                          disabled={decidingCaseSale}
+                        />
+                        <button
+                          type="button"
+                          className="danger-button danger-button--small"
+                          onClick={() => void handleDecideCaseSale("rejected")}
+                          disabled={decidingCaseSale}
+                        >
+                          {decidingCaseSale ? "Salvando..." : "Confirmar recusa"}
+                        </button>
+                      </label>
+                    )}
+                  </div>
+                )}
+
+                {!canAccessAdmin && saleRequest.status === "accepted" && (
+                  <div className="sale-case-card sale-case-card--accepted">
+                    <strong>Proposta aceita</strong>
+                    <p>
+                      Sua aceitação foi registrada. A integração de pagamento via Asaas para esta etapa ainda está
+                      temporariamente desativada e será habilitada em breve.
+                    </p>
+                  </div>
+                )}
+
+                {!canAccessAdmin && saleRequest.status === "rejected" && (
+                  <div className="sale-case-card sale-case-card--rejected">
+                    <strong>Proposta recusada</strong>
+                    <p>Você recusou a proposta atual. Se desejar, pode abrir uma nova solicitação de venda.</p>
+                    {saleRequest.clientDecisionReason && (
+                      <p className="sale-case-helper">Motivo informado: {saleRequest.clientDecisionReason}</p>
+                    )}
+                  </div>
+                )}
+
+                {canAccessAdmin && canManageSaleProposal && saleRequest.status === "none" && (
+                  <div className="info-box">
+                    <strong>Aguardando solicitação do cliente</strong>
+                    <span>
+                      A equipe poderá avaliar o caso para venda assim que o cliente abrir uma solicitação nesta aba.
+                    </span>
+                  </div>
+                )}
+
+                {canAccessAdmin && canManageSaleProposal && saleRequest.status !== "none" && (
+                  <div className="sale-case-card">
+                    <strong>Análise da equipe</strong>
+                    <div className="detail-list">
+                      <div className="detail-item">
+                        <span>Status da venda</span>
+                        <strong>
+                          {saleRequest.status === "requested"
+                            ? "Em avaliação"
+                            : saleRequest.status === "proposal_sent"
+                              ? "Proposta enviada"
+                              : saleRequest.status === "accepted"
+                                ? "Aceita pelo cliente"
+                                : "Recusada pelo cliente"}
+                        </strong>
+                      </div>
+                      <div className="detail-item">
+                        <span>Solicitante</span>
+                        <strong>{saleRequest.requestedByName ?? "Não informado"}</strong>
+                      </div>
+                      <div className="detail-item">
+                        <span>Data da solicitação</span>
+                        <strong>{saleRequest.requestedAt ? formatDate(saleRequest.requestedAt) : "Não informado"}</strong>
+                      </div>
+                    </div>
+
+                    <div className="info-box">
+                      <strong>Resumo breve do caso</strong>
+                      <span>{caseSaleSummary}</span>
+                    </div>
+
+                    {saleRequest.requestMessage && (
+                      <div className="info-box">
+                        <strong>Observações do cliente</strong>
+                        <span>{saleRequest.requestMessage}</span>
+                      </div>
+                    )}
+
+                    {canSendSaleProposal && (
+                      <>
+                        <label>
+                          Resumo da avaliação para proposta
+                          <textarea
+                            rows={5}
+                            maxLength={5000}
+                            value={saleReviewSummaryInput}
+                            onChange={(event) => setSaleReviewSummaryInput(event.target.value)}
+                            placeholder="Descreva o resumo da análise para o cliente."
+                            disabled={sendingCaseSaleProposal}
+                          />
+                        </label>
+                        <label>
+                          Valor sugerido
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="Ex: 3.500,00"
+                            value={saleSuggestedAmountInput}
+                            onChange={(event) => setSaleSuggestedAmountInput(event.target.value)}
+                            disabled={sendingCaseSaleProposal}
+                          />
+                        </label>
+                        <label>
+                          Parecer ao cliente
+                          <textarea
+                            rows={4}
+                            maxLength={5000}
+                            value={saleOpinionMessageInput}
+                            onChange={(event) => setSaleOpinionMessageInput(event.target.value)}
+                            placeholder="Escreva o parecer que será enviado por mensagem e e-mail."
+                            disabled={sendingCaseSaleProposal}
+                          />
+                        </label>
+                        <div className="sale-case-action-center">
+                          <button
+                            type="button"
+                            className="hero-primary"
+                            onClick={() => void handleSendCaseSaleProposal()}
+                            disabled={sendingCaseSaleProposal}
+                          >
+                            {sendingCaseSaleProposal ? "Enviando..." : "Enviar parecer e proposta"}
+                          </button>
+                        </div>
+                      </>
+                    )}
+
+                    {saleRequest.status === "accepted" && (
+                      <p className="success-text">
+                        O cliente já aceitou a proposta. A etapa financeira com Asaas será ativada em seguida.
+                      </p>
+                    )}
+
+                    {saleRequest.status === "rejected" && (
+                      <p className="helper-text">
+                        O cliente recusou a proposta anterior. Se necessário, revise os dados e envie uma nova proposta.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {canAccessAdmin && !canManageSaleProposal && (
+                  <div className="info-box">
+                    <strong>Acesso restrito</strong>
+                    <span>Somente os responsáveis alocados neste caso podem enviar proposta de venda.</span>
+                  </div>
+                )}
               </div>
             </>
           )}

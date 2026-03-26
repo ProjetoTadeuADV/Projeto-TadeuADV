@@ -25,6 +25,9 @@ import {
   validateCaseMovementPayload,
   validateCaseCloseRequestDecisionPayload,
   validateCaseCloseRequestPayload,
+  validateCaseSaleDecisionPayload,
+  validateCaseSaleProposalPayload,
+  validateCaseSaleRequestPayload,
   validateCasePetitionProgressPayload,
   validateCaseTimelineStagePayload,
   validateCaseReviewPayload,
@@ -603,6 +606,59 @@ function buildConciliationAgreementClosedMessage(): string {
     "Seu caso foi encerrado por acordo na etapa de conciliação.",
     "A conciliação foi concluída com acordo entre as partes e o caso foi encerrado.",
     "Registramos acordo em conciliação. O caso está oficialmente encerrado."
+  ]);
+}
+
+function buildCaseSaleRequestMessage(requestMessage: string | null): string {
+  const base = pickMessageVariant([
+    "Solicito a venda do caso para análise da equipe responsável.",
+    "Gostaria de encaminhar meu caso para avaliação de venda.",
+    "Peço análise para venda deste caso."
+  ]);
+
+  if (!requestMessage) {
+    return base;
+  }
+
+  return `${base} Observações do cliente: ${requestMessage}`;
+}
+
+function buildCaseSaleProposalMessage(input: {
+  reviewSummary: string;
+  suggestedAmount: number;
+  opinionMessage: string;
+}): string {
+  return pickMessageVariant([
+    `Concluímos a análise de venda do caso. Resumo: ${input.reviewSummary}. Proposta financeira: ${formatCurrencyBr(
+      input.suggestedAmount
+    )}. Parecer da equipe: ${input.opinionMessage}`,
+    `A avaliação da venda foi finalizada. Resumo do caso: ${input.reviewSummary}. Valor proposto: ${formatCurrencyBr(
+      input.suggestedAmount
+    )}. Orientação da equipe: ${input.opinionMessage}`,
+    `Registramos a proposta de venda do caso. Síntese: ${input.reviewSummary}. Oferta sugerida: ${formatCurrencyBr(
+      input.suggestedAmount
+    )}. Parecer enviado: ${input.opinionMessage}`
+  ]);
+}
+
+function buildCaseSaleDecisionMessage(input: {
+  decision: "accepted" | "rejected";
+  reason: string | null;
+  suggestedAmount: number | null;
+}): string {
+  if (input.decision === "accepted") {
+    return pickMessageVariant([
+      `Cliente aceitou a proposta de venda${input.suggestedAmount ? ` no valor de ${formatCurrencyBr(input.suggestedAmount)}` : ""}.`,
+      `A proposta de venda foi aceita pelo cliente${input.suggestedAmount ? ` (${formatCurrencyBr(input.suggestedAmount)})` : ""}.`,
+      `Venda do caso aceita pelo cliente${input.suggestedAmount ? ` com valor de ${formatCurrencyBr(input.suggestedAmount)}` : ""}.`
+    ]);
+  }
+
+  const reason = input.reason ?? "Motivo não informado.";
+  return pickMessageVariant([
+    `Cliente recusou a proposta de venda. Motivo: ${reason}`,
+    `A proposta de venda foi recusada pelo cliente. Justificativa: ${reason}`,
+    `Cliente não aceitou a proposta de venda. Detalhe informado: ${reason}`
   ]);
 }
 
@@ -2034,6 +2090,285 @@ export function createV1Router(deps: AppDependencies) {
         res.status(200).json({
           status: "ok",
           result: canAccessAdminPanel(req.user) ? latestCase : toPublicCaseView(latestCase)
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/sale/request",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        if (canAccessAdminPanel(req.user)) {
+          throw new HttpError(403, "A solicitação de venda deve ser feita pelo cliente responsável.");
+        }
+
+        const payload = validateCaseSaleRequestPayload(req.body);
+        const currentCase = await deps.repository.getCaseByIdForUser(req.params.id, req.user.uid);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        if (currentCase.reviewDecision === "rejected" || currentCase.status === "encerrado") {
+          throw new HttpError(409, "Este caso não está elegível para venda no momento.");
+        }
+
+        if (currentCase.saleRequest.status === "requested") {
+          throw new HttpError(409, "Já existe uma solicitação de venda em análise para este caso.");
+        }
+
+        if (currentCase.saleRequest.status === "proposal_sent") {
+          throw new HttpError(409, "Já existe uma proposta pendente. Aceite ou recuse antes de nova solicitação.");
+        }
+
+        const now = new Date().toISOString();
+        const requesterName = req.user.name ?? req.user.email ?? null;
+        const movementDescription = payload.requestMessage
+          ? `Cliente solicitou venda do caso. Observações: ${payload.requestMessage}`
+          : "Cliente solicitou venda do caso para avaliação da equipe responsável.";
+
+        const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
+          stage: "andamento",
+          description: movementDescription,
+          visibility: "public",
+          createdByUserId: req.user.uid,
+          createdByName: requesterName,
+          statusAfter: currentCase.status
+        });
+        if (!appendedMovement) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const withSaleRequest = await deps.repository.updateCaseWorkflow(req.params.id, {
+          saleRequest: {
+            status: "requested",
+            requestedAt: now,
+            requestedByUserId: req.user.uid,
+            requestedByName: requesterName,
+            requestMessage: payload.requestMessage,
+            reviewedAt: null,
+            reviewedByUserId: null,
+            reviewedByName: null,
+            reviewSummary: null,
+            suggestedAmount: null,
+            opinionMessage: null,
+            proposalSentAt: null,
+            clientDecision: "pending",
+            clientDecisionAt: null,
+            clientDecisionByUserId: null,
+            clientDecisionByName: null,
+            clientDecisionReason: null
+          }
+        });
+        if (!withSaleRequest) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
+          senderUserId: req.user.uid,
+          senderName: requesterName,
+          senderRole: "client",
+          message: buildCaseSaleRequestMessage(payload.requestMessage)
+        });
+
+        const latestCase = withMessage ?? withSaleRequest;
+
+        res.status(200).json({
+          status: "ok",
+          result: toPublicCaseView(latestCase)
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/sale/proposal",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        ensureAdminPanelAccess(req.user);
+
+        const payload = validateCaseSaleProposalPayload(req.body);
+        const allCases = await deps.repository.listAllCases();
+        const currentCase = allCases.find((item) => item.id === req.params.id);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+        ensureOperatorCanManageCase(req.user, currentCase);
+
+        if (currentCase.reviewDecision === "rejected" || currentCase.status === "encerrado") {
+          throw new HttpError(409, "Este caso não está elegível para venda no momento.");
+        }
+
+        if (currentCase.saleRequest.status !== "requested" && currentCase.saleRequest.status !== "proposal_sent") {
+          throw new HttpError(409, "Este caso ainda não possui solicitação de venda pendente.");
+        }
+
+        const now = new Date().toISOString();
+        const actorName = req.user.name ?? req.user.email ?? null;
+        const senderRole = resolveSenderRole(req.user);
+        const movementDescription = `Proposta de venda enviada ao cliente no valor de ${formatCurrencyBr(payload.suggestedAmount)}.`;
+
+        const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
+          stage: "andamento",
+          description: movementDescription,
+          visibility: "public",
+          createdByUserId: req.user.uid,
+          createdByName: actorName,
+          statusAfter: currentCase.status
+        });
+        if (!appendedMovement) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const withSaleProposal = await deps.repository.updateCaseWorkflow(req.params.id, {
+          saleRequest: {
+            ...currentCase.saleRequest,
+            status: "proposal_sent",
+            reviewedAt: now,
+            reviewedByUserId: req.user.uid,
+            reviewedByName: actorName,
+            reviewSummary: payload.reviewSummary,
+            suggestedAmount: payload.suggestedAmount,
+            opinionMessage: payload.opinionMessage,
+            proposalSentAt: now,
+            clientDecision: "pending",
+            clientDecisionAt: null,
+            clientDecisionByUserId: null,
+            clientDecisionByName: null,
+            clientDecisionReason: null
+          }
+        });
+        if (!withSaleProposal) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const message = buildCaseSaleProposalMessage({
+          reviewSummary: payload.reviewSummary,
+          suggestedAmount: payload.suggestedAmount,
+          opinionMessage: payload.opinionMessage
+        });
+        const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
+          senderUserId: req.user.uid,
+          senderName: actorName,
+          senderRole,
+          message
+        });
+        const latestCase = withMessage ?? withSaleProposal;
+
+        void notifyCaseOwnerByCustomUpdate(deps, latestCase, {
+          stageLabel: "Venda do caso",
+          description: message,
+          statusAfter: latestCase.status
+        }).catch((error) => {
+          const details = error instanceof Error ? error.message : "unknown";
+          console.error("case-notification-email-failed", {
+            caseId: latestCase.id,
+            details
+          });
+        });
+
+        res.status(200).json({
+          status: "ok",
+          result: latestCase
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/cases/:id/sale/decision",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        if (canAccessAdminPanel(req.user)) {
+          throw new HttpError(403, "A decisão da proposta deve ser feita pelo cliente responsável.");
+        }
+
+        const payload = validateCaseSaleDecisionPayload(req.body);
+        const currentCase = await deps.repository.getCaseByIdForUser(req.params.id, req.user.uid);
+        if (!currentCase) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        if (currentCase.saleRequest.status !== "proposal_sent") {
+          throw new HttpError(409, "Não há proposta de venda pendente para este caso.");
+        }
+
+        if (currentCase.reviewDecision === "rejected" || currentCase.status === "encerrado") {
+          throw new HttpError(409, "Este caso não está elegível para venda no momento.");
+        }
+
+        const now = new Date().toISOString();
+        const actorName = req.user.name ?? req.user.email ?? null;
+        const decisionStatus = payload.decision === "accepted" ? "accepted" : "rejected";
+        const movementDescription =
+          payload.decision === "accepted"
+            ? `Cliente aceitou a proposta de venda${typeof currentCase.saleRequest.suggestedAmount === "number" ? ` no valor de ${formatCurrencyBr(currentCase.saleRequest.suggestedAmount)}` : ""}.`
+            : `Cliente recusou a proposta de venda. Motivo: ${payload.reason ?? "Motivo não informado."}`;
+
+        const appendedMovement = await deps.repository.appendCaseMovement(req.params.id, {
+          stage: "andamento",
+          description: movementDescription,
+          visibility: "public",
+          createdByUserId: req.user.uid,
+          createdByName: actorName,
+          statusAfter: currentCase.status
+        });
+        if (!appendedMovement) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const withDecision = await deps.repository.updateCaseWorkflow(req.params.id, {
+          saleRequest: {
+            ...currentCase.saleRequest,
+            status: decisionStatus,
+            clientDecision: payload.decision,
+            clientDecisionAt: now,
+            clientDecisionByUserId: req.user.uid,
+            clientDecisionByName: actorName,
+            clientDecisionReason: payload.reason
+          }
+        });
+        if (!withDecision) {
+          throw new HttpError(404, "Caso não encontrado.");
+        }
+
+        const withMessage = await deps.repository.appendCaseMessage(req.params.id, {
+          senderUserId: req.user.uid,
+          senderName: actorName,
+          senderRole: "client",
+          message: buildCaseSaleDecisionMessage({
+            decision: payload.decision,
+            reason: payload.reason,
+            suggestedAmount: currentCase.saleRequest.suggestedAmount
+          })
+        });
+
+        const latestCase = withMessage ?? withDecision;
+
+        res.status(200).json({
+          status: "ok",
+          result: toPublicCaseView(latestCase)
         });
       } catch (error) {
         next(error);
