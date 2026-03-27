@@ -182,6 +182,35 @@ describe("validateCreateCaseInput", () => {
     ).toThrowError(/CNPJ da parte reclamada inválido/);
   });
 
+  it("deve aceitar endereço da reclamada curto quando informado no campo opcional", () => {
+    const parsed = validateCreateCaseInput({
+      varaId: "jec-sp-capital",
+      cpf: "935.411.347-80",
+      resumo: "Resumo da reclamacao com contexto suficiente para triagem inicial.",
+      petitionInitial: {
+        claimantAddress: "Rua das Flores, 123, Centro, Sao Paulo/SP",
+        claimSubject: "Cobranca indevida",
+        defendantType: "pessoa_juridica",
+        defendantName: "Empresa XYZ",
+        defendantDocument: "12.345.678/0001-95",
+        defendantAddress: "s/n",
+        facts: "A empresa realizou cobranca duplicada em cartao de credito sem estorno apos contato administrativo.",
+        legalGrounds:
+          "A pratica configura cobranca indevida e violacao aos deveres de boa-fe objetiva e informacao.",
+        requests: ["Restituicao em dobro dos valores cobrados indevidamente."],
+        timelineEvents: [
+          {
+            eventDate: "2026-02-01",
+            description: "Compra realizada no site da reclamada."
+          }
+        ],
+        hearingInterest: true
+      }
+    });
+
+    expect(parsed.petitionInitial?.defendantAddress).toBe("s/n");
+  });
+
   it("deve rejeitar CNPJ inválido mesmo com 14 dígitos", () => {
     expect(() =>
       validateCreateCaseInput({

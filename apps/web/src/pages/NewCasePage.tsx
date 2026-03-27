@@ -724,6 +724,38 @@ export function NewCasePage() {
     }
   }
 
+  function extractValidationMessage(error: ApiError): string {
+    const details = error.details as
+      | {
+          formErrors?: string[];
+          fieldErrors?: Record<string, string[] | undefined>;
+        }
+      | null
+      | undefined;
+
+    const firstFormError = details?.formErrors?.find((item) => typeof item === "string" && item.trim().length > 0);
+    if (firstFormError) {
+      return firstFormError;
+    }
+
+    if (details?.fieldErrors) {
+      for (const [fieldName, messages] of Object.entries(details.fieldErrors)) {
+        const firstFieldError = messages?.find((item) => typeof item === "string" && item.trim().length > 0);
+        if (!firstFieldError) {
+          continue;
+        }
+
+        if (fieldName === "petitionInitial") {
+          return firstFieldError;
+        }
+
+        return `${fieldName}: ${firstFieldError}`;
+      }
+    }
+
+    return error.message;
+  }
+
   async function uploadCaseAttachments(
     caseId: string,
     files: File[],
@@ -1366,7 +1398,9 @@ export function NewCasePage() {
         nextError instanceof ApiError
           ? nextError.statusCode === 401
             ? "Sua sessão expirou. Entre novamente para criar o caso."
-            : nextError.message
+            : nextError.statusCode === 400
+              ? extractValidationMessage(nextError)
+              : nextError.message
           : "Erro ao criar caso.";
       setError(message);
     } finally {
@@ -1955,4 +1989,3 @@ export function NewCasePage() {
     </section>
   );
 }
-

@@ -56,7 +56,7 @@ const petitionInitialSchema = z
     defendantType: z.enum(["pessoa_fisica", "pessoa_juridica", "nao_informado"]),
     defendantName: z.string().trim().min(2).max(200),
     defendantDocument: z.string().trim().min(11).max(32),
-    defendantAddress: z.string().trim().min(8).max(300).nullable().optional(),
+    defendantAddress: z.string().trim().max(300).nullable().optional(),
     facts: z.string().trim().min(30).max(PETITION_TEXT_MAX_LENGTH),
     legalGrounds: z.string().trim().min(30).max(PETITION_TEXT_MAX_LENGTH),
     requests: z.array(z.string().trim().min(10).max(PETITION_TEXT_MAX_LENGTH)).min(1).max(8),
@@ -1038,4 +1038,3 @@ export function validateAccountProfilePatchPayload(
 
   return normalized;
 }
-
