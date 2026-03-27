@@ -59,7 +59,16 @@ const petitionInitialSchema = z
     defendantAddress: z.string().trim().max(300).nullable().optional(),
     facts: z.string().trim().min(30).max(PETITION_TEXT_MAX_LENGTH),
     legalGrounds: z.string().trim().min(30).max(PETITION_TEXT_MAX_LENGTH),
-    requests: z.array(z.string().trim().min(10).max(PETITION_TEXT_MAX_LENGTH)).min(1).max(8),
+    requests: z
+      .array(
+        z
+          .string()
+          .trim()
+          .min(10, "Cada pedido deve ter no mínimo 10 caracteres.")
+          .max(PETITION_TEXT_MAX_LENGTH)
+      )
+      .min(1, "Informe ao menos um pedido.")
+      .max(8, "Informe no máximo 8 pedidos."),
     timelineEvents: z.array(petitionTimelineEventSchema).min(1).max(40),
     pretensions: z.array(petitionPretensionSchema).max(10).optional().default([]),
     evidence: z.string().trim().max(PETITION_TEXT_MAX_LENGTH).nullable().optional(),
@@ -444,7 +453,8 @@ function normalizePetitionInitialData(value: z.infer<typeof petitionInitialSchem
 export function validateCreateCaseInput(payload: unknown): ValidatedCreateCaseInput {
   const parsed = createCaseSchema.safeParse(payload);
   if (!parsed.success) {
-    throw new HttpError(400, "Payload inválido para criação de caso.", parsed.error.flatten());
+    const firstIssue = parsed.error.issues.find((issue) => issue.message)?.message;
+    throw new HttpError(400, firstIssue ?? "Payload inválido para criação de caso.", parsed.error.flatten());
   }
 
   const cpf = normalizeCpf(parsed.data.cpf);

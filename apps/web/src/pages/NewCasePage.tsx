@@ -1320,6 +1320,12 @@ export function NewCasePage() {
 
     const structuredRequests = normalizedPretensions.map((item) => formatPretensionAsRequest(item));
     const freeRequests = parseRequests(requestsText);
+    for (const [index, request] of freeRequests.entries()) {
+      if (request.trim().length < 10) {
+        setError(`Pedido complementar ${index + 1} deve ter pelo menos 10 caracteres.`);
+        return;
+      }
+    }
     const requests = [...structuredRequests, ...freeRequests];
     if (requests.length === 0) {
       setError("Informe ao menos uma pretensão ou um pedido complementar.");
