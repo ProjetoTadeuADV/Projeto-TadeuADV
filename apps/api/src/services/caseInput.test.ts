@@ -235,7 +235,7 @@ describe("validateRegisterAvailabilityPayload", () => {
 });
 
 describe("validateAssignOperatorPayload", () => {
-  it("deve validar o operador informado para alocaÃ§Ã£o", () => {
+  it("deve validar o operador informado para alocação", () => {
     const parsed = validateAssignOperatorPayload({
       operatorUserId: "operator-user"
     });
@@ -255,7 +255,7 @@ describe("validateAssignOperatorPayload", () => {
 });
 
 describe("validateCaseMovementPayload", () => {
-  it("deve validar movimentaÃ§Ã£o pÃºblica com atualizaÃ§Ã£o de status", () => {
+  it("deve validar movimentação pública com atualização de status", () => {
     const parsed = validateCaseMovementPayload({
       stage: "conciliacao",
       description: "Contato inicial realizado e proposta enviada para a parte reclamada.",
@@ -325,11 +325,11 @@ describe("validateAccountProfilePatchPayload", () => {
       profession: "Analista de sistemas",
       address: {
         cep: "01001-000",
-        street: "PraÃ§a da SÃ©",
+        street: "Praça da Sé",
         number: "100",
         complement: "Sala 12",
-        neighborhood: "SÃ©",
-        city: "SÃ£o Paulo",
+        neighborhood: "Sé",
+        city: "São Paulo",
         state: "SP"
       }
     });
@@ -343,11 +343,11 @@ describe("validateAccountProfilePatchPayload", () => {
       profession: "Analista de sistemas",
       address: {
         cep: "01001000",
-        street: "PraÃ§a da SÃ©",
+        street: "Praça da Sé",
         number: "100",
         complement: "Sala 12",
-        neighborhood: "SÃ©",
-        city: "SÃ£o Paulo",
+        neighborhood: "Sé",
+        city: "São Paulo",
         state: "SP"
       }
     });

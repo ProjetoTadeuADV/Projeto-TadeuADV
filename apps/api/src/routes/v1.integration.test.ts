@@ -1405,7 +1405,7 @@ describe("v1 routes", () => {
       .set("Authorization", "Bearer token-operator")
       .send({
         decision: "rejected",
-        reason: "Documentos insuficientes e ausÃªncia de elementos mÃ­nimos para continuidade."
+        reason: "Documentos insuficientes e ausência de elementos mínimos para continuidade."
       });
 
     expect(rejectResponse.status).toBe(200);
@@ -1557,7 +1557,7 @@ describe("v1 routes", () => {
       (item: { id: string }) => item.id === publicMovementId
     ) as { attachments: Array<{ id: string }> } | undefined;
     if (!movementFromUserView || movementFromUserView.attachments.length === 0) {
-      throw new Error("MovimentaÃ§Ã£o pÃºblica sem anexos para download.");
+      throw new Error("Movimentação pública sem anexos para download.");
     }
     const movementAttachmentId = movementFromUserView.attachments[0].id;
 

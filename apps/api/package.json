@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "check:encoding": "node ../../scripts/check-encoding.mjs src",
+    "build": "npm run check:encoding && tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "test": "vitest run",
+    "test": "npm run check:encoding && vitest run",
     "ops:sync-auth-users": "tsx scripts/syncAuthUsers.ts",
     "ops:grant-master": "tsx scripts/grantMaster.ts"
   },
