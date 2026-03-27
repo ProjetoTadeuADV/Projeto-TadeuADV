@@ -2164,7 +2164,13 @@ export function createV1Router(deps: AppDependencies) {
             clientDecisionAt: null,
             clientDecisionByUserId: null,
             clientDecisionByName: null,
-            clientDecisionReason: null
+            clientDecisionReason: null,
+            payoutStatus: "none",
+            payoutAmount: null,
+            payoutRequestedAt: null,
+            payoutSentAt: null,
+            payoutAsaasTransferId: null,
+            payoutFailureReason: null
           }
         });
         if (!withSaleRequest) {
@@ -2249,7 +2255,13 @@ export function createV1Router(deps: AppDependencies) {
             clientDecisionAt: null,
             clientDecisionByUserId: null,
             clientDecisionByName: null,
-            clientDecisionReason: null
+            clientDecisionReason: null,
+            payoutStatus: "none",
+            payoutAmount: null,
+            payoutRequestedAt: null,
+            payoutSentAt: null,
+            payoutAsaasTransferId: null,
+            payoutFailureReason: null
           }
         });
         if (!withSaleProposal) {
@@ -2346,7 +2358,18 @@ export function createV1Router(deps: AppDependencies) {
             clientDecisionAt: now,
             clientDecisionByUserId: req.user.uid,
             clientDecisionByName: actorName,
-            clientDecisionReason: payload.reason
+            clientDecisionReason: payload.reason,
+            payoutStatus: payload.decision === "accepted" ? "pending_transfer" : "none",
+            payoutAmount:
+              payload.decision === "accepted" &&
+              typeof currentCase.saleRequest.suggestedAmount === "number" &&
+              Number.isFinite(currentCase.saleRequest.suggestedAmount)
+                ? currentCase.saleRequest.suggestedAmount
+                : null,
+            payoutRequestedAt: payload.decision === "accepted" ? now : null,
+            payoutSentAt: null,
+            payoutAsaasTransferId: null,
+            payoutFailureReason: null
           }
         });
         if (!withDecision) {
@@ -3986,7 +4009,6 @@ export function createV1Router(deps: AppDependencies) {
 
   return router;
 }
-
 
 
 

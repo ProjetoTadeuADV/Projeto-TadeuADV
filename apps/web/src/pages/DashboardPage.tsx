@@ -338,6 +338,34 @@ export function DashboardPage() {
     () => visibleCases.reduce((total, item) => total + countPublicUpdates(item), 0),
     [visibleCases]
   );
+  const clientPendingPayoutBalance = useMemo(() => {
+    if (canAccessAdmin) {
+      return 0;
+    }
+
+    const total = visibleCases.reduce((sum, item) => {
+      if (item.saleRequest?.status !== "accepted") {
+        return sum;
+      }
+
+      if (item.saleRequest.payoutStatus === "transfer_sent") {
+        return sum;
+      }
+
+      const amount = item.saleRequest.suggestedAmount ?? 0;
+      return Number.isFinite(amount) && amount > 0 ? sum + amount : sum;
+    }, 0);
+
+    return Number(total.toFixed(2));
+  }, [canAccessAdmin, visibleCases]);
+  const clientPendingPayoutLabel = useMemo(
+    () =>
+      new Intl.NumberFormat("pt-BR", {
+        style: "currency",
+        currency: "BRL"
+      }).format(clientPendingPayoutBalance),
+    [clientPendingPayoutBalance]
+  );
   const normalizedSearch = useMemo(() => search.trim().toLowerCase(), [search]);
 
   const filteredCases = useMemo(() => {
@@ -601,6 +629,10 @@ export function DashboardPage() {
           const assignedOperatorIds = resolveAssignedOperatorIds(item);
           const draftOperatorIds = responsibleDraftByCaseId[item.id] ?? assignedOperatorIds;
           const hasResponsibleChanges = !hasSameResponsibleSelection(draftOperatorIds, assignedOperatorIds);
+          const saleStatus = item.saleRequest?.status ?? "none";
+          const hasSaleProposalReady =
+            saleStatus === "proposal_sent" || saleStatus === "accepted" || saleStatus === "rejected";
+          const clientSaleCtaLabel = hasSaleProposalReady ? "Acompanhar proposta" : "Vender caso";
 
           return (
             <article
@@ -771,7 +803,7 @@ export function DashboardPage() {
                     to={`/cases/${item.id}?tab=sale`}
                     className="case-card-sell-button"
                   >
-                    Vender caso
+                    {clientSaleCtaLabel}
                   </Link>
                 )}
               </div>
@@ -889,6 +921,18 @@ export function DashboardPage() {
 
         {!canAccessAdmin && publicUpdates > 0 && (
           <p className="helper-text">Você recebeu {publicUpdates} atualização(ões) públicas em seus casos.</p>
+        )}
+
+        {!canAccessAdmin && (
+          <div className="info-box">
+            <strong>Valor atual a ser enviado: {clientPendingPayoutLabel}</strong>
+            <span>Consulte o detalhamento completo na página de extrato de casos.</span>
+            <span>
+              <Link to="/statement" className="primary-link">
+                Ver extrato
+              </Link>
+            </span>
+          </div>
         )}
       </section>
 
@@ -1073,6 +1117,3 @@ export function DashboardPage() {
     </section>
   );
 }
-
-
-

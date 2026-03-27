@@ -486,7 +486,13 @@ function normalizeCaseSaleRequest(
       clientDecisionAt: null,
       clientDecisionByUserId: null,
       clientDecisionByName: null,
-      clientDecisionReason: null
+      clientDecisionReason: null,
+      payoutStatus: "none",
+      payoutAmount: null,
+      payoutRequestedAt: null,
+      payoutSentAt: null,
+      payoutAsaasTransferId: null,
+      payoutFailureReason: null
     };
   }
 
@@ -510,7 +516,16 @@ function normalizeCaseSaleRequest(
     clientDecisionAt: value.clientDecisionAt ?? null,
     clientDecisionByUserId: value.clientDecisionByUserId ?? null,
     clientDecisionByName: normalizeOptionalText(value.clientDecisionByName),
-    clientDecisionReason: normalizeOptionalText(value.clientDecisionReason)
+    clientDecisionReason: normalizeOptionalText(value.clientDecisionReason),
+    payoutStatus: value.payoutStatus ?? "none",
+    payoutAmount:
+      typeof value.payoutAmount === "number" && Number.isFinite(value.payoutAmount)
+        ? value.payoutAmount
+        : null,
+    payoutRequestedAt: value.payoutRequestedAt ?? null,
+    payoutSentAt: value.payoutSentAt ?? null,
+    payoutAsaasTransferId: normalizeOptionalText(value.payoutAsaasTransferId),
+    payoutFailureReason: normalizeOptionalText(value.payoutFailureReason)
   };
 }
 
@@ -959,7 +974,13 @@ export class FirestoreCaseRepository implements CaseRepository {
         clientDecisionAt: null,
         clientDecisionByUserId: null,
         clientDecisionByName: null,
-        clientDecisionReason: null
+        clientDecisionReason: null,
+        payoutStatus: "none",
+        payoutAmount: null,
+        payoutRequestedAt: null,
+        payoutSentAt: null,
+        payoutAsaasTransferId: null,
+        payoutFailureReason: null
       },
       serviceFee: null,
       charges: [],

@@ -35,6 +35,19 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
           />
         </svg>
       );
+    case "statement":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path
+            d="M5 4.8h14v14.4H5zM8.2 8.6h7.6M8.2 12h7.6M8.2 15.4h4.8"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      );
     case "newCase":
       return (
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">

@@ -19,6 +19,7 @@ import { Pagina3Page } from "./pages/Pagina3Page";
 import { ProfileSettingsPage } from "./pages/ProfileSettingsPage";
 import { ProfilePasswordPage } from "./pages/ProfilePasswordPage";
 import { RegisterPage } from "./pages/RegisterPage";
+import { StatementPage } from "./pages/StatementPage";
 import { Subpagina1Page } from "./pages/Subpagina1Page";
 import { Subpagina2Page } from "./pages/Subpagina2Page";
 import { Subpagina3Page } from "./pages/Subpagina3Page";
@@ -104,6 +105,7 @@ export default function App() {
             <Route path="/app/settings/profile" element={<ProfileSettingsPage />} />
             <Route path="/settings/profile/password" element={<ProfilePasswordPage />} />
             <Route path="/app/settings/profile/password" element={<ProfilePasswordPage />} />
+            <Route path="/statement" element={<StatementPage />} />
           </Route>
         </Route>
 

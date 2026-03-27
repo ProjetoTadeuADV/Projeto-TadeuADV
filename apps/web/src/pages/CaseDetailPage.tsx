@@ -354,7 +354,13 @@ const DEFAULT_SALE_REQUEST: CaseRecord["saleRequest"] = {
   clientDecisionAt: null,
   clientDecisionByUserId: null,
   clientDecisionByName: null,
-  clientDecisionReason: null
+  clientDecisionReason: null,
+  payoutStatus: "none",
+  payoutAmount: null,
+  payoutRequestedAt: null,
+  payoutSentAt: null,
+  payoutAsaasTransferId: null,
+  payoutFailureReason: null
 };
 
 function resolveOperatorStepFromWorkflow(workflowStep: CaseRecord["workflowStep"]): OperatorActionStep {
@@ -896,9 +902,8 @@ export function CaseDetailPage() {
   const hasCaseSaleProposalPending = saleRequest.status === "proposal_sent";
   const canClientDecideSaleProposal = Boolean(!canAccessAdmin && hasCaseSaleProposalPending);
   const canManageSaleProposal = Boolean(canManageOperatorActions);
-  const canSendSaleProposal = Boolean(
-    canManageSaleProposal && (saleRequest.status === "requested" || saleRequest.status === "proposal_sent")
-  );
+  const canSendSaleProposal = Boolean(canManageSaleProposal && saleRequest.status === "requested");
+  const isSaleProposalAwaitingClient = Boolean(canManageSaleProposal && saleRequest.status === "proposal_sent");
   const caseSaleSummary = useMemo(() => {
     if (!caseItem) {
       return "";
@@ -1800,7 +1805,7 @@ export function CaseDetailPage() {
       setSaleDecisionReasonInput("");
       setCaseSaleFeedback(
         decision === "accepted"
-          ? "Proposta aceita. A etapa de pagamento da venda via Asaas será habilitada em breve."
+          ? "Proposta aceita. O valor foi lançado no extrato como pendente de envio."
           : "Proposta recusada. A equipe poderá enviar nova análise quando necessário."
       );
     } catch (nextError) {
@@ -3420,8 +3425,7 @@ export function CaseDetailPage() {
                   <div className="sale-case-card sale-case-card--accepted">
                     <strong>Proposta aceita</strong>
                     <p>
-                      Sua aceitação foi registrada. A integração de pagamento via Asaas para esta etapa ainda está
-                      temporariamente desativada e será habilitada em breve.
+                      Sua aceitação foi registrada. O valor foi lançado no extrato e aguarda envio pela plataforma.
                     </p>
                   </div>
                 )}
@@ -3531,9 +3535,18 @@ export function CaseDetailPage() {
                       </>
                     )}
 
+                    {isSaleProposalAwaitingClient && (
+                      <div className="info-box sale-case-awaiting-client">
+                        <strong>Proposta enviada, aguardando cliente</strong>
+                        <span>
+                          A proposta já foi encaminhada e está pendente da decisão do cliente.
+                        </span>
+                      </div>
+                    )}
+
                     {saleRequest.status === "accepted" && (
                       <p className="success-text">
-                        O cliente já aceitou a proposta. A etapa financeira com Asaas será ativada em seguida.
+                        O cliente já aceitou a proposta. O valor está no extrato como pendente de envio.
                       </p>
                     )}
 

@@ -110,6 +110,7 @@ export type CaseMessageSenderRole = "client" | "operator" | "master" | "system";
 export type CaseCloseRequestStatus = "none" | "pending" | "approved" | "denied";
 export type CaseSaleStatus = "none" | "requested" | "proposal_sent" | "accepted" | "rejected";
 export type CaseSaleClientDecision = "pending" | "accepted" | "rejected";
+export type CaseSalePayoutStatus = "none" | "pending_transfer" | "transfer_sent" | "transfer_failed";
 
 export interface CaseCloseRequest {
   status: CaseCloseRequestStatus;
@@ -141,6 +142,12 @@ export interface CaseSaleRequest {
   clientDecisionByUserId: string | null;
   clientDecisionByName: string | null;
   clientDecisionReason: string | null;
+  payoutStatus: CaseSalePayoutStatus;
+  payoutAmount: number | null;
+  payoutRequestedAt: string | null;
+  payoutSentAt: string | null;
+  payoutAsaasTransferId: string | null;
+  payoutFailureReason: string | null;
 }
 
 export interface CaseServiceFee {
