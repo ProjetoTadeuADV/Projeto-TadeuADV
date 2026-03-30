@@ -4795,31 +4795,116 @@ button.sidebar-item {
   margin: 0;
 }
 
-.about-summary {
-  max-width: 920px;
-  margin: 0 auto;
-  gap: 0.9rem;
+.about-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 1fr);
+  gap: 1rem;
 }
 
-.about-summary h3 {
-  font-size: 1.18rem;
+.about-overview-card,
+.about-pillars-card {
+  background: #fff;
+  border: 1px solid #d8e4f2;
+  border-radius: 16px;
+  box-shadow: 0 16px 30px rgba(9, 34, 64, 0.08);
 }
 
-.about-summary p {
+.about-overview-card {
+  padding: 1.2rem 1.15rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.about-overview-kicker {
+  margin: 0;
+  display: inline-flex;
+  width: fit-content;
+  padding: 0.18rem 0.52rem;
+  border-radius: 999px;
+  background: #eff5fd;
+  border: 1px solid #d6e4f4;
+  color: #35608a;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.about-overview-card h3 {
+  margin: 0;
+  color: var(--primary-color);
+  font-size: clamp(1.15rem, 1.7vw, 1.45rem);
+  max-width: 30ch;
+}
+
+.about-overview-card p {
+  margin: 0;
   color: #304356;
   line-height: 1.62;
-  max-width: 74ch;
 }
 
-.about-summary-list {
-  margin: 0.1rem 0 0;
-  padding-left: 1.1rem;
-  color: #304356;
+.about-overview-emphasis {
+  margin-top: 0.2rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #dfe8f4;
+  color: #22476f;
+  font-weight: 600;
+}
+
+.about-pillars-card {
+  padding: 1.05rem;
   display: grid;
-  gap: 0.35rem;
+  gap: 0.75rem;
+  background: linear-gradient(180deg, #fbfdff 0%, #f4f8fd 100%);
 }
 
-.about-summary-list li {
+.about-pillars-card h3 {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
+.about-pillars-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.about-pillars-list li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.55rem;
+  align-items: start;
+  padding: 0.6rem;
+  border: 1px solid #d6e3f3;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.about-pillars-index {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #003366;
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.about-pillars-list strong {
+  display: block;
+  margin: 0;
+  color: var(--primary-color);
+}
+
+.about-pillars-list p {
+  margin: 0.15rem 0 0;
+  color: #4a5f76;
+  font-size: 0.9rem;
   line-height: 1.45;
 }
 
@@ -5492,6 +5577,19 @@ button.sidebar-item {
   .feature-grid-large,
   .value-grid {
     grid-template-columns: 1fr;
+  }
+
+  .about-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .about-overview-card,
+  .about-pillars-card {
+    padding: 0.9rem;
+  }
+
+  .about-overview-card h3 {
+    max-width: 100%;
   }
 
   .landing-tabs {

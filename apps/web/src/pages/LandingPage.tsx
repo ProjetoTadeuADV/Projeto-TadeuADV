@@ -200,24 +200,49 @@ export function LandingPage() {
             <h2>Democratizando o acesso à justiça</h2>
           </div>
 
-          
-          <div className="landing-tab-panel">
-            <section className="atuacao-panel about-summary">
-              <h3>Sobre nós</h3>
+          <div className="about-layout">
+            <section className="about-overview-card">
+              <p className="about-overview-kicker">Nossa proposta</p>
+              <h3>Justiça acessível, clara e sem burocracia desnecessária</h3>
               <p>
-                Criamos a plataforma para simplificar o acesso à Justiça em causas de até 20 salários mínimos,
-                com uma experiência 100% digital, clara e acessível.
+                Criamos uma experiência 100% digital para você abrir seu caso em poucos passos, acompanhar cada etapa
+                com transparência e manter tudo organizado em um único painel.
               </p>
               <p>
-                Você pode abrir o caso com autonomia, acompanhar cada movimentação em tempo real e, quando fizer
-                sentido, buscar conciliação ou antecipação financeira dos direitos.
+                Priorizamos a solução prática: primeiro com tentativa de conciliação e, quando necessário, com
+                preparação da petição e condução estruturada do caso.
               </p>
-              <ul className="about-summary-list">
-                <li>Ajuizamento simplificado, sem burocracia excessiva.</li>
-                <li>Acompanhamento transparente do início ao fim.</li>
-                <li>Foco em solução rápida, justa e prática.</li>
-              </ul>
+              <p className="about-overview-emphasis">
+                Você mantém controle sobre o processo do início ao fim, sem linguagem difícil e sem fluxo confuso.
+              </p>
             </section>
+
+            <aside className="about-pillars-card" aria-label="Pilares da plataforma">
+              <h3>O que você encontra na plataforma</h3>
+              <ul className="about-pillars-list">
+                <li>
+                  <span className="about-pillars-index">01</span>
+                  <div>
+                    <strong>Abertura guiada de caso</strong>
+                    <p>Campos objetivos e checklist para reduzir erros no cadastro inicial.</p>
+                  </div>
+                </li>
+                <li>
+                  <span className="about-pillars-index">02</span>
+                  <div>
+                    <strong>Andamento em tempo real</strong>
+                    <p>Histórico, mensagens e documentos centralizados em um só lugar.</p>
+                  </div>
+                </li>
+                <li>
+                  <span className="about-pillars-index">03</span>
+                  <div>
+                    <strong>Decisões com mais agilidade</strong>
+                    <p>Fluxo operacional claro para equipe e cliente, com atualização contínua.</p>
+                  </div>
+                </li>
+              </ul>
+            </aside>
           </div>
         </div>
       </section>
