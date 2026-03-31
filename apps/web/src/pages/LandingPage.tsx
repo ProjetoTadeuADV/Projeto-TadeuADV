@@ -343,40 +343,40 @@ export function LandingPage() {
         <div className="landing-container">
           <div className="landing-section-head">
             <p className="hero-kicker">Planos</p>
-            <h2>Comece grátis e avance para operação premium quando escalar</h2>
+            <h2>Modelo simples, transparente e direto</h2>
           </div>
 
           <div className="landing-tab-panel">
             <section className="pricing-grid">
               <article className="pricing-card">
-                <p className="hero-kicker">Free</p>
-                <h3>Plano Inicial</h3>
-                <p className="pricing-price">R$ 0</p>
+                <p className="hero-kicker">Entrada mínima</p>
+                <h3>Valor da causa</h3>
+                <p className="pricing-price">R$ 1.000,00</p>
                 <ul className="pricing-list">
-                  <li>Cadastro e login</li>
-                  <li>Abertura de casos</li>
-                  <li>Painel básico de acompanhamento</li>
-                  <li>Suporte por e-mail</li>
+                  <li>Aceitamos causas a partir desse valor</li>
+                  <li>Triagem e análise inicial do caso</li>
+                  <li>Acompanhamento pelo painel da plataforma</li>
+                  <li>Comunicação centralizada com a equipe</li>
                 </ul>
                 <Link to={user ? "/dashboard" : "/register"} className="hero-secondary">
-                  {user ? "Ir para painel" : "Começar grátis"}
+                  {user ? "Abrir novo caso" : "Criar conta"}
                 </Link>
               </article>
 
               <article className="pricing-card pricing-card--featured">
-                <p className="hero-kicker">Premium</p>
-                <h3>Plano Profissional</h3>
+                <p className="hero-kicker">Assinatura</p>
+                <h3>Plano Mensal</h3>
                 <p className="pricing-price">
-                  R$ 97<span>/mês</span>
+                  R$ 19,90<span>/mês</span>
                 </p>
                 <ul className="pricing-list">
-                  <li>Painel master e operador</li>
-                  <li>Visão completa de usuários e casos</li>
-                  <li>Prioridade de suporte</li>
-                  <li>Evolução contínua com novas integrações</li>
+                  <li>Libera criação e gestão de casos para cliente</li>
+                  <li>Mensagens, anexos e evolução em tempo real</li>
+                  <li>Acesso à solicitação de venda do caso</li>
+                  <li>Base pronta para integrações de cobrança e repasse</li>
                 </ul>
                 <Link to={user ? "/administrador" : "/register"} className="hero-primary">
-                  {user ? "Ver painel admin" : "Experimentar premium"}
+                  {user ? "Gerenciar assinatura" : "Assinar agora"}
                 </Link>
               </article>
             </section>
