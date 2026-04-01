@@ -8,7 +8,7 @@ import {
   useRef,
   useState
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
 import type { AccountProfile } from "../types";
@@ -609,6 +609,7 @@ function AvatarCropModal({ open, imageSrc, onCancel, onApply }: AvatarCropModalP
 export function ProfileSettingsPage() {
   const { user, accessProfile, getToken, refreshAccessProfile, logout, deleteCurrentAccount } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastCepLookupRef = useRef<string>("");
 
@@ -636,6 +637,7 @@ export function ProfileSettingsPage() {
     [avatarUrl, extraInput, nameInput]
   );
   const hasChanges = !snapshotsMatch(initialSnapshot, currentSnapshot);
+  const isProfileCompletionMode = searchParams.get("context") === "novo-caso";
 
   useEffect(() => {
     if (!toast) {
@@ -978,7 +980,10 @@ export function ProfileSettingsPage() {
       return;
     }
 
-    await applyProfilePatch(payload, "Perfil atualizado com sucesso.");
+    const saved = await applyProfilePatch(payload, "Perfil atualizado com sucesso.");
+    if (saved && isProfileCompletionMode) {
+      navigate("/cases/new", { replace: true });
+    }
   }
 
   async function handleLogout() {
@@ -1097,11 +1102,6 @@ export function ProfileSettingsPage() {
               <label>
                 E-mail
                 <input type="text" value={profile.email ?? ""} readOnly />
-              </label>
-
-              <label>
-                UID do provedor
-                <input type="text" value={profile.firebaseUid} readOnly />
               </label>
 
               <div className="resumo-box">
@@ -1338,7 +1338,7 @@ export function ProfileSettingsPage() {
 
               <div className="profile-actions">
                 <button type="button" onClick={() => void handleSaveProfile()} disabled={!hasChanges || saving}>
-                  {saving ? "Salvando..." : "Salvar perfil"}
+                  {saving ? "Salvando..." : "Salvar"}
                 </button>
                 <button
                   type="button"
@@ -1353,42 +1353,48 @@ export function ProfileSettingsPage() {
                 >
                   Descartar mudanças
                 </button>
+                {isProfileCompletionMode && (
+                  <button type="button" className="secondary-button" onClick={() => navigate("/cases/new")}>
+                    Voltar ao novo caso
+                  </button>
+                )}
               </div>
             </div>
           </div>
         )}
       </section>
 
-      
+      {!isProfileCompletionMode && (
+        <section className="workspace-panel">
+          <header className="page-header">
+            <div>
+              <h2>Ações da conta</h2>
+              <p>Saia da sessão atual ou exclua sua conta, quando necessário.</p>
+            </div>
+          </header>
 
-      <section className="workspace-panel">
-        <header className="page-header">
-          <div>
-            <h2>Ações da conta</h2>
-            <p>Saia da sessão atual ou exclua sua conta, quando necessário.</p>
+          <div className="profile-actions">
+            <button type="button" className="secondary-button" onClick={() => void handleLogout()} disabled={logoutLoading}>
+              {logoutLoading ? "Saindo..." : "Sair"}
+            </button>
+            <button type="button" className="danger-button" onClick={() => void handleDeleteAccount()} disabled={deleting}>
+              {deleting ? "Excluindo..." : "Excluir conta"}
+            </button>
           </div>
-        </header>
+        </section>
+      )}
 
-        <div className="profile-actions">
-          <button type="button" className="secondary-button" onClick={() => void handleLogout()} disabled={logoutLoading}>
-            {logoutLoading ? "Saindo..." : "Sair"}
-          </button>
-          <button type="button" className="danger-button" onClick={() => void handleDeleteAccount()} disabled={deleting}>
-            {deleting ? "Excluindo..." : "Excluir conta"}
+      {!isProfileCompletionMode && (
+        <div className="profile-password-dock">
+          <button
+            type="button"
+            className="danger-button profile-password-trigger"
+            onClick={() => navigate("/settings/profile/password")}
+          >
+            Alterar senha
           </button>
         </div>
-
-      </section>
-
-      <div className="profile-password-dock">
-        <button
-          type="button"
-          className="danger-button profile-password-trigger"
-          onClick={() => navigate("/settings/profile/password")}
-        >
-          Alterar senha
-        </button>
-      </div>
+      )}
 
       <input
         ref={fileInputRef}

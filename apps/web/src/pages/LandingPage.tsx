@@ -326,12 +326,13 @@ export function LandingPage() {
                 <p>Nenhuma vara foi encontrada agora. Tente novamente em instantes.</p>
               ) : (
                 <div className="vara-grid">
-                  {varas.map((vara) => (
+                  {varas.slice(0, 12).map((vara) => (
                     <article key={vara.id} className="vara-card">
                       <strong>{vara.nome}</strong>
                       <span>ID: {vara.id}</span>
                     </article>
                   ))}
+                  {varas.length > 12 && <p className="field-help">Mostrando 12 de {varas.length} varas disponíveis.</p>}
                 </div>
               )}
             </section>

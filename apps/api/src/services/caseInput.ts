@@ -112,7 +112,15 @@ const petitionInitialSchema = z
     }
 
     const priorAttemptProtocol = value.priorAttemptProtocol?.trim() ?? "";
-    if (priorAttemptProtocol.length < 3) {
+    if (value.priorAttemptChannel === "direto_reclamado") {
+      if (priorAttemptProtocol.length > 0 && priorAttemptProtocol.length < 3) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Se informar protocolo, use ao menos 3 caracteres.",
+          path: ["priorAttemptProtocol"]
+        });
+      }
+    } else if (priorAttemptProtocol.length < 3) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "Informe o protocolo da tratativa (mínimo 3 caracteres).",

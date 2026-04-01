@@ -166,6 +166,28 @@ describe("v1 routes", () => {
     });
   });
 
+  it("deve resolver vara por municipio de SP e aplicar fallback para fora de SP", async () => {
+    const app = buildTestApp();
+
+    const piracicaba = await request(app).get("/v1/varas/resolve").query({
+      city: "Piracicaba",
+      state: "SP"
+    });
+
+    expect(piracicaba.status).toBe(200);
+    expect(piracicaba.body.result.id).toContain("piracicaba");
+    expect(piracicaba.body.result.source).toBe("sp_municipio_map");
+
+    const foraSp = await request(app).get("/v1/varas/resolve").query({
+      city: "Curitiba",
+      state: "PR"
+    });
+
+    expect(foraSp.status).toBe(200);
+    expect(foraSp.body.result.id).toBe("jec-sp-capital");
+    expect(foraSp.body.result.source).toBe("fallback_capital");
+  });
+
   it("deve responder fallback quando envio customizado nao estiver configurado", async () => {
     const app = buildTestApp();
 

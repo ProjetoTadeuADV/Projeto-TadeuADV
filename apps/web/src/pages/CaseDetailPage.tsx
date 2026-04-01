@@ -2505,7 +2505,7 @@ export function CaseDetailPage() {
                   <div className="info-box">
                     <strong>Dados estruturados da petição</strong>
                     <span>Assunto: {caseItem.petitionInitial.claimSubject}</span>
-                    <span>Endereço do requerente: {caseItem.petitionInitial.claimantAddress}</span>
+                    <span>Endereço do cliente: {caseItem.petitionInitial.claimantAddress}</span>
                     <span>Tipo da reclamada: {DEFENDANT_TYPE_LABEL[caseItem.petitionInitial.defendantType]}</span>
                     <span>Reclamada: {caseItem.petitionInitial.defendantName}</span>
                     <span>Documento da reclamada: {caseItem.petitionInitial.defendantDocument ?? "Não informado"}</span>

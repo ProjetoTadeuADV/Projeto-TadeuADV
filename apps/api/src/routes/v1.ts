@@ -3,7 +3,7 @@ import multer from "multer";
 import { randomUUID } from "node:crypto";
 import { env, hasFirebaseCredentials, isMasterEmail } from "../config/env.js";
 import { getFirebaseAuth } from "../config/firebaseAdmin.js";
-import { VARAS } from "../constants/varas.js";
+import { resolveVaraByMunicipioUf, VARAS } from "../constants/varas.js";
 import type { AppDependencies } from "../dependencies.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { FirestoreCaseRepository } from "../repositories/firestoreCaseRepository.js";
@@ -1159,6 +1159,33 @@ export function createV1Router(deps: AppDependencies) {
     res.status(200).json({
       status: "ok",
       result: VARAS
+    });
+  });
+
+  router.get("/varas/resolve", (req, res) => {
+    const readQueryParam = (value: unknown): string => {
+      if (typeof value === "string") {
+        return value;
+      }
+
+      if (Array.isArray(value) && typeof value[0] === "string") {
+        return value[0];
+      }
+
+      return "";
+    };
+
+    const city = readQueryParam(req.query.city);
+    const state = readQueryParam(req.query.state);
+
+    const resolved = resolveVaraByMunicipioUf(city, state);
+
+    res.status(200).json({
+      status: "ok",
+      result: {
+        ...resolved,
+        source: state.trim().toUpperCase() === "SP" ? "sp_municipio_map" : "fallback_capital"
+      }
     });
   });
 
@@ -4009,7 +4036,4 @@ export function createV1Router(deps: AppDependencies) {
 
   return router;
 }
-
-
-
 
