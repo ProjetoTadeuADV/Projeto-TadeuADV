@@ -2037,67 +2037,82 @@ button.sidebar-item {
   background: #f6faff;
 }
 
-.statement-list {
-  list-style: none;
+.dashboard-client-summary {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.dashboard-client-summary .helper-text {
   margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.7rem;
 }
 
-.statement-item {
+.statement-table-wrapper {
   border: 1px solid #d7e3f2;
-  border-radius: 14px;
-  background: #f8fbff;
-  padding: 0.85rem;
-  display: grid;
-  gap: 0.45rem;
+  border-radius: 12px;
+  overflow: auto;
+  background: #fff;
 }
 
-.statement-item-main {
+.statement-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+}
+
+.statement-table th,
+.statement-table td {
+  padding: 0.72rem 0.7rem;
+  text-align: left;
+}
+
+.statement-table thead th {
+  border-bottom: 1px solid #d7e3f2;
+  background: #f8fbff;
+  color: #5f738a;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.statement-table tbody td {
+  border-bottom: 1px solid #e8eef6;
+  color: #334b63;
+  font-size: 0.9rem;
+}
+
+.statement-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.statement-table-value {
+  text-align: right !important;
+  white-space: nowrap;
+  color: var(--primary-color);
+  font-weight: 700;
+}
+
+.statement-totals {
+  margin-top: 0.9rem;
+  border-top: 1px solid #dce7f4;
+  padding-top: 0.75rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.statement-totals div {
   display: flex;
-  align-items: baseline;
   justify-content: space-between;
+  align-items: center;
   gap: 0.6rem;
 }
 
-.statement-item-main strong {
+.statement-totals span {
+  color: #5d6f84;
+  font-size: 0.88rem;
+}
+
+.statement-totals strong {
   color: var(--primary-color);
-  font-size: 1.02rem;
-}
-
-.statement-item-date {
-  color: #607386;
-  font-size: 0.82rem;
-}
-
-.statement-item-meta {
-  display: grid;
-  gap: 0.2rem;
-  color: #486079;
-  font-size: 0.84rem;
-}
-
-.statement-item-status {
-  display: inline-flex;
-  width: fit-content;
-  border-radius: 999px;
-  padding: 0.16rem 0.56rem;
-  border: 1px solid #b7e1c8;
-  background: #edf9f2;
-  color: #1f7a4c;
-  font-weight: 700;
-  font-size: 0.76rem;
-}
-
-.statement-item-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 0.2rem;
-}
-
-.statement-footer-note {
-  margin-top: 0.9rem;
+  font-size: 0.96rem;
 }
 
 .empty-state {

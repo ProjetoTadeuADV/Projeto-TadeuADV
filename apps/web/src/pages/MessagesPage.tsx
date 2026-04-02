@@ -116,6 +116,20 @@ function filterCasesForMessages(cases: CaseRecord[], userId: string | undefined,
   });
 }
 
+function resolveCaseTitle(caseItem: CaseRecord): string {
+  const byDefendant = caseItem.petitionInitial?.defendantName?.trim();
+  if (byDefendant) {
+    return byDefendant;
+  }
+
+  const bySubject = caseItem.petitionInitial?.claimSubject?.trim();
+  if (bySubject) {
+    return bySubject;
+  }
+
+  return "Caso sem título";
+}
+
 export function MessagesPage() {
   const { getToken, user, isOperatorUser, isMasterUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -312,6 +326,10 @@ export function MessagesPage() {
 
     return [...selectedCase.messages].sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
   }, [selectedCase?.messages]);
+  const selectedCaseTitle = useMemo(
+    () => (selectedCase ? resolveCaseTitle(selectedCase) : "Caso"),
+    [selectedCase]
+  );
 
   const unreadCountByCase = useMemo<Record<string, number>>(() => {
     const result: Record<string, number> = {};
@@ -512,7 +530,7 @@ export function MessagesPage() {
       <section className="workspace-hero workspace-hero--simple workspace-hero--compact">
         <div className="workspace-hero-grid">
           <div>
-            <p className="hero-kicker">Comunicacao</p>
+            <p className="hero-kicker">Comunicação</p>
             <h1>Mensagens</h1>
             <p>Acompanhe a conversa do caso em formato de chat e centralize anexos.</p>
           </div>
@@ -528,8 +546,8 @@ export function MessagesPage() {
             <h2>Sem casos para mensagens</h2>
             <p>
               {isOperatorUser && !isMasterUser
-                ? "Nao ha casos alocados para voce no momento."
-                : "Assim que houver um caso ativo, a conversa ficara disponivel aqui."}
+                ? "Não há casos alocados para você no momento."
+                : "Assim que houver um caso ativo, a conversa ficará disponível aqui."}
             </p>
           </div>
         )}
@@ -550,8 +568,7 @@ export function MessagesPage() {
                       }
                       onClick={() => handleSelectCase(item.id)}
                     >
-                      <strong>{item.varaNome}</strong>
-                      <span>{item.caseCode}</span>
+                      <strong>{resolveCaseTitle(item)}</strong>
                       <small>{item.resumo}</small>
                       {(unreadCountByCase[item.id] ?? 0) > 0 && (
                         <span className="messages-case-unread-badge" aria-label="Há mensagens não lidas" />
@@ -569,20 +586,19 @@ export function MessagesPage() {
                     <div>
                       <h2>
                         <Link to={`/cases/${selectedCase.id}`} className="messages-case-title-link">
-                          {selectedCase.varaNome}
+                          {selectedCaseTitle}
                         </Link>
                       </h2>
-                      <span>{selectedCase.caseCode}</span>
                     </div>
                   </header>
 
                   <div className="messages-thread-list">
                     {orderedMessages.length === 0 ? (
-                      <p className="helper-text">Ainda nao ha mensagens neste caso.</p>
+                      <p className="helper-text">Ainda não há mensagens neste caso.</p>
                     ) : (
                       orderedMessages.map((item) => {
                         const mine = item.senderUserId === user?.uid;
-                        const senderLabel = mine ? "Voce" : item.senderName ?? ROLE_LABEL[item.senderRole];
+                        const senderLabel = mine ? "Você" : item.senderName ?? ROLE_LABEL[item.senderRole];
                         const hasText = item.message.trim().length > 0;
                         return (
                           <article

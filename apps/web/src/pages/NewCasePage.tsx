@@ -170,12 +170,16 @@ const AUTO_LEGAL_GROUNDS_TEXT =
   "Os fundamentos da reclamação serão consolidados pela equipe com base nos fatos, documentos e pedidos informados pelo cliente.";
 
 const PRIOR_ATTEMPT_CHANNEL_OPTIONS: PriorAttemptChannelOption[] = [
-  { value: "direto_reclamado", label: "Própria empresa" },
+  { value: "direto_reclamado", label: "Contato direto com a parte contrária" },
   { value: "procon", label: "Procon" },
   { value: "consumidor_gov_br", label: "Consumidor.gov.br" },
   { value: "reclame_aqui", label: "Reclame Aqui" },
   { value: "outro", label: "Outro" }
 ];
+
+function resolveDirectAttemptLabel(defendantType: PetitionDefendantType): string {
+  return defendantType === "pessoa_fisica" ? "Próprio acusado" : "Própria empresa";
+}
 
 function buildNewCaseDraftStorageKey(userId: string | null | undefined): string {
   return `${NEW_CASE_DRAFT_STORAGE_PREFIX}:${userId ?? "anonymous"}`;
@@ -598,6 +602,18 @@ export function NewCasePage() {
 
     return claimSubjectSelection.trim();
   }, [claimSubjectCustom, claimSubjectSelection]);
+  const directAttemptLabel = useMemo(() => resolveDirectAttemptLabel(defendantType), [defendantType]);
+  const directAttemptTargetLabel = useMemo(
+    () => (defendantType === "pessoa_fisica" ? "acusado" : "empresa"),
+    [defendantType]
+  );
+  const priorAttemptChannelOptions = useMemo(
+    () =>
+      PRIOR_ATTEMPT_CHANNEL_OPTIONS.map((item) =>
+        item.value === "direto_reclamado" ? { ...item, label: directAttemptLabel } : item
+      ),
+    [directAttemptLabel]
+  );
   const claimantAddressSummary = useMemo(() => {
     const normalized = normalizeZipCode(claimantZipCode);
     if (
@@ -2049,33 +2065,24 @@ export function NewCasePage() {
                 Para corrigir endereço ou CPF, acesse <strong>Minha Conta</strong> no menu lateral.
               </span>
             </div>
-            <div className="info-box">
-              <strong>Confirmação dos dados do cadastro</strong>
-              <span>Confirme que seu CPF e endereço acima estão atualizados antes de enviar o caso.</span>
-              <div className="profile-actions">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => setProfileDataConfirmed(true)}
-                  disabled={profileDataConfirmed}
-                >
-                  {profileDataConfirmed ? "Dados confirmados" : "Confirmar meus dados"}
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={() => setProfileDataConfirmed(false)}
-                  disabled={!profileDataConfirmed}
-                >
-                  Revisar dados
-                </button>
+            {!profileDataConfirmed && (
+              <div className="info-box">
+                <strong>Confirmação dos dados do cadastro</strong>
+                <span>Confirme que seu CPF e endereço acima estão atualizados antes de enviar o caso.</span>
+                <div className="profile-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setProfileDataConfirmed(true)}
+                  >
+                    Confirmar meus dados
+                  </button>
+                </div>
               </div>
-              {profileDataConfirmed && (
-                <span className="success-text">
-                  Dados confirmados. Você pode seguir com o envio para análise.
-                </span>
-              )}
-            </div>
+            )}
+            {profileDataConfirmed && (
+              <p className="success-text">Dados confirmados. Você pode seguir com o envio para análise.</p>
+            )}
             <h2>Dados de quem você está processando (parte contrária)</h2>
             <div className="info-box">
               <strong>O que é a parte contrária?</strong>
@@ -2150,11 +2157,16 @@ export function NewCasePage() {
             <div className="petition-section">
               <div className="petition-section-head">
                 <h3>Tentativa de solução antes da ação</h3>
-                <p>Informe se você já tentou resolver antes, seja por órgão de defesa do consumidor ou direto com a empresa.</p>
+                <p>
+                  Informe se você já tentou resolver antes, seja por órgão de defesa do consumidor ou contato direto com
+                  a parte contrária.
+                </p>
               </div>
 
               <label>
-                Já houve tentativa para resolver o caso com a própria empresa ou órgão de proteção ao consumidor? (Sim/Não)
+                Já houve tentativa para resolver o caso com{" "}
+                {defendantType === "pessoa_fisica" ? "o próprio acusado" : "a própria empresa"} ou órgão de proteção ao
+                consumidor? (Sim/Não)
                 <select
                   value={priorAttemptMade ? "sim" : "nao"}
                   onChange={(event) => setPriorAttemptMade(event.target.value === "sim")}
@@ -2176,7 +2188,7 @@ export function NewCasePage() {
                       required
                     >
                       <option value="">Selecione</option>
-                      {PRIOR_ATTEMPT_CHANNEL_OPTIONS.map((item) => (
+                      {priorAttemptChannelOptions.map((item) => (
                         <option key={item.value} value={item.value}>
                           {item.label}
                         </option>
@@ -2186,12 +2198,13 @@ export function NewCasePage() {
 
                   {priorAttemptChannel === "direto_reclamado" && (
                     <label>
-                      Como foi a tentativa com a própria empresa? (mín. 5 caracteres)
+                      Como foi a tentativa com {defendantType === "pessoa_fisica" ? "o próprio acusado" : "a própria empresa"}?
+                      (mín. 5 caracteres)
                       <textarea
                         value={priorAttemptChannelOther}
                         onChange={(event) => setPriorAttemptChannelOther(limitPetitionText(event.target.value))}
                         rows={3}
-                        placeholder="Conte como foi o contato com a empresa e qual retorno você recebeu."
+                        placeholder={`Conte como foi o contato com ${defendantType === "pessoa_fisica" ? "o acusado" : "a empresa"} e qual retorno você recebeu.`}
                         maxLength={PETITION_TEXT_MAX_LENGTH}
                         required
                       />
@@ -2228,7 +2241,7 @@ export function NewCasePage() {
                   </label>
 
                   <label>
-                    Nessa tratativa houve alguma proposta de acordo da empresa/pessoa? (Sim/Não)
+                    Nessa tratativa houve alguma proposta de acordo da {directAttemptTargetLabel}? (Sim/Não)
                     <select
                       value={
                         priorAttemptHadProposal === null ? "" : priorAttemptHadProposal ? "sim" : "nao"

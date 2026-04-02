@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
 import type { CaseRecord } from "../types";
 
 interface StatementEntry {
   caseId: string;
-  caseCode: string;
+  caseTitle: string;
   counterpartyName: string;
   amount: number;
   creditedAt: string;
@@ -31,6 +30,20 @@ function resolveCounterpartyName(caseItem: CaseRecord): string {
   }
 
   return "Parte contrária não informada";
+}
+
+function resolveCaseTitle(caseItem: CaseRecord): string {
+  const byDefendant = caseItem.petitionInitial?.defendantName?.trim();
+  if (byDefendant) {
+    return byDefendant;
+  }
+
+  const byClaimSubject = caseItem.petitionInitial?.claimSubject?.trim();
+  if (byClaimSubject) {
+    return byClaimSubject;
+  }
+
+  return "Caso sem título";
 }
 
 export function StatementPage() {
@@ -88,7 +101,7 @@ export function StatementPage() {
 
         return {
           caseId: caseItem.id,
-          caseCode: caseItem.caseCode,
+          caseTitle: resolveCaseTitle(caseItem),
           counterpartyName: resolveCounterpartyName(caseItem),
           amount,
           creditedAt,
@@ -119,19 +132,8 @@ export function StatementPage() {
       ),
     [entries]
   );
+  const totalNet = useMemo(() => Number((totalToSend - totalSent).toFixed(2)), [totalSent, totalToSend]);
   const latestCreditAt = entries[0]?.creditedAt ?? null;
-
-  function getPayoutStatusLabel(status: CaseRecord["saleRequest"]["payoutStatus"]): string {
-    if (status === "transfer_sent") {
-      return "Enviado";
-    }
-
-    if (status === "transfer_failed") {
-      return "Falha no envio";
-    }
-
-    return "A ser enviado";
-  }
 
   return (
     <section className="page-stack">
@@ -184,35 +186,44 @@ export function StatementPage() {
         )}
 
         {!loading && !error && entries.length > 0 && (
-          <ul className="statement-list">
-            {entries.map((entry) => (
-              <li key={`${entry.caseId}-${entry.creditedAt}`} className="statement-item">
-                <div className="statement-item-main">
-                  <strong>{formatCurrencyBr(entry.amount)}</strong>
-                  <span className="statement-item-date">{formatDateTime(entry.creditedAt)}</span>
-                </div>
-                <div className="statement-item-meta">
-                  <span>Processo: {entry.caseCode}</span>
-                  <span>Parte contrária: {entry.counterpartyName}</span>
-                  <span className="statement-item-status">{getPayoutStatusLabel(entry.payoutStatus)}</span>
-                </div>
-                <div className="statement-item-actions">
-                  <Link to={`/cases/${entry.caseId}?tab=sale`} className="secondary-button">
-                    Ver proposta
-                  </Link>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <div className="statement-table-wrapper">
+            <table className="statement-table" aria-label="Extrato de venda de casos">
+              <thead>
+                <tr>
+                  <th scope="col">Título do caso</th>
+                  <th scope="col">Parte contrária</th>
+                  <th scope="col" className="statement-table-value">Valor de venda</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((entry) => (
+                  <tr key={`${entry.caseId}-${entry.creditedAt}`}>
+                    <td>{entry.caseTitle}</td>
+                    <td>{entry.counterpartyName}</td>
+                    <td className="statement-table-value">{formatCurrencyBr(entry.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
 
-        <div className="info-box statement-footer-note">
-          <strong>Resumo do saldo</strong>
-          <span>
-            Total atual a ser enviado: <strong>{formatCurrencyBr(totalToSend)}</strong>.
-          </span>
-          <span>Integração de transferência via Asaas preparada para ativação futura.</span>
-        </div>
+        {!loading && !error && (
+          <section className="statement-totals" aria-label="Totais do extrato">
+            <div>
+              <span>Recebíveis</span>
+              <strong>{formatCurrencyBr(totalToSend)}</strong>
+            </div>
+            <div>
+              <span>Retiradas</span>
+              <strong>{formatCurrencyBr(totalSent)}</strong>
+            </div>
+            <div>
+              <span>Saldo líquido</span>
+              <strong>{formatCurrencyBr(totalNet)}</strong>
+            </div>
+          </section>
+        )}
       </section>
     </section>
   );

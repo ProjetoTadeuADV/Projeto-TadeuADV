@@ -42,6 +42,12 @@ const WORKFLOW_LABEL: Record<CaseRecord["workflowStep"], string> = {
 
 type StatusFilter = "todos" | CaseRecord["status"];
 type SortOption = "updated_desc" | "updated_asc" | "created_desc" | "created_asc";
+type SaleProposalPopupNotice = {
+  caseId: string;
+  caseTitle: string;
+  amount: number;
+  marker: string;
+};
 
 const CASE_TIMELINE_STEPS = [
   {
@@ -86,6 +92,40 @@ type CaseTimelineStageKey = (typeof CASE_TIMELINE_STEPS)[number]["key"];
 
 function formatDate(dateIso: string): string {
   return new Date(dateIso).toLocaleString("pt-BR");
+}
+
+function formatCurrencyBr(value: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  }).format(value);
+}
+
+function buildSaleProposalNoticeStorageKey(userId: string | undefined): string {
+  return `dashboard.saleProposalNotice.${userId ?? "anonymous"}`;
+}
+
+function parseSaleProposalNoticeStorage(value: string | null): Record<string, string> {
+  if (!value) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+
+    const result: Record<string, string> = {};
+    for (const [entryKey, entryValue] of Object.entries(parsed)) {
+      if (typeof entryKey === "string" && typeof entryValue === "string") {
+        result[entryKey] = entryValue;
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
 }
 
 function resolveClientName(item: CaseRecord): string {
@@ -289,6 +329,7 @@ export function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos");
   const [sortBy, setSortBy] = useState<SortOption>("updated_desc");
   const [expandedCaseId, setExpandedCaseId] = useState<string | null>(null);
+  const [saleProposalNotice, setSaleProposalNotice] = useState<SaleProposalPopupNotice | null>(null);
 
   useEffect(() => {
     async function loadCases() {
@@ -329,6 +370,59 @@ export function DashboardPage() {
 
     return cases;
   }, [canAccessAdmin, cases, isMasterUser, user?.uid]);
+  const saleProposalNoticeStorageKey = useMemo(
+    () => buildSaleProposalNoticeStorageKey(user?.uid),
+    [user?.uid]
+  );
+
+  useEffect(() => {
+    if (canAccessAdmin || typeof window === "undefined") {
+      setSaleProposalNotice(null);
+      return;
+    }
+
+    const rawMarkers = window.localStorage.getItem(saleProposalNoticeStorageKey);
+    const seenMarkersByCase = parseSaleProposalNoticeStorage(rawMarkers);
+    const nextNotice =
+      visibleCases
+        .map((item): SaleProposalPopupNotice | null => {
+          if (item.saleRequest?.status !== "proposal_sent") {
+            return null;
+          }
+
+          const amount = item.saleRequest.suggestedAmount ?? 0;
+          if (!Number.isFinite(amount) || amount <= 0) {
+            return null;
+          }
+
+          const marker = item.saleRequest.proposalSentAt ?? item.saleRequest.reviewedAt ?? item.updatedAt;
+          if (!marker || seenMarkersByCase[item.id] === marker) {
+            return null;
+          }
+
+          return {
+            caseId: item.id,
+            caseTitle: resolveCounterpartyName(item),
+            amount,
+            marker
+          };
+        })
+        .filter((item): item is SaleProposalPopupNotice => item !== null)
+        .sort((left, right) => (left.marker < right.marker ? 1 : -1))[0] ?? null;
+
+    if (!nextNotice) {
+      setSaleProposalNotice(null);
+      return;
+    }
+
+    setSaleProposalNotice((current) => {
+      if (current && current.caseId === nextNotice.caseId && current.marker === nextNotice.marker) {
+        return current;
+      }
+
+      return nextNotice;
+    });
+  }, [canAccessAdmin, saleProposalNotice, saleProposalNoticeStorageKey, visibleCases]);
 
   const totalCases = visibleCases.length;
   const recebidos = useMemo(() => visibleCases.filter((item) => item.status === "recebido").length, [visibleCases]);
@@ -359,11 +453,7 @@ export function DashboardPage() {
     return Number(total.toFixed(2));
   }, [canAccessAdmin, visibleCases]);
   const clientPendingPayoutLabel = useMemo(
-    () =>
-      new Intl.NumberFormat("pt-BR", {
-        style: "currency",
-        currency: "BRL"
-      }).format(clientPendingPayoutBalance),
+    () => formatCurrencyBr(clientPendingPayoutBalance),
     [clientPendingPayoutBalance]
   );
   const normalizedSearch = useMemo(() => search.trim().toLowerCase(), [search]);
@@ -490,6 +580,25 @@ export function DashboardPage() {
     setSearch("");
     setStatusFilter("todos");
     setSortBy("updated_desc");
+  }
+
+  function markSaleProposalNoticeAsSeen(notice: SaleProposalPopupNotice | null) {
+    if (!notice || typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const current = parseSaleProposalNoticeStorage(window.localStorage.getItem(saleProposalNoticeStorageKey));
+      current[notice.caseId] = notice.marker;
+      window.localStorage.setItem(saleProposalNoticeStorageKey, JSON.stringify(current));
+    } catch {
+      // Não bloqueia a navegação caso localStorage esteja indisponível.
+    }
+  }
+
+  function dismissSaleProposalNotice() {
+    markSaleProposalNoticeAsSeen(saleProposalNotice);
+    setSaleProposalNotice(null);
   }
 
   function toggleExpanded(caseId: string) {
@@ -630,9 +739,17 @@ export function DashboardPage() {
           const draftOperatorIds = responsibleDraftByCaseId[item.id] ?? assignedOperatorIds;
           const hasResponsibleChanges = !hasSameResponsibleSelection(draftOperatorIds, assignedOperatorIds);
           const saleStatus = item.saleRequest?.status ?? "none";
+          const saleSuggestedAmount = item.saleRequest?.suggestedAmount ?? 0;
+          const hasSaleSuggestedAmount = Number.isFinite(saleSuggestedAmount) && saleSuggestedAmount > 0;
+          const hasPendingSaleProposal = saleStatus === "proposal_sent";
           const hasSaleProposalReady =
             saleStatus === "proposal_sent" || saleStatus === "accepted" || saleStatus === "rejected";
-          const clientSaleCtaLabel = hasSaleProposalReady ? "Acompanhar proposta" : "Vender caso";
+          const clientSaleCtaLabel =
+            hasPendingSaleProposal && hasSaleSuggestedAmount
+              ? `Proposta de ${formatCurrencyBr(saleSuggestedAmount)}`
+              : hasSaleProposalReady
+                ? "Acompanhar proposta"
+                : "Vender caso";
 
           return (
             <article
@@ -919,19 +1036,20 @@ export function DashboardPage() {
           </li>
         </ul>
 
-        {!canAccessAdmin && publicUpdates > 0 && (
-          <p className="helper-text">Você recebeu {publicUpdates} atualização(ões) públicas em seus casos.</p>
-        )}
-
         {!canAccessAdmin && (
-          <div className="info-box">
-            <strong>Valor atual a ser enviado: {clientPendingPayoutLabel}</strong>
-            <span>Consulte o detalhamento completo na página de extrato de casos.</span>
-            <span>
-              <Link to="/statement" className="primary-link">
-                Ver extrato
-              </Link>
-            </span>
+          <div className="dashboard-client-summary">
+            {publicUpdates > 0 && (
+              <p className="helper-text">Você recebeu {publicUpdates} atualização(ões) públicas em seus casos.</p>
+            )}
+            <div className="info-box">
+              <strong>Valor atual a ser enviado: {clientPendingPayoutLabel}</strong>
+              <span>Consulte o detalhamento completo na página de extrato de casos.</span>
+              <span>
+                <Link to="/statement" className="primary-link">
+                  Ver extrato
+                </Link>
+              </span>
+            </div>
           </div>
         )}
       </section>
@@ -1113,6 +1231,59 @@ export function DashboardPage() {
             </div>
           ))}
       </section>
+
+      {saleProposalNotice && (
+        <>
+          <button
+            type="button"
+            className="case-notice-overlay"
+            aria-label="Fechar aviso de proposta recebida"
+            onClick={dismissSaleProposalNotice}
+          />
+          <section
+            className="case-notice-popup case-notice-popup--client"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sale-proposal-popup-title"
+          >
+            <div className="case-notice-header">
+              <div>
+                <p className="hero-kicker">Nova proposta</p>
+                <h3 id="sale-proposal-popup-title">Você recebeu uma proposta de caso</h3>
+              </div>
+              <button
+                type="button"
+                className="case-notice-close"
+                aria-label="Fechar aviso"
+                onClick={dismissSaleProposalNotice}
+              >
+                {"\u00D7"}
+              </button>
+            </div>
+
+            <div className="info-box case-notice-box">
+              <strong>{saleProposalNotice.caseTitle}</strong>
+              <span>Proposta de venda: {formatCurrencyBr(saleProposalNotice.amount)}</span>
+            </div>
+
+            <div className="operator-action-buttons">
+              <Link
+                to={`/cases/${saleProposalNotice.caseId}?tab=sale`}
+                className="hero-primary"
+                onClick={() => {
+                  markSaleProposalNoticeAsSeen(saleProposalNotice);
+                  setSaleProposalNotice(null);
+                }}
+              >
+                Abrir proposta
+              </Link>
+              <button type="button" className="hero-secondary" onClick={dismissSaleProposalNotice}>
+                Fechar
+              </button>
+            </div>
+          </section>
+        </>
+      )}
 
     </section>
   );

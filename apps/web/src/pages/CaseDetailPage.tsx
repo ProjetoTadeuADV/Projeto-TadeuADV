@@ -258,7 +258,7 @@ const PRIOR_ATTEMPT_CHANNEL_LABEL: Record<
   reclame_aqui: "Reclame Aqui",
   procon: "Procon",
   consumidor_gov_br: "Consumidor.gov.br",
-  direto_reclamado: "Própria empresa (contato direto)",
+  direto_reclamado: "Contato direto com a parte contrária",
   outro: "Outro"
 };
 
@@ -898,10 +898,12 @@ export function CaseDetailPage() {
       !isRejectedOrClosedCase &&
       (saleRequest.status === "none" || saleRequest.status === "rejected")
   );
+  const hasActiveSaleRequest = saleRequest.status !== "none";
   const hasCaseSaleUnderReview = saleRequest.status === "requested";
   const hasCaseSaleProposalPending = saleRequest.status === "proposal_sent";
   const canClientDecideSaleProposal = Boolean(!canAccessAdmin && hasCaseSaleProposalPending);
   const canManageSaleProposal = Boolean(canManageOperatorActions);
+  const shouldHideOperatorDockForSale = Boolean(canManageSaleProposal && hasActiveSaleRequest);
   const canSendSaleProposal = Boolean(canManageSaleProposal && saleRequest.status === "requested");
   const isSaleProposalAwaitingClient = Boolean(canManageSaleProposal && saleRequest.status === "proposal_sent");
   const caseSaleSummary = useMemo(() => {
@@ -3351,10 +3353,11 @@ export function CaseDetailPage() {
 
                 {hasCaseSaleUnderReview && (
                   <div className="sale-case-card sale-case-card--pending">
-                    <strong>Pedido em análise</strong>
+                    <strong>{canAccessAdmin ? "Avalie a solicitação de venda" : "Pedido em análise"}</strong>
                     <p>
-                      Sua solicitação de venda está em avaliação pela equipe responsável do caso.
-                      Você será notificado assim que houver parecer.
+                      {canAccessAdmin
+                        ? "O cliente solicitou a venda deste caso. Revise os dados e registre sua decisão nesta aba."
+                        : "Sua solicitação de venda está em avaliação pela equipe responsável do caso. Você será notificado assim que houver parecer."}
                     </p>
                     {saleRequest.requestedAt && (
                       <p className="sale-case-helper">Solicitado em: {formatDate(saleRequest.requestedAt)}</p>
@@ -3795,7 +3798,15 @@ export function CaseDetailPage() {
         </>
       )}
 
-      {canUseLegacyOperatorFlow && (
+      {canUseLegacyOperatorFlow && shouldHideOperatorDockForSale && (
+        <section className="workspace-panel">
+          <p className="helper-text">
+            Este caso possui solicitação de venda ativa. Para avançar, finalize a decisão na aba <strong>Venda do Caso</strong>.
+          </p>
+        </section>
+      )}
+
+      {canUseLegacyOperatorFlow && !shouldHideOperatorDockForSale && (
         <>
           {!isOperatorSidebarOpen && (
             <div className="operator-action-dock">
