@@ -22,6 +22,9 @@
   --text-secondary: #667080;
   --bg-tertiary: #f2f6fb;
   --primary-color: #003366;
+  --touch-target-min: 44px;
+  --mobile-inline-gutter: clamp(0.72rem, 3vw, 1rem);
+  --mobile-stack-gap: clamp(0.55rem, 2.3vw, 0.9rem);
 
   font-family: "Inter", "Segoe UI", sans-serif;
   font-size: 15px;
@@ -44,6 +47,8 @@ body,
 
 html {
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -69,6 +74,11 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
 }
 
 button {
@@ -103,6 +113,26 @@ select {
   border-radius: 10px;
   padding: 0.7rem 0.8rem;
   background: #fff;
+}
+
+input,
+select {
+  min-height: var(--touch-target-min);
+}
+
+:where(
+  button,
+  .primary-link,
+  .hero-primary,
+  .hero-secondary,
+  .secondary-button,
+  .danger-button,
+  .ghost-button,
+  .case-detail-tab,
+  .attachment-trigger,
+  .attachment-remove
+) {
+  min-height: var(--touch-target-min);
 }
 
 h1,
@@ -983,7 +1013,7 @@ button.sidebar-item {
   width: 98%;
   max-width: none;
   margin: 0 auto;
-  padding: clamp(0.75rem, 1.4vw, 1rem) 0;
+  padding: clamp(0.75rem, 1.4vw, 1rem) 0 clamp(1rem, 2.6vw, 1.6rem);
 }
 
 .page-stack {
@@ -5150,18 +5180,37 @@ button.sidebar-item {
 }
 
 @media (max-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
+  .private-layout-content {
+    margin-left: 62px;
+  }
+
   .sidebar,
   .sidebar--expanded {
-    width: 70px;
+    width: 62px;
   }
 
   .sidebar-nav {
-    padding-inline: 0.45rem;
+    padding-inline: 0.4rem;
   }
 
   .sidebar-item {
     justify-content: center;
-    padding-inline: 0.45rem;
+    padding-inline: 0.35rem;
+  }
+
+  .sidebar:not(.sidebar--expanded) .sidebar-item {
+    width: 40px;
+    min-height: 44px;
+  }
+
+  .sidebar:not(.sidebar--expanded) .sidebar-brand {
+    width: 40px;
   }
 
   .sidebar-label,
@@ -5195,7 +5244,8 @@ button.sidebar-item {
   }
 
   .private-main {
-    padding: 0.8rem;
+    width: 100%;
+    padding: 0.8rem 0.7rem calc(5.2rem + env(safe-area-inset-bottom));
   }
 
   .brand-stack {
@@ -5209,6 +5259,16 @@ button.sidebar-item {
   .page-header {
     flex-direction: column;
     align-items: flex-start;
+    gap: 0.65rem;
+  }
+
+  .page-header > * {
+    width: 100%;
+  }
+
+  .page-header .primary-link {
+    width: 100%;
+    text-align: center;
   }
 
   .workspace-hero {
@@ -5245,6 +5305,11 @@ button.sidebar-item {
 
   .workspace-kpis {
     grid-template-columns: repeat(2, minmax(120px, 1fr));
+    gap: 0.5rem;
+  }
+
+  .workspace-kpis li {
+    min-height: 82px;
   }
 
   .case-layout,
@@ -5338,8 +5403,13 @@ button.sidebar-item {
     grid-template-columns: 1fr;
   }
 
+  .case-card-top-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .case-card-assign {
-    width: auto;
+    width: 100%;
   }
 
   .case-card-responsible-picker {
@@ -5377,6 +5447,21 @@ button.sidebar-item {
     align-items: stretch;
   }
 
+  .case-card-actions > * {
+    width: 100%;
+  }
+
+  .case-card-detail-button {
+    width: 100%;
+  }
+
+  .case-card-responsible-picker {
+    position: static;
+    min-width: 0;
+    width: 100%;
+    box-shadow: none;
+  }
+
   .case-card-sell-button {
     margin-left: 0;
     width: 100%;
@@ -5389,6 +5474,27 @@ button.sidebar-item {
 
   .case-filters {
     grid-template-columns: 1fr;
+  }
+
+  .case-detail-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding-bottom: 0.25rem;
+    scrollbar-width: thin;
+  }
+
+  .case-detail-tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    min-height: 44px;
+  }
+
+  .detail-item {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 0.18rem;
   }
 
   .progress-timeline-track {
@@ -5420,6 +5526,24 @@ button.sidebar-item {
 
   .profile-settings-grid {
     grid-template-columns: 1fr;
+  }
+
+  .messages-cases,
+  .messages-thread-card {
+    padding: 0.72rem;
+  }
+
+  .messages-compose-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .messages-compose-actions > * {
+    width: 100%;
+  }
+
+  .message-bubble {
+    max-width: 100%;
   }
 
   .profile-avatar-preview {
@@ -5817,5 +5941,266 @@ button.sidebar-item {
   .table-actions .secondary-button {
     font-size: 0.84rem;
     padding: 0.5rem 0.72rem;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    font-size: 14px;
+  }
+
+  .private-layout-content {
+    margin-left: 58px;
+  }
+
+  .sidebar,
+  .sidebar--expanded {
+    width: 58px;
+  }
+
+  .sidebar:not(.sidebar--expanded) .sidebar-item,
+  .sidebar:not(.sidebar--expanded) .sidebar-brand {
+    width: 38px;
+  }
+
+  .private-header {
+    padding: 0.65rem;
+  }
+
+  .private-header-inner {
+    width: 100%;
+    min-height: 56px;
+    gap: 0.55rem;
+  }
+
+  .topbar-user {
+    gap: 0.55rem;
+  }
+
+  .topbar-avatar-link {
+    width: 64px;
+    max-width: 64px;
+  }
+
+  .private-main {
+    padding: 0.7rem 0.55rem calc(5.8rem + env(safe-area-inset-bottom));
+  }
+
+  .page-stack {
+    gap: 0.78rem;
+  }
+
+  .workspace-hero {
+    padding: 0.78rem;
+    border-radius: 14px;
+  }
+
+  .workspace-panel,
+  .detail-card {
+    padding: 0.74rem;
+    border-radius: 14px;
+  }
+
+  .workspace-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-kpis li {
+    min-height: 0;
+    padding: 0.58rem 0.64rem;
+  }
+
+  .workspace-kpis strong {
+    font-size: 1.08rem;
+  }
+
+  .case-card {
+    padding: 0.8rem;
+  }
+
+  .case-card-title-link {
+    font-size: 0.95rem;
+  }
+
+  .case-card-code {
+    font-size: 0.74rem;
+  }
+
+  .case-card-timeline-current {
+    font-size: 0.74rem;
+  }
+
+  .case-card-responsible-picker {
+    padding: 0.55rem;
+  }
+
+  .case-detail-kicker-row {
+    flex-wrap: wrap;
+  }
+
+  .case-detail-title-row {
+    flex-wrap: wrap;
+  }
+
+  .case-detail-title-row h1 {
+    font-size: 1.28rem;
+  }
+
+  .operator-action-dock {
+    left: 0.55rem;
+    right: 0.55rem;
+    bottom: calc(0.55rem + env(safe-area-inset-bottom));
+    grid-template-columns: 1fr;
+  }
+
+  .profile-password-dock {
+    left: 0.55rem;
+    right: 0.55rem;
+    bottom: calc(0.55rem + env(safe-area-inset-bottom));
+  }
+
+  .profile-toast {
+    left: 0.6rem;
+    right: 0.6rem;
+    bottom: calc(0.7rem + env(safe-area-inset-bottom));
+    max-width: none;
+  }
+
+  .messages-layout {
+    gap: 0.65rem;
+  }
+
+  .messages-thread-list {
+    min-height: 240px;
+    padding: 0.65rem;
+  }
+
+  .message-bubble {
+    padding: 0.5rem 0.55rem;
+    border-radius: 12px 12px 12px 6px;
+  }
+
+  .message-bubble--mine {
+    border-radius: 12px 12px 6px 12px;
+  }
+
+  .messages-compose textarea {
+    min-height: 96px;
+  }
+
+  .pending-message-attachments li {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+  }
+
+  .statement-table {
+    min-width: 0;
+    display: block;
+  }
+
+  .statement-table thead {
+    display: none;
+  }
+
+  .statement-table tbody {
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .statement-table tr {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0.62rem 0.64rem;
+    border-bottom: 1px solid #e8eef6;
+  }
+
+  .statement-table td {
+    display: grid;
+    grid-template-columns: minmax(7rem, 0.9fr) minmax(0, 1fr);
+    gap: 0.45rem;
+    align-items: start;
+    padding: 0;
+    border-bottom: 0;
+    font-size: 0.84rem;
+  }
+
+  .statement-table td::before {
+    color: #607086;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  .statement-table td:nth-child(1)::before {
+    content: "Título";
+  }
+
+  .statement-table td:nth-child(2)::before {
+    content: "Parte contrária";
+  }
+
+  .statement-table td:nth-child(3)::before {
+    content: "Valor";
+  }
+
+  .statement-totals div {
+    flex-wrap: wrap;
+  }
+
+  .statement-totals strong {
+    margin-left: auto;
+  }
+
+  .data-table td {
+    grid-template-columns: 1fr;
+    gap: 0.28rem;
+  }
+
+  .auth-flow-form-card {
+    padding: 0.85rem;
+  }
+
+  .auth-flow-form-card h1 {
+    font-size: 1.45rem;
+  }
+
+  .auth-flow-cta-text {
+    padding: 0.8rem;
+  }
+
+  .auth-card {
+    padding: 1.2rem;
+  }
+
+  .landing-main {
+    padding: 0.55rem;
+  }
+
+  .landing-hero-grid {
+    gap: 0.95rem;
+    padding: 1rem 0 0.85rem;
+  }
+
+  .landing-hero-copy h1 {
+    font-size: clamp(1.45rem, 7vw, 1.95rem);
+  }
+
+  .landing-hero-copy > p {
+    font-size: 0.94rem;
+  }
+
+  .landing-tab-panel {
+    padding: 0.72rem;
+  }
+
+  .public-actions {
+    width: 100%;
+    gap: 0.5rem;
+  }
+
+  .public-actions .hero-primary,
+  .public-actions .hero-secondary {
+    width: 100%;
   }
 }
