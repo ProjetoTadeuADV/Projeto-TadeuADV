@@ -112,27 +112,6 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
           />
         </svg>
       );
-    case "data":
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <ellipse
-            cx="12"
-            cy="6.3"
-            rx="6.8"
-            ry="2.7"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
-          <path
-            d="M5.2 6.3v5.7c0 1.5 3 2.7 6.8 2.7s6.8-1.2 6.8-2.7V6.3M5.2 12v5.7c0 1.5 3 2.7 6.8 2.7s6.8-1.2 6.8-2.7V12"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-        </svg>
-      );
     default:
       return null;
   }
@@ -184,6 +163,7 @@ export function Sidebar() {
         </span>
         <span className="sidebar-brand-label">DoutorEu</span>
       </div>
+      <p className="sidebar-caption">Navegação</p>
 
       <nav className="sidebar-nav">
         {menuItems.map((item) => {

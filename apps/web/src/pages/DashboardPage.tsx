@@ -101,6 +101,34 @@ function formatCurrencyBr(value: number): string {
   }).format(value);
 }
 
+function parseMoneyInput(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const normalized = trimmed
+    .replace(/[R$\s]/gi, "")
+    .replace(/\./g, "")
+    .replace(",", ".")
+    .replace(/[^0-9.-]/g, "");
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function resolveSuggestedSaleAmount(item: CaseRecord): number | null {
+  const claimValue = item.petitionInitial?.claimValue;
+  if (typeof claimValue !== "number" || !Number.isFinite(claimValue) || claimValue <= 0) {
+    return null;
+  }
+
+  return Number((claimValue * 0.8).toFixed(2));
+}
+
 function buildSaleProposalNoticeStorageKey(userId: string | undefined): string {
   return `dashboard.saleProposalNotice.${userId ?? "anonymous"}`;
 }
@@ -291,11 +319,6 @@ function resolveLatestMovement(item: CaseRecord): CaseMovementRecord | null {
   }, item.movements[0]);
 }
 
-function countPublicUpdates(item: CaseRecord): number {
-  const publicMovements = (item.movements ?? []).filter((movement) => movement.visibility === "public");
-  return Math.max(0, publicMovements.length - 1);
-}
-
 function isRejectedCase(item: CaseRecord): boolean {
   return item.reviewDecision === "rejected" || item.workflowStep === "closed";
 }
@@ -330,6 +353,11 @@ export function DashboardPage() {
   const [sortBy, setSortBy] = useState<SortOption>("updated_desc");
   const [expandedCaseId, setExpandedCaseId] = useState<string | null>(null);
   const [saleProposalNotice, setSaleProposalNotice] = useState<SaleProposalPopupNotice | null>(null);
+  const [saleRequestPopupCaseId, setSaleRequestPopupCaseId] = useState<string | null>(null);
+  const [saleRequestAmountInput, setSaleRequestAmountInput] = useState("");
+  const [saleRequestPopupError, setSaleRequestPopupError] = useState<string | null>(null);
+  const [requestingCaseSale, setRequestingCaseSale] = useState(false);
+  const [caseSaleFeedback, setCaseSaleFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadCases() {
@@ -428,10 +456,6 @@ export function DashboardPage() {
   const recebidos = useMemo(() => visibleCases.filter((item) => item.status === "recebido").length, [visibleCases]);
   const emAnalise = useMemo(() => visibleCases.filter((item) => item.status === "em_analise").length, [visibleCases]);
   const encerrados = useMemo(() => visibleCases.filter((item) => item.status === "encerrado").length, [visibleCases]);
-  const publicUpdates = useMemo(
-    () => visibleCases.reduce((total, item) => total + countPublicUpdates(item), 0),
-    [visibleCases]
-  );
   const clientPendingPayoutBalance = useMemo(() => {
     if (canAccessAdmin) {
       return 0;
@@ -503,6 +527,10 @@ export function DashboardPage() {
   }, [normalizedSearch, sortBy, statusFilter, visibleCases]);
 
   const operatorOptions = useMemo(() => operators, [operators]);
+  const saleRequestPopupCase = useMemo(
+    () => visibleCases.find((item) => item.id === saleRequestPopupCaseId) ?? null,
+    [saleRequestPopupCaseId, visibleCases]
+  );
   const hasCases = visibleCases.length > 0;
   const sortedOperatorOptions = useMemo(() => {
     return [...operatorOptions].sort((left, right) => {
@@ -599,6 +627,88 @@ export function DashboardPage() {
   function dismissSaleProposalNotice() {
     markSaleProposalNoticeAsSeen(saleProposalNotice);
     setSaleProposalNotice(null);
+  }
+
+  function canClientRequestSaleFromDashboard(item: CaseRecord): boolean {
+    if (canAccessAdmin) {
+      return false;
+    }
+
+    if (isRejectedCase(item) || isClosedCase(item)) {
+      return false;
+    }
+
+    const saleStatus = item.saleRequest?.status ?? "none";
+    return saleStatus === "none" || saleStatus === "rejected";
+  }
+
+  function openSaleRequestPopup(caseItem: CaseRecord) {
+    if (!canClientRequestSaleFromDashboard(caseItem)) {
+      return;
+    }
+
+    const suggestedAmount = resolveSuggestedSaleAmount(caseItem);
+    setSaleRequestPopupCaseId(caseItem.id);
+    setSaleRequestAmountInput(
+      suggestedAmount !== null ? suggestedAmount.toFixed(2).replace(".", ",") : ""
+    );
+    setSaleRequestPopupError(null);
+    setCaseSaleFeedback(null);
+  }
+
+  function closeSaleRequestPopup() {
+    if (requestingCaseSale) {
+      return;
+    }
+
+    setSaleRequestPopupCaseId(null);
+    setSaleRequestAmountInput("");
+    setSaleRequestPopupError(null);
+  }
+
+  async function handleRequestCaseSaleFromPopup() {
+    if (!saleRequestPopupCase) {
+      return;
+    }
+
+    const desiredAmount = parseMoneyInput(saleRequestAmountInput);
+    if (desiredAmount === null) {
+      setSaleRequestPopupError("Informe um valor válido para enviar a solicitação de venda.");
+      return;
+    }
+
+    const confirmation = window.confirm("Confirma o envio da solicitação de venda do caso para análise da equipe?");
+    if (!confirmation) {
+      return;
+    }
+
+    setSaleRequestPopupError(null);
+    setCaseSaleFeedback(null);
+    setRequestingCaseSale(true);
+
+    try {
+      const token = await getToken();
+      const requestMessage = `Valor desejado para venda: ${formatCurrencyBr(desiredAmount)}.`;
+      const updated = await apiRequest<CaseRecord>(`/v1/cases/${saleRequestPopupCase.id}/sale/request`, {
+        method: "POST",
+        token,
+        body: {
+          requestMessage
+        }
+      });
+
+      setCases((current) =>
+        current.map((item) => (item.id === saleRequestPopupCase.id ? { ...item, ...updated } : item))
+      );
+      setCaseSaleFeedback("Solicitação de venda enviada. Você será notificado após a análise da equipe.");
+      setSaleRequestPopupCaseId(null);
+      setSaleRequestAmountInput("");
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Falha ao solicitar venda do caso.";
+      setSaleRequestPopupError(message);
+    } finally {
+      setRequestingCaseSale(false);
+    }
   }
 
   function toggleExpanded(caseId: string) {
@@ -723,7 +833,6 @@ export function DashboardPage() {
     return (
       <div className={layout === "list" ? "card-grid card-grid--list" : "card-grid"}>
         {items.map((item) => {
-          const clientName = resolveClientName(item);
           const creatorName = resolveCreatorName(item);
           const latestMovement = resolveLatestMovement(item);
           const isExpanded = expandedCaseId === item.id;
@@ -738,18 +847,66 @@ export function DashboardPage() {
           const assignedOperatorIds = resolveAssignedOperatorIds(item);
           const draftOperatorIds = responsibleDraftByCaseId[item.id] ?? assignedOperatorIds;
           const hasResponsibleChanges = !hasSameResponsibleSelection(draftOperatorIds, assignedOperatorIds);
-          const saleStatus = item.saleRequest?.status ?? "none";
-          const saleSuggestedAmount = item.saleRequest?.suggestedAmount ?? 0;
-          const hasSaleSuggestedAmount = Number.isFinite(saleSuggestedAmount) && saleSuggestedAmount > 0;
-          const hasPendingSaleProposal = saleStatus === "proposal_sent";
-          const hasSaleProposalReady =
-            saleStatus === "proposal_sent" || saleStatus === "accepted" || saleStatus === "rejected";
-          const clientSaleCtaLabel =
-            hasPendingSaleProposal && hasSaleSuggestedAmount
+
+          if (!canAccessAdmin) {
+            const saleStatus = item.saleRequest?.status ?? "none";
+            const saleSuggestedAmount = item.saleRequest?.suggestedAmount ?? 0;
+            const hasSaleSuggestedAmount = Number.isFinite(saleSuggestedAmount) && saleSuggestedAmount > 0;
+            const hasPendingSaleProposal = saleStatus === "proposal_sent";
+            const suggestedSaleAmount = resolveSuggestedSaleAmount(item);
+            const suggestedSaleAmountLabel =
+              suggestedSaleAmount !== null ? formatCurrencyBr(suggestedSaleAmount) : "Não informado";
+            const canRequestSaleFromPopup = canClientRequestSaleFromDashboard(item);
+            const clientSaleCtaLabel = hasPendingSaleProposal && hasSaleSuggestedAmount
               ? `Proposta de ${formatCurrencyBr(saleSuggestedAmount)}`
-              : hasSaleProposalReady
-                ? "Acompanhar proposta"
-                : "Vender caso";
+              : saleStatus === "requested"
+                ? "Solicitação em análise"
+                : saleStatus === "accepted"
+                  ? "Venda aceita"
+                  : "Opção de venda";
+
+            return (
+              <article key={item.id} className="case-card case-card--client-simple">
+                <div className="case-card-simple-head">
+                  <small>Nome</small>
+                  <Link to={`/cases/${item.id}`} className="case-card-title-link">
+                    {resolveCounterpartyName(item)}
+                  </Link>
+                </div>
+
+                <div className="case-card-simple-meta">
+                  <span>
+                    <small>Início do processo</small>
+                    {formatDate(item.createdAt)}
+                  </span>
+                  <span>
+                    <small>Em que pé está</small>
+                    <strong>{WORKFLOW_LABEL[item.workflowStep]}</strong>
+                  </span>
+                </div>
+
+                <div className="case-card-simple-sale">
+                  <div className="case-card-simple-sale-info">
+                    <small>Preço sugerido</small>
+                    <strong>{suggestedSaleAmountLabel}</strong>
+                  </div>
+                  {canRequestSaleFromPopup ? (
+                    <button
+                      type="button"
+                      className="case-card-sell-button"
+                      onClick={() => openSaleRequestPopup(item)}
+                    >
+                      {clientSaleCtaLabel}
+                    </button>
+                  ) : (
+                    <Link to={`/cases/${item.id}?tab=sale`} className="case-card-sell-button">
+                      {clientSaleCtaLabel}
+                    </Link>
+                  )}
+                </div>
+              </article>
+            );
+          }
 
           return (
             <article
@@ -782,7 +939,7 @@ export function DashboardPage() {
               <div className="case-card-meta case-card-meta--three">
                 <span>
                   <small>Nome</small>
-                  {canAccessAdmin ? creatorName : clientName}
+                  {creatorName}
                 </span>
                 <span>
                   <small>CPF</small>
@@ -915,14 +1072,6 @@ export function DashboardPage() {
                     )}
                   </div>
                 )}
-                {!canAccessAdmin && (
-                  <Link
-                    to={`/cases/${item.id}?tab=sale`}
-                    className="case-card-sell-button"
-                  >
-                    {clientSaleCtaLabel}
-                  </Link>
-                )}
               </div>
 
               {isExpanded && (
@@ -1038,18 +1187,13 @@ export function DashboardPage() {
 
         {!canAccessAdmin && (
           <div className="dashboard-client-summary">
-            {publicUpdates > 0 && (
-              <p className="helper-text">Você recebeu {publicUpdates} atualização(ões) públicas em seus casos.</p>
-            )}
-            <div className="info-box">
-              <strong>Valor atual a ser enviado: {clientPendingPayoutLabel}</strong>
-              <span>Consulte o detalhamento completo na página de extrato de casos.</span>
-              <span>
-                <Link to="/statement" className="primary-link">
-                  Ver extrato
-                </Link>
-              </span>
-            </div>
+            <strong>Valor disponível para resgate: {clientPendingPayoutLabel}</strong>
+            <span>Consulte o detalhamento completo na página de extrato de casos.</span>
+            <span>
+              <Link to="/statement" className="primary-link">
+                Ver extrato
+              </Link>
+            </span>
           </div>
         )}
       </section>
@@ -1061,7 +1205,7 @@ export function DashboardPage() {
             <p>
               {canAccessAdmin
                 ? "Expanda para consultar operador alocado, movimentações e documentos do caso."
-                : "Expanda para acompanhar status, movimentações públicas e documentos anexados."}
+                : "Acompanhe o andamento e a opção de venda dos seus casos."}
             </p>
           </div>
           {canCreateCases && (
@@ -1119,6 +1263,7 @@ export function DashboardPage() {
         {error && <p className="error-text">{error}</p>}
         {assignmentError && <p className="error-text">{assignmentError}</p>}
         {assignmentFeedback && <p className="success-text">{assignmentFeedback}</p>}
+        {caseSaleFeedback && <p className="success-text">{caseSaleFeedback}</p>}
 
         {!loading && !hasCases && (
           <div className="empty-state">
@@ -1231,6 +1376,116 @@ export function DashboardPage() {
             </div>
           ))}
       </section>
+
+      {saleRequestPopupCase && (
+        <>
+          <button
+            type="button"
+            className="case-notice-overlay"
+            aria-label="Fechar solicitação de venda"
+            onClick={closeSaleRequestPopup}
+          />
+          <section
+            className="case-notice-popup case-notice-popup--client sale-request-popup"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sale-request-popup-title"
+          >
+            <div className="case-notice-header">
+              <div>
+                <p className="hero-kicker">Solicitação de venda</p>
+                <h3 id="sale-request-popup-title">Solicitar venda do caso</h3>
+              </div>
+              <button
+                type="button"
+                className="case-notice-close"
+                aria-label="Fechar pop-up de venda"
+                onClick={closeSaleRequestPopup}
+                disabled={requestingCaseSale}
+              >
+                {"\u00D7"}
+              </button>
+            </div>
+
+            <div className="detail-list">
+              <div className="detail-item">
+                <span>Caso</span>
+                <strong>{resolveCounterpartyName(saleRequestPopupCase)}</strong>
+              </div>
+              <div className="detail-item">
+                <span>Início do processo</span>
+                <strong>{formatDate(saleRequestPopupCase.createdAt)}</strong>
+              </div>
+              <div className="detail-item">
+                <span>Status atual</span>
+                <strong>{WORKFLOW_LABEL[saleRequestPopupCase.workflowStep]}</strong>
+              </div>
+              <div className="detail-item">
+                <span>Valor da causa</span>
+                <strong>
+                  {saleRequestPopupCase.petitionInitial?.claimValue &&
+                  Number.isFinite(saleRequestPopupCase.petitionInitial.claimValue) &&
+                  saleRequestPopupCase.petitionInitial.claimValue > 0
+                    ? formatCurrencyBr(saleRequestPopupCase.petitionInitial.claimValue)
+                    : "Não informado"}
+                </strong>
+              </div>
+            </div>
+
+            {saleRequestPopupCase.resumo?.trim() && (
+              <div className="info-box case-notice-box">
+                <strong>Resumo do caso</strong>
+                <span>{saleRequestPopupCase.resumo}</span>
+              </div>
+            )}
+
+            <form
+              className="sale-request-popup-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleRequestCaseSaleFromPopup();
+              }}
+            >
+              <label>
+                Valor que você deseja vender
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Ex: 12.500,00"
+                  value={saleRequestAmountInput}
+                  onChange={(event) => setSaleRequestAmountInput(event.target.value)}
+                  disabled={requestingCaseSale}
+                />
+              </label>
+
+              <p className="sale-request-popup-tip">
+                {(() => {
+                  const suggestedAmount = resolveSuggestedSaleAmount(saleRequestPopupCase);
+                  return suggestedAmount !== null
+                    ? `Tip: o preço sugerido de venda é ${formatCurrencyBr(suggestedAmount)}.`
+                    : "Tip: preencha um valor de venda compatível com o valor total da causa.";
+                })()}
+              </p>
+
+              {saleRequestPopupError && <p className="error-text">{saleRequestPopupError}</p>}
+
+              <div className="operator-action-buttons">
+                <button type="submit" className="hero-primary" disabled={requestingCaseSale}>
+                  {requestingCaseSale ? "Enviando..." : "Enviar solicitação"}
+                </button>
+                <button
+                  type="button"
+                  className="hero-secondary"
+                  onClick={closeSaleRequestPopup}
+                  disabled={requestingCaseSale}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </section>
+        </>
+      )}
 
       {saleProposalNotice && (
         <>

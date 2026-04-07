@@ -4,12 +4,13 @@ import { ApiError, apiRequest } from "../lib/api";
 import type { CaseRecord } from "../types";
 
 interface StatementEntry {
+  id: string;
   caseId: string;
   caseTitle: string;
   counterpartyName: string;
   amount: number;
-  creditedAt: string;
-  payoutStatus: CaseRecord["saleRequest"]["payoutStatus"];
+  occurredAt: string;
+  type: "credit_sale" | "withdrawal";
 }
 
 function formatCurrencyBr(value: number): string {
@@ -89,88 +90,106 @@ export function StatementPage() {
   }, [getToken]);
 
   const entries = useMemo<StatementEntry[]>(() => {
-    return cases
-      .filter((caseItem) => caseItem.saleRequest.status === "accepted")
-      .map((caseItem) => {
-        const amount = caseItem.saleRequest.suggestedAmount ?? 0;
-        const creditedAt =
-          caseItem.saleRequest.clientDecisionAt ??
-          caseItem.saleRequest.proposalSentAt ??
-          caseItem.saleRequest.reviewedAt ??
+    const statementEntries: StatementEntry[] = [];
+
+    for (const caseItem of cases) {
+      if (caseItem.saleRequest.status !== "accepted") {
+        continue;
+      }
+
+      const saleAmount = caseItem.saleRequest.suggestedAmount ?? 0;
+      if (!Number.isFinite(saleAmount) || saleAmount <= 0) {
+        continue;
+      }
+
+      const creditedAt =
+        caseItem.saleRequest.clientDecisionAt ??
+        caseItem.saleRequest.proposalSentAt ??
+        caseItem.saleRequest.reviewedAt ??
+        caseItem.updatedAt;
+
+      statementEntries.push({
+        id: `${caseItem.id}-${creditedAt}-credit`,
+        caseId: caseItem.id,
+        caseTitle: resolveCaseTitle(caseItem),
+        counterpartyName: resolveCounterpartyName(caseItem),
+        amount: saleAmount,
+        occurredAt: creditedAt,
+        type: "credit_sale"
+      });
+
+      if (caseItem.saleRequest.payoutStatus === "transfer_sent") {
+        const payoutAmount = caseItem.saleRequest.payoutAmount;
+        const withdrawalAmount =
+          typeof payoutAmount === "number" && Number.isFinite(payoutAmount) && payoutAmount > 0
+            ? payoutAmount
+            : saleAmount;
+        const withdrawalAt =
+          caseItem.saleRequest.payoutSentAt ??
+          caseItem.saleRequest.payoutRequestedAt ??
           caseItem.updatedAt;
 
-        return {
+        statementEntries.push({
+          id: `${caseItem.id}-${withdrawalAt}-withdrawal`,
           caseId: caseItem.id,
           caseTitle: resolveCaseTitle(caseItem),
           counterpartyName: resolveCounterpartyName(caseItem),
-          amount,
-          creditedAt,
-          payoutStatus: caseItem.saleRequest.payoutStatus ?? "none"
-        };
-      })
-      .filter((entry) => Number.isFinite(entry.amount) && entry.amount > 0)
-      .sort((left, right) => (left.creditedAt < right.creditedAt ? 1 : -1));
+          amount: withdrawalAmount,
+          occurredAt: withdrawalAt,
+          type: "withdrawal"
+        });
+      }
+    }
+
+    return statementEntries.sort((left, right) => (left.occurredAt < right.occurredAt ? 1 : -1));
   }, [cases]);
 
-  const totalToSend = useMemo(
+  const totalReceivables = useMemo(
     () =>
       Number(
         entries
-          .filter((entry) => entry.payoutStatus !== "transfer_sent")
+          .filter((entry) => entry.type === "credit_sale")
           .reduce((sum, entry) => sum + entry.amount, 0)
           .toFixed(2)
       ),
     [entries]
   );
-  const totalSent = useMemo(
+  const totalWithdrawals = useMemo(
     () =>
       Number(
         entries
-          .filter((entry) => entry.payoutStatus === "transfer_sent")
+          .filter((entry) => entry.type === "withdrawal")
           .reduce((sum, entry) => sum + entry.amount, 0)
           .toFixed(2)
       ),
     [entries]
   );
-  const totalNet = useMemo(() => Number((totalToSend - totalSent).toFixed(2)), [totalSent, totalToSend]);
-  const latestCreditAt = entries[0]?.creditedAt ?? null;
+  const netBalance = useMemo(
+    () => Number((totalReceivables - totalWithdrawals).toFixed(2)),
+    [totalReceivables, totalWithdrawals]
+  );
 
   return (
     <section className="page-stack">
       <section className="workspace-hero workspace-hero--simple">
-        <div className="workspace-hero-grid">
+        <div className="workspace-hero-grid statement-hero-grid">
           <div>
             <p className="hero-kicker">Financeiro</p>
             <h1>Meu extrato</h1>
-            <p>Acompanhe os créditos de venda de caso e o valor total a ser enviado.</p>
+            <p>Acompanhe os lançamentos financeiros das vendas aprovadas e retiradas realizadas.</p>
           </div>
+          <aside className="statement-hero-total" aria-label="Total disponível para resgate">
+            <span>Total disponível para resgate</span>
+            <strong>{formatCurrencyBr(netBalance)}</strong>
+          </aside>
         </div>
-
-        <ul className="workspace-kpis">
-          <li>
-            <strong>{formatCurrencyBr(totalToSend)}</strong>
-            <span>Valor a ser enviado</span>
-          </li>
-          <li>
-            <strong>{entries.length}</strong>
-            <span>Créditos confirmados</span>
-          </li>
-          <li>
-            <strong>{formatCurrencyBr(totalSent)}</strong>
-            <span>Total já enviado</span>
-          </li>
-          <li>
-            <strong>{latestCreditAt ? formatDateTime(latestCreditAt) : "Sem lançamentos"}</strong>
-            <span>Último crédito</span>
-          </li>
-        </ul>
       </section>
 
       <section className="workspace-panel">
         <header className="page-header">
           <div>
             <h2>Lançamentos</h2>
-            <p>Registros de vendas aceitas para consulta rápida do saldo interno.</p>
+            <p>Entradas de vendas aprovadas e saídas de retiradas para cálculo do saldo.</p>
           </div>
         </header>
 
@@ -180,27 +199,41 @@ export function StatementPage() {
 
         {!loading && !error && entries.length === 0 && (
           <div className="info-box">
-            <strong>Nenhum crédito disponível no momento.</strong>
-            <span>Quando uma venda de caso for aceita, o valor aparecerá automaticamente aqui.</span>
+            <strong>Nenhum lançamento disponível no momento.</strong>
+            <span>Quando houver venda aprovada ou retirada, o extrato será atualizado automaticamente.</span>
           </div>
         )}
 
         {!loading && !error && entries.length > 0 && (
           <div className="statement-table-wrapper">
-            <table className="statement-table" aria-label="Extrato de venda de casos">
+            <table className="statement-table" aria-label="Extrato de lançamentos">
               <thead>
                 <tr>
+                  <th scope="col">Data</th>
+                  <th scope="col">Tipo</th>
                   <th scope="col">Título do caso</th>
                   <th scope="col">Parte contrária</th>
-                  <th scope="col" className="statement-table-value">Valor de venda</th>
+                  <th scope="col" className="statement-table-value">Valor (R$)</th>
                 </tr>
               </thead>
               <tbody>
                 {entries.map((entry) => (
-                  <tr key={`${entry.caseId}-${entry.creditedAt}`}>
+                  <tr key={entry.id}>
+                    <td>{formatDateTime(entry.occurredAt)}</td>
+                    <td>{entry.type === "credit_sale" ? "Venda aprovada" : "Retirada"}</td>
                     <td>{entry.caseTitle}</td>
                     <td>{entry.counterpartyName}</td>
-                    <td className="statement-table-value">{formatCurrencyBr(entry.amount)}</td>
+                    <td
+                      className={
+                        entry.type === "withdrawal"
+                          ? "statement-table-value statement-table-value--negative"
+                          : "statement-table-value"
+                      }
+                    >
+                      {entry.type === "withdrawal"
+                        ? `- ${formatCurrencyBr(entry.amount)}`
+                        : formatCurrencyBr(entry.amount)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -209,18 +242,10 @@ export function StatementPage() {
         )}
 
         {!loading && !error && (
-          <section className="statement-totals" aria-label="Totais do extrato">
+          <section className="statement-totals statement-totals--compact" aria-label="Saldo líquido">
             <div>
-              <span>Recebíveis</span>
-              <strong>{formatCurrencyBr(totalToSend)}</strong>
-            </div>
-            <div>
-              <span>Retiradas</span>
-              <strong>{formatCurrencyBr(totalSent)}</strong>
-            </div>
-            <div>
-              <span>Saldo líquido</span>
-              <strong>{formatCurrencyBr(totalNet)}</strong>
+              <span>Saldo líquido (a ser retirado)</span>
+              <strong>{formatCurrencyBr(netBalance)}</strong>
             </div>
           </section>
         )}

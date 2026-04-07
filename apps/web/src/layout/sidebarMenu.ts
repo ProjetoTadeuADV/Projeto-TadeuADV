@@ -12,8 +12,7 @@ export type SidebarIconName =
   | "messages"
   | "intake"
   | "workflow"
-  | "reports"
-  | "data";
+  | "reports";
 
 export interface SidebarMenuItem {
   id: string;
@@ -29,12 +28,6 @@ const baseSidebarMenu: SidebarMenuItem[] = [
     path: "/dashboard",
     label: "Dashboard",
     icon: "dashboard"
-  },
-  {
-    id: "minha-conta",
-    path: "/settings/profile",
-    label: "Minha Conta",
-    icon: "account"
   },
   {
     id: "extrato",
@@ -79,16 +72,14 @@ const baseSidebarMenu: SidebarMenuItem[] = [
     icon: "reports"
   },
   {
-    id: "dados",
-    path: "/dados",
-    label: "Dados",
-    icon: "data"
+    id: "minha-conta",
+    path: "/settings/profile",
+    label: "Minha Conta",
+    icon: "account"
   }
 ];
 
-export function getSidebarMenu(isMasterUser: boolean, canCreateCases: boolean): SidebarMenuItem[] {
-  void isMasterUser;
-
+export function getSidebarMenu(_isMasterUser: boolean, canCreateCases: boolean): SidebarMenuItem[] {
   if (canCreateCases) {
     return baseSidebarMenu;
   }

@@ -38,7 +38,7 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
     clearLeaveTimeout();
     leaveTimeoutRef.current = window.setTimeout(() => {
       setIsHovered(false);
-    }, 200);
+    }, 400);
   }, [clearLeaveTimeout]);
 
   useEffect(() => {
@@ -67,4 +67,3 @@ export function useSidebar() {
   }
   return context;
 }
-

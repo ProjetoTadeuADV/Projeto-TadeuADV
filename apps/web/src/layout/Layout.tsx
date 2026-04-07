@@ -38,7 +38,7 @@ export function Layout() {
 
   return (
     <SidebarProvider>
-      <div className="private-layout">
+      <div className="private-layout private-layout--minimal">
         <Sidebar />
 
         <div className="private-layout-content">
@@ -57,6 +57,9 @@ export function Layout() {
                     {isMasterUser ? "Master" : isOperatorUser ? "Operador" : "Administrador"}
                   </NavLink>
                 )}
+                <span className="topbar-user-name" title={profileLabel}>
+                  {profileLabel}
+                </span>
                 <NavLink to="/settings/profile" className="topbar-avatar-link" title={profileLabel} aria-label="Perfil">
                   {avatarUrl ? (
                     <img src={avatarUrl} alt="" className="topbar-avatar-image" />
