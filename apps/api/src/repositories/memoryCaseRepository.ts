@@ -64,6 +64,51 @@ function normalizeUserAddress(
   return hasAnyValue ? normalized : null;
 }
 
+function normalizeUserBankAccount(
+  value:
+    | {
+        bankName?: string | null;
+        accountType?: string | null;
+        agency?: string | null;
+        accountNumber?: string | null;
+        accountDigit?: string | null;
+        holderName?: string | null;
+        holderDocument?: string | null;
+        pixKey?: string | null;
+      }
+    | null
+    | undefined
+):
+  | {
+      bankName: string | null;
+      accountType: string | null;
+      agency: string | null;
+      accountNumber: string | null;
+      accountDigit: string | null;
+      holderName: string | null;
+      holderDocument: string | null;
+      pixKey: string | null;
+    }
+  | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = {
+    bankName: normalizeOptionalText(value.bankName),
+    accountType: normalizeOptionalText(value.accountType),
+    agency: normalizeOptionalText(value.agency),
+    accountNumber: normalizeOptionalText(value.accountNumber),
+    accountDigit: normalizeOptionalText(value.accountDigit),
+    holderName: normalizeOptionalText(value.holderName),
+    holderDocument: normalizeOptionalText(value.holderDocument),
+    pixKey: normalizeOptionalText(value.pixKey)
+  };
+
+  const hasAnyValue = Object.values(normalized).some((item) => item !== null);
+  return hasAnyValue ? normalized : null;
+}
+
 function buildCaseCode(caseId: string, createdAt: string): string {
   const datePart = createdAt.slice(0, 10).replace(/-/g, "");
   return `CASO-${datePart}-${caseId.slice(0, 8).toUpperCase()}`;
@@ -693,6 +738,16 @@ export class MemoryCaseRepository implements CaseRepository {
         city: string | null;
         state: string | null;
       } | null;
+      bankAccount?: {
+        bankName: string | null;
+        accountType: string | null;
+        agency: string | null;
+        accountNumber: string | null;
+        accountDigit: string | null;
+        holderName: string | null;
+        holderDocument: string | null;
+        pixKey: string | null;
+      } | null;
     }
   ): Promise<UserRecord | null> {
     const now = new Date().toISOString();
@@ -706,6 +761,7 @@ export class MemoryCaseRepository implements CaseRepository {
     const hasMaritalStatus = Object.prototype.hasOwnProperty.call(profile, "maritalStatus");
     const hasProfession = Object.prototype.hasOwnProperty.call(profile, "profession");
     const hasAddress = Object.prototype.hasOwnProperty.call(profile, "address");
+    const hasBankAccount = Object.prototype.hasOwnProperty.call(profile, "bankAccount");
 
     if (!existing) {
       const created: UserRecord = {
@@ -723,6 +779,7 @@ export class MemoryCaseRepository implements CaseRepository {
         maritalStatus: hasMaritalStatus ? normalizeOptionalText(profile.maritalStatus) : null,
         profession: hasProfession ? normalizeOptionalText(profile.profession) : null,
         address: hasAddress ? normalizeUserAddress(profile.address) : null,
+        bankAccount: hasBankAccount ? normalizeUserBankAccount(profile.bankAccount) : null,
         emailVerified: false,
         isMaster: false,
         isOperator: false,
@@ -749,6 +806,7 @@ export class MemoryCaseRepository implements CaseRepository {
         : existing.maritalStatus ?? null,
       profession: hasProfession ? normalizeOptionalText(profile.profession) : existing.profession ?? null,
       address: hasAddress ? normalizeUserAddress(profile.address) : existing.address ?? null,
+      bankAccount: hasBankAccount ? normalizeUserBankAccount(profile.bankAccount) : existing.bankAccount ?? null,
       lastSeenAt: now
     };
     this.users.set(userId, updated);

@@ -2,7 +2,7 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
-import type { AdminOperatorOption, CaseMovementRecord, CaseRecord } from "../types";
+import type { AccountProfile, AdminOperatorOption, CaseMovementRecord, CaseRecord } from "../types";
 
 const STATUS_LABEL: Record<CaseRecord["status"], string> = {
   recebido: "Recebido",
@@ -48,6 +48,22 @@ type SaleProposalPopupNotice = {
   amount: number;
   marker: string;
 };
+type WithdrawalBottomBarState = {
+  tone: "success" | "error" | "info";
+  message: string;
+};
+
+interface AccountProfileResponse {
+  user: AccountProfile;
+}
+
+interface WithdrawalRequestResponse {
+  requestedCases: number;
+  alreadyPendingCases: number;
+  totalEligibleCases: number;
+  requestedAmount: number;
+  message: string;
+}
 
 const CASE_TIMELINE_STEPS = [
   {
@@ -99,6 +115,21 @@ function formatCurrencyBr(value: number): string {
     style: "currency",
     currency: "BRL"
   }).format(value);
+}
+
+function hasRegisteredBankAccount(profile: AccountProfile | null): boolean {
+  const bankAccount = profile?.bankAccount;
+  if (!bankAccount) {
+    return false;
+  }
+
+  return Boolean(
+    bankAccount.bankName &&
+      bankAccount.agency &&
+      bankAccount.accountNumber &&
+      bankAccount.holderName &&
+      bankAccount.holderDocument
+  );
 }
 
 function parseMoneyInput(value: string): number | null {
@@ -358,6 +389,9 @@ export function DashboardPage() {
   const [saleRequestPopupError, setSaleRequestPopupError] = useState<string | null>(null);
   const [requestingCaseSale, setRequestingCaseSale] = useState(false);
   const [caseSaleFeedback, setCaseSaleFeedback] = useState<string | null>(null);
+  const [accountProfile, setAccountProfile] = useState<AccountProfile | null>(null);
+  const [requestingWithdrawal, setRequestingWithdrawal] = useState(false);
+  const [withdrawalBottomBar, setWithdrawalBottomBar] = useState<WithdrawalBottomBarState | null>(null);
 
   useEffect(() => {
     async function loadCases() {
@@ -369,6 +403,17 @@ export function DashboardPage() {
         const token = await getToken();
         const data = await apiRequest<CaseRecord[]>("/v1/cases", { token });
         setCases(data);
+
+        if (!canAccessAdmin) {
+          try {
+            const profileResponse = await apiRequest<AccountProfileResponse>("/v1/users/me", { token });
+            setAccountProfile(profileResponse.user);
+          } catch {
+            setAccountProfile(null);
+          }
+        } else {
+          setAccountProfile(null);
+        }
 
         if (canAccessAdmin && isMasterUser) {
           const availableOperators = await apiRequest<AdminOperatorOption[]>("/v1/admin/operators", { token });
@@ -708,6 +753,47 @@ export function DashboardPage() {
       setSaleRequestPopupError(message);
     } finally {
       setRequestingCaseSale(false);
+    }
+  }
+
+  function showWithdrawalBottomBar(tone: WithdrawalBottomBarState["tone"], message: string) {
+    setWithdrawalBottomBar({
+      tone,
+      message
+    });
+  }
+
+  async function handleRequestWithdrawal() {
+    if (canAccessAdmin || requestingWithdrawal) {
+      return;
+    }
+
+    if (clientPendingPayoutBalance <= 0) {
+      showWithdrawalBottomBar("info", "Não há valor disponível para retirada no momento.");
+      return;
+    }
+
+    if (!hasRegisteredBankAccount(accountProfile)) {
+      showWithdrawalBottomBar(
+        "error",
+        "Para retirar o valor, é necessário cadastrar uma conta bancária na página Perfil."
+      );
+      return;
+    }
+
+    setRequestingWithdrawal(true);
+    try {
+      const token = await getToken();
+      const result = await apiRequest<WithdrawalRequestResponse>("/v1/users/me/withdrawals/request", {
+        method: "POST",
+        token
+      });
+      showWithdrawalBottomBar("success", result.message);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Não foi possível solicitar a retirada agora.";
+      showWithdrawalBottomBar("error", message);
+    } finally {
+      setRequestingWithdrawal(false);
     }
   }
 
@@ -1141,8 +1227,8 @@ export function DashboardPage() {
   return (
     <section className="page-stack">
       <section className="workspace-hero workspace-hero--simple">
-        <div className="workspace-hero-grid">
-          <div>
+        <div className={canAccessAdmin ? "workspace-hero-grid" : "workspace-hero-grid dashboard-hero-grid"}>
+          <div className="dashboard-hero-main">
             <p className="hero-kicker">
               {canAccessAdmin ? (isMasterUser ? "Painel administrativo" : "Painel do operador") : "Área do cliente"}
             </p>
@@ -1161,9 +1247,30 @@ export function DashboardPage() {
                 <Link to="/cases/new" className="hero-primary">
                   Abrir novo caso
                 </Link>
+                {!canAccessAdmin && (
+                  <button
+                    type="button"
+                    className="hero-secondary"
+                    onClick={() => void handleRequestWithdrawal()}
+                    disabled={requestingWithdrawal}
+                  >
+                    {requestingWithdrawal ? "Solicitando..." : "Retirada"}
+                  </button>
+                )}
               </div>
             )}
           </div>
+
+          {!canAccessAdmin && (
+            <Link
+              to="/statement"
+              className="dashboard-withdraw-highlight"
+              aria-label={`Valor disponível para resgate: ${clientPendingPayoutLabel}. Abrir extrato.`}
+            >
+              <span>Valor disponível para resgate</span>
+              <strong>{clientPendingPayoutLabel}</strong>
+            </Link>
+          )}
         </div>
 
         <ul className="workspace-kpis">
@@ -1185,17 +1292,6 @@ export function DashboardPage() {
           </li>
         </ul>
 
-        {!canAccessAdmin && (
-          <div className="dashboard-client-summary">
-            <strong>Valor disponível para resgate: {clientPendingPayoutLabel}</strong>
-            <span>Consulte o detalhamento completo na página de extrato de casos.</span>
-            <span>
-              <Link to="/statement" className="primary-link">
-                Ver extrato
-              </Link>
-            </span>
-          </div>
-        )}
       </section>
 
       <section className="workspace-panel">
@@ -1538,6 +1634,23 @@ export function DashboardPage() {
             </div>
           </section>
         </>
+      )}
+
+      {withdrawalBottomBar && (
+        <section
+          className={`withdrawal-bottom-bar withdrawal-bottom-bar--${withdrawalBottomBar.tone}`}
+          role="status"
+          aria-live="polite"
+        >
+          <p>{withdrawalBottomBar.message}</p>
+          <button
+            type="button"
+            className="secondary-button secondary-button--small"
+            onClick={() => setWithdrawalBottomBar(null)}
+          >
+            OK
+          </button>
+        </section>
       )}
 
     </section>

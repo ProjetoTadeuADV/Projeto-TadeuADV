@@ -2453,29 +2453,43 @@ button.sidebar-item {
   background: #f6faff;
 }
 
-.dashboard-client-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.32rem 0.72rem;
-  margin-top: 0.15rem;
+.dashboard-hero-grid {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.8rem;
 }
 
-.dashboard-client-summary strong {
-  color: #17395d;
-  font-size: 0.94rem;
+.dashboard-hero-main {
+  min-width: 0;
 }
 
-.dashboard-client-summary > span {
-  margin: 0;
+.dashboard-withdraw-highlight {
+  display: grid;
+  justify-items: end;
+  align-content: center;
+  gap: 0.1rem;
+  text-decoration: none;
+  color: inherit;
+  min-width: min(320px, 100%);
+}
+
+.dashboard-withdraw-highlight span {
   color: #5f7085;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
-.dashboard-client-summary .primary-link {
-  width: fit-content;
-  max-width: 100%;
-  margin-top: 0;
+.dashboard-withdraw-highlight strong {
+  color: var(--primary-color);
+  font-size: clamp(1.45rem, 2.5vw, 2.2rem);
+  line-height: 1;
+}
+
+.dashboard-withdraw-highlight:hover strong {
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
 }
 
 .statement-table-wrapper {
@@ -4082,6 +4096,66 @@ button.sidebar-item {
 
 .case-notice-popup--client {
   border-color: #bdd7f0;
+}
+
+.withdrawal-bottom-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  transform: translate(-50%, 0);
+  z-index: 120;
+  width: min(760px, calc(100vw - 1.3rem));
+  border-radius: 14px;
+  border: 1px solid #c8d9ec;
+  background: #f8fbff;
+  box-shadow: 0 14px 28px rgba(10, 32, 60, 0.16);
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  animation: withdrawalBottomBarIn 220ms ease-out;
+}
+
+.withdrawal-bottom-bar p {
+  margin: 0;
+  color: #234161;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.withdrawal-bottom-bar--success {
+  border-color: #b7ddc4;
+  background: #f4fcf7;
+}
+
+.withdrawal-bottom-bar--success p {
+  color: #1f5a33;
+}
+
+.withdrawal-bottom-bar--error {
+  border-color: #ecc5c5;
+  background: #fff7f7;
+}
+
+.withdrawal-bottom-bar--error p {
+  color: #8f2626;
+}
+
+.withdrawal-bottom-bar--info {
+  border-color: #c8d9ec;
+  background: #f8fbff;
+}
+
+@keyframes withdrawalBottomBarIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 24px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 .sale-request-popup {
@@ -5799,6 +5873,11 @@ button.sidebar-item {
     gap: 0.95rem;
   }
 
+  .dashboard-withdraw-highlight {
+    justify-items: start;
+    min-width: 0;
+  }
+
   .statement-hero-grid {
     grid-template-columns: 1fr;
   }
@@ -5854,6 +5933,17 @@ button.sidebar-item {
     left: 0.8rem;
     right: 0.8rem;
     bottom: calc(0.8rem + env(safe-area-inset-bottom));
+  }
+
+  .withdrawal-bottom-bar {
+    width: calc(100vw - 1rem);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.55rem;
+  }
+
+  .withdrawal-bottom-bar button {
+    width: 100%;
   }
 
   .operator-progress-trigger,
@@ -6538,6 +6628,16 @@ button.sidebar-item {
 
   .workspace-kpis strong {
     font-size: 1.08rem;
+  }
+
+  .dashboard-withdraw-highlight strong {
+    font-size: 1.42rem;
+  }
+
+  .withdrawal-bottom-bar {
+    bottom: calc(0.6rem + env(safe-area-inset-bottom));
+    border-radius: 12px;
+    padding: 0.66rem 0.7rem;
   }
 
   .case-card {

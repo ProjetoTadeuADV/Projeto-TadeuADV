@@ -880,6 +880,19 @@ const accountProfilePatchSchema = z
         state: z.string().trim().max(8).nullable().optional()
       })
       .nullable()
+      .optional(),
+    bankAccount: z
+      .object({
+        bankName: z.string().trim().max(160).nullable().optional(),
+        accountType: z.string().trim().max(40).nullable().optional(),
+        agency: z.string().trim().max(20).nullable().optional(),
+        accountNumber: z.string().trim().max(30).nullable().optional(),
+        accountDigit: z.string().trim().max(10).nullable().optional(),
+        holderName: z.string().trim().max(160).nullable().optional(),
+        holderDocument: z.string().trim().max(32).nullable().optional(),
+        pixKey: z.string().trim().max(120).nullable().optional()
+      })
+      .nullable()
       .optional()
   })
   .refine(
@@ -892,7 +905,8 @@ const accountProfilePatchSchema = z
       value.birthDate !== undefined ||
       value.maritalStatus !== undefined ||
       value.profession !== undefined ||
-      value.address !== undefined,
+      value.address !== undefined ||
+      value.bankAccount !== undefined,
     {
       message: "Informe ao menos um campo para atualizar."
     }
@@ -950,6 +964,33 @@ function normalizeOptionalCep(value: string | null | undefined): string | null {
   return digits;
 }
 
+function normalizeOptionalCpfOrCnpj(value: string | null | undefined): string | null {
+  if (value === null || typeof value === "undefined") {
+    return null;
+  }
+
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 0) {
+    return null;
+  }
+
+  if (digits.length === 11) {
+    if (!isValidCpf(digits)) {
+      throw new HttpError(400, "CPF do titular da conta inválido.");
+    }
+    return digits;
+  }
+
+  if (digits.length === 14) {
+    if (!isValidCnpj(digits)) {
+      throw new HttpError(400, "CNPJ do titular da conta inválido.");
+    }
+    return digits;
+  }
+
+  throw new HttpError(400, "Documento do titular da conta deve conter CPF (11) ou CNPJ (14).");
+}
+
 export function validateAccountProfilePatchPayload(
   payload: unknown
 ): {
@@ -969,6 +1010,16 @@ export function validateAccountProfilePatchPayload(
     neighborhood: string | null;
     city: string | null;
     state: string | null;
+  } | null;
+  bankAccount?: {
+    bankName: string | null;
+    accountType: string | null;
+    agency: string | null;
+    accountNumber: string | null;
+    accountDigit: string | null;
+    holderName: string | null;
+    holderDocument: string | null;
+    pixKey: string | null;
   } | null;
 } {
   const parsed = accountProfilePatchSchema.safeParse(payload);
@@ -993,6 +1044,16 @@ export function validateAccountProfilePatchPayload(
       neighborhood: string | null;
       city: string | null;
       state: string | null;
+    } | null;
+    bankAccount?: {
+      bankName: string | null;
+      accountType: string | null;
+      agency: string | null;
+      accountNumber: string | null;
+      accountDigit: string | null;
+      holderName: string | null;
+      holderDocument: string | null;
+      pixKey: string | null;
     } | null;
   } = {};
 
@@ -1051,6 +1112,27 @@ export function validateAccountProfilePatchPayload(
 
       const hasAnyAddressValue = Object.values(address).some((item) => item !== null);
       normalized.address = hasAnyAddressValue ? address : null;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(parsed.data, "bankAccount")) {
+    const value = parsed.data.bankAccount;
+    if (!value) {
+      normalized.bankAccount = null;
+    } else {
+      const bankAccount = {
+        bankName: normalizeOptionalText(value.bankName),
+        accountType: normalizeOptionalText(value.accountType),
+        agency: normalizeOptionalText(value.agency),
+        accountNumber: normalizeOptionalText(value.accountNumber),
+        accountDigit: normalizeOptionalText(value.accountDigit),
+        holderName: normalizeOptionalText(value.holderName),
+        holderDocument: normalizeOptionalCpfOrCnpj(value.holderDocument),
+        pixKey: normalizeOptionalText(value.pixKey)
+      };
+
+      const hasAnyBankAccountValue = Object.values(bankAccount).some((item) => item !== null);
+      normalized.bankAccount = hasAnyBankAccountValue ? bankAccount : null;
     }
   }
 

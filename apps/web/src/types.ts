@@ -370,6 +370,16 @@ export interface AccountProfile {
     city: string | null;
     state: string | null;
   } | null;
+  bankAccount: {
+    bankName: string | null;
+    accountType: string | null;
+    agency: string | null;
+    accountNumber: string | null;
+    accountDigit: string | null;
+    holderName: string | null;
+    holderDocument: string | null;
+    pixKey: string | null;
+  } | null;
 }
 
 export interface MasterSummary {

@@ -708,8 +708,24 @@ function buildCurrentUserProfile(
     birthDate: userRecord?.birthDate ?? null,
     maritalStatus: userRecord?.maritalStatus ?? null,
     profession: userRecord?.profession ?? null,
-    address: userRecord?.address ?? null
+    address: userRecord?.address ?? null,
+    bankAccount: userRecord?.bankAccount ?? null
   };
+}
+
+function hasBankAccountForWithdrawal(userRecord: UserRecord | null): boolean {
+  const bankAccount = userRecord?.bankAccount;
+  if (!bankAccount) {
+    return false;
+  }
+
+  return Boolean(
+    bankAccount.bankName &&
+      bankAccount.agency &&
+      bankAccount.accountNumber &&
+      bankAccount.holderName &&
+      bankAccount.holderDocument
+  );
 }
 
 interface AuthSnapshotUser {
@@ -1496,6 +1512,111 @@ export function createV1Router(deps: AppDependencies) {
       next(error);
     }
   });
+
+  router.post(
+    "/users/me/withdrawals/request",
+    authMiddleware(deps.authVerifier, deps.repository),
+    async (req, res, next) => {
+      try {
+        if (!req.user) {
+          throw new HttpError(401, "Usuário não autenticado.");
+        }
+
+        if (canAccessAdminPanel(req.user)) {
+          throw new HttpError(403, "A solicitação de retirada está disponível apenas para o cliente.");
+        }
+
+        const userRecord = await deps.repository.getUserById(req.user.uid);
+        if (!hasBankAccountForWithdrawal(userRecord)) {
+          throw new HttpError(
+            409,
+            "Para solicitar retirada, cadastre uma conta bancária completa na página de Perfil."
+          );
+        }
+
+        const userCases = await deps.repository.listCasesByUserId(req.user.uid);
+        const eligibleCases = userCases.filter((caseItem) => {
+          if (caseItem.saleRequest.status !== "accepted") {
+            return false;
+          }
+
+          if (caseItem.saleRequest.payoutStatus === "transfer_sent") {
+            return false;
+          }
+
+          const amount = caseItem.saleRequest.suggestedAmount ?? 0;
+          return Number.isFinite(amount) && amount > 0;
+        });
+
+        if (eligibleCases.length === 0) {
+          throw new HttpError(409, "Não há valor disponível para retirada no momento.");
+        }
+
+        const now = new Date().toISOString();
+        const actorName = req.user.name ?? req.user.email ?? null;
+        let requestedCases = 0;
+        let alreadyPendingCases = 0;
+        let requestedAmount = 0;
+
+        for (const caseItem of eligibleCases) {
+          const suggestedAmount = caseItem.saleRequest.suggestedAmount ?? 0;
+          if (!Number.isFinite(suggestedAmount) || suggestedAmount <= 0) {
+            continue;
+          }
+
+          requestedAmount += suggestedAmount;
+
+          if (caseItem.saleRequest.payoutStatus === "pending_transfer") {
+            alreadyPendingCases += 1;
+            continue;
+          }
+
+          const payoutAmount =
+            typeof caseItem.saleRequest.payoutAmount === "number" &&
+            Number.isFinite(caseItem.saleRequest.payoutAmount) &&
+            caseItem.saleRequest.payoutAmount > 0
+              ? caseItem.saleRequest.payoutAmount
+              : suggestedAmount;
+
+          await deps.repository.updateCaseWorkflow(caseItem.id, {
+            saleRequest: {
+              ...caseItem.saleRequest,
+              payoutStatus: "pending_transfer",
+              payoutAmount,
+              payoutRequestedAt: now
+            }
+          });
+
+          await deps.repository.appendCaseMovement(caseItem.id, {
+            stage: "andamento",
+            description: "Cliente solicitou retirada do valor disponível para a conta bancária cadastrada.",
+            visibility: "public",
+            createdByUserId: req.user.uid,
+            createdByName: actorName,
+            statusAfter: caseItem.status
+          });
+
+          requestedCases += 1;
+        }
+
+        res.status(200).json({
+          status: "ok",
+          result: {
+            requestedCases,
+            alreadyPendingCases,
+            totalEligibleCases: eligibleCases.length,
+            requestedAmount: Number(requestedAmount.toFixed(2)),
+            message:
+              requestedCases > 0
+                ? "Solicitação de retirada enviada com sucesso."
+                : "Já existe solicitação de retirada em andamento para os valores disponíveis."
+          }
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
 
   router.delete("/users/me", authMiddleware(deps.authVerifier, deps.repository), async (req, res, next) => {
     try {
@@ -4036,4 +4157,3 @@ export function createV1Router(deps: AppDependencies) {
 
   return router;
 }
-

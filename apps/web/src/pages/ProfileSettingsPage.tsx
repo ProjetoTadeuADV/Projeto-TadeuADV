@@ -40,6 +40,16 @@ interface AccountProfilePatchPayload {
     city: string | null;
     state: string | null;
   } | null;
+  bankAccount?: {
+    bankName: string | null;
+    accountType: string | null;
+    agency: string | null;
+    accountNumber: string | null;
+    accountDigit: string | null;
+    holderName: string | null;
+    holderDocument: string | null;
+    pixKey: string | null;
+  } | null;
 }
 
 interface ProfileAddressInput {
@@ -52,6 +62,17 @@ interface ProfileAddressInput {
   state: string;
 }
 
+interface ProfileBankAccountInput {
+  bankName: string;
+  accountType: string;
+  agency: string;
+  accountNumber: string;
+  accountDigit: string;
+  holderName: string;
+  holderDocument: string;
+  pixKey: string;
+}
+
 interface ProfileExtraInput {
   cpf: string;
   rg: string;
@@ -60,6 +81,7 @@ interface ProfileExtraInput {
   maritalStatus: string;
   profession: string;
   address: ProfileAddressInput;
+  bankAccount: ProfileBankAccountInput;
 }
 
 interface NormalizedProfileSnapshotExtra {
@@ -77,6 +99,16 @@ interface NormalizedProfileSnapshotExtra {
     neighborhood: string | null;
     city: string | null;
     state: string | null;
+  };
+  bankAccount: {
+    bankName: string | null;
+    accountType: string | null;
+    agency: string | null;
+    accountNumber: string | null;
+    accountDigit: string | null;
+    holderName: string | null;
+    holderDocument: string | null;
+    pixKey: string | null;
   };
 }
 
@@ -132,6 +164,11 @@ function normalizeCepDigits(value: string): string | null {
   return digits.length > 0 ? digits : null;
 }
 
+function normalizeDocumentDigits(value: string): string | null {
+  const digits = value.replace(/\D/g, "").slice(0, 14);
+  return digits.length > 0 ? digits : null;
+}
+
 function formatCpfInput(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 11);
   if (digits.length <= 3) {
@@ -174,6 +211,16 @@ function emptyProfileExtraInput(): ProfileExtraInput {
       neighborhood: "",
       city: "",
       state: ""
+    },
+    bankAccount: {
+      bankName: "",
+      accountType: "",
+      agency: "",
+      accountNumber: "",
+      accountDigit: "",
+      holderName: "",
+      holderDocument: "",
+      pixKey: ""
     }
   };
 }
@@ -194,6 +241,16 @@ function buildProfileExtraInput(profile: AccountProfile): ProfileExtraInput {
       neighborhood: profile.address?.neighborhood ?? "",
       city: profile.address?.city ?? "",
       state: profile.address?.state ?? ""
+    },
+    bankAccount: {
+      bankName: profile.bankAccount?.bankName ?? "",
+      accountType: profile.bankAccount?.accountType ?? "",
+      agency: profile.bankAccount?.agency ?? "",
+      accountNumber: profile.bankAccount?.accountNumber ?? "",
+      accountDigit: profile.bankAccount?.accountDigit ?? "",
+      holderName: profile.bankAccount?.holderName ?? "",
+      holderDocument: profile.bankAccount?.holderDocument ?? "",
+      pixKey: profile.bankAccount?.pixKey ?? ""
     }
   };
 }
@@ -214,6 +271,16 @@ function normalizeProfileExtraInput(extraInput: ProfileExtraInput): NormalizedPr
       neighborhood: normalizeOptionalText(extraInput.address.neighborhood),
       city: normalizeOptionalText(extraInput.address.city),
       state: normalizeOptionalText(extraInput.address.state)?.toUpperCase() ?? null
+    },
+    bankAccount: {
+      bankName: normalizeOptionalText(extraInput.bankAccount.bankName),
+      accountType: normalizeOptionalText(extraInput.bankAccount.accountType),
+      agency: normalizeOptionalText(extraInput.bankAccount.agency),
+      accountNumber: normalizeOptionalText(extraInput.bankAccount.accountNumber),
+      accountDigit: normalizeOptionalText(extraInput.bankAccount.accountDigit),
+      holderName: normalizeOptionalText(extraInput.bankAccount.holderName),
+      holderDocument: normalizeDocumentDigits(extraInput.bankAccount.holderDocument),
+      pixKey: normalizeOptionalText(extraInput.bankAccount.pixKey)
     }
   };
 }
@@ -234,6 +301,16 @@ function profileExtraInputFromSnapshot(extra: NormalizedProfileSnapshotExtra): P
       neighborhood: extra.address.neighborhood ?? "",
       city: extra.address.city ?? "",
       state: extra.address.state ?? ""
+    },
+    bankAccount: {
+      bankName: extra.bankAccount.bankName ?? "",
+      accountType: extra.bankAccount.accountType ?? "",
+      agency: extra.bankAccount.agency ?? "",
+      accountNumber: extra.bankAccount.accountNumber ?? "",
+      accountDigit: extra.bankAccount.accountDigit ?? "",
+      holderName: extra.bankAccount.holderName ?? "",
+      holderDocument: extra.bankAccount.holderDocument ?? "",
+      pixKey: extra.bankAccount.pixKey ?? ""
     }
   };
 }
@@ -692,7 +769,8 @@ export function ProfileSettingsPage() {
             birthDate: null,
             maritalStatus: null,
             profession: null,
-            address: null
+            address: null,
+            bankAccount: null
           };
           const nextExtra = buildProfileExtraInput(fallbackProfile);
           setProfile(fallbackProfile);
@@ -974,6 +1052,10 @@ export function ProfileSettingsPage() {
 
     if (JSON.stringify(currentSnapshot.extra.address) !== JSON.stringify(initialSnapshot.extra.address)) {
       payload.address = currentSnapshot.extra.address;
+    }
+
+    if (JSON.stringify(currentSnapshot.extra.bankAccount) !== JSON.stringify(initialSnapshot.extra.bankAccount)) {
+      payload.bankAccount = currentSnapshot.extra.bankAccount;
     }
 
     if (Object.keys(payload).length === 0) {
@@ -1329,6 +1411,157 @@ export function ProfileSettingsPage() {
                         address: {
                           ...current.address,
                           state: event.target.value.toUpperCase()
+                        }
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+
+              <div className="resumo-box">
+                <strong>Conta bancária para retirada</strong>
+                <p>Informe a conta que deve receber os valores quando solicitar uma retirada.</p>
+              </div>
+
+              <div className="address-grid">
+                <label className="address-grid-span">
+                  Banco
+                  <input
+                    type="text"
+                    placeholder="Ex.: Banco do Brasil"
+                    value={extraInput.bankAccount.bankName}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        bankAccount: {
+                          ...current.bankAccount,
+                          bankName: event.target.value
+                        }
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Tipo de conta
+                  <select
+                    value={extraInput.bankAccount.accountType}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        bankAccount: {
+                          ...current.bankAccount,
+                          accountType: event.target.value
+                        }
+                      }))
+                    }
+                  >
+                    <option value="">Selecione</option>
+                    <option value="corrente">Corrente</option>
+                    <option value="poupanca">Poupança</option>
+                    <option value="pagamento">Pagamento</option>
+                  </select>
+                </label>
+
+                <label>
+                  Agência
+                  <input
+                    type="text"
+                    value={extraInput.bankAccount.agency}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        bankAccount: {
+                          ...current.bankAccount,
+                          agency: event.target.value
+                        }
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Conta
+                  <input
+                    type="text"
+                    value={extraInput.bankAccount.accountNumber}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        bankAccount: {
+                          ...current.bankAccount,
+                          accountNumber: event.target.value
+                        }
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Dígito
+                  <input
+                    type="text"
+                    value={extraInput.bankAccount.accountDigit}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        bankAccount: {
+                          ...current.bankAccount,
+                          accountDigit: event.target.value
+                        }
+                      }))
+                    }
+                  />
+                </label>
+
+                <label className="address-grid-span">
+                  Titular da conta
+                  <input
+                    type="text"
+                    value={extraInput.bankAccount.holderName}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        bankAccount: {
+                          ...current.bankAccount,
+                          holderName: event.target.value
+                        }
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  CPF/CNPJ do titular
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Somente números"
+                    value={extraInput.bankAccount.holderDocument}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        bankAccount: {
+                          ...current.bankAccount,
+                          holderDocument: event.target.value
+                        }
+                      }))
+                    }
+                  />
+                </label>
+
+                <label className="address-grid-span">
+                  Chave Pix (opcional)
+                  <input
+                    type="text"
+                    placeholder="CPF, e-mail, telefone ou chave aleatória"
+                    value={extraInput.bankAccount.pixKey}
+                    onChange={(event) =>
+                      setExtraInput((current) => ({
+                        ...current,
+                        bankAccount: {
+                          ...current.bankAccount,
+                          pixKey: event.target.value
                         }
                       }))
                     }
