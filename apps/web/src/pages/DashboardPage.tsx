@@ -51,6 +51,7 @@ type SaleProposalPopupNotice = {
 type WithdrawalBottomBarState = {
   tone: "success" | "error" | "info";
   message: string;
+  profilePath?: string;
 };
 
 interface AccountProfileResponse {
@@ -756,10 +757,15 @@ export function DashboardPage() {
     }
   }
 
-  function showWithdrawalBottomBar(tone: WithdrawalBottomBarState["tone"], message: string) {
+  function showWithdrawalBottomBar(
+    tone: WithdrawalBottomBarState["tone"],
+    message: string,
+    profilePath?: string
+  ) {
     setWithdrawalBottomBar({
       tone,
-      message
+      message,
+      profilePath
     });
   }
 
@@ -776,7 +782,8 @@ export function DashboardPage() {
     if (!hasRegisteredBankAccount(accountProfile)) {
       showWithdrawalBottomBar(
         "error",
-        "Para retirar o valor, é necessário cadastrar uma conta bancária na página Perfil."
+        "Para retirar o valor, é necessário cadastrar uma conta bancária na página",
+        "/settings/profile"
       );
       return;
     }
@@ -970,6 +977,58 @@ export function DashboardPage() {
                     <strong>{WORKFLOW_LABEL[item.workflowStep]}</strong>
                   </span>
                 </div>
+
+                <div className="case-card-timeline-wrap">
+                  <Link
+                    to={`/cases/${item.id}?tab=evolution`}
+                    className="case-card-timeline"
+                    aria-label="Ir para evolução do caso"
+                    style={
+                      {
+                        "--timeline-progress": `${timelineTrackProgress}`,
+                        "--timeline-offset": `${timelineOffset}%`
+                      } as CSSProperties
+                    }
+                  >
+                    <span className="case-card-timeline-progress" />
+                    {CASE_TIMELINE_STEPS.map((step, index) => {
+                      const stepNumber = index + 1;
+                      const isDone = stepNumber <= timelineProgress;
+                      const isCurrent = timelineProgress > 0 && stepNumber === timelineProgress;
+                      const stepClass = isDone
+                        ? isCurrent
+                          ? "case-card-timeline-node case-card-timeline-node--done case-card-timeline-node--current"
+                          : "case-card-timeline-node case-card-timeline-node--done"
+                        : "case-card-timeline-node";
+                      const stepStatus = isCurrent ? "Etapa atual" : isDone ? "Concluída" : "Pendente";
+
+                      return (
+                        <span
+                          key={`${item.id}-timeline-${step.key}`}
+                          className={stepClass}
+                          aria-label={`${step.label}: ${step.description}`}
+                        >
+                          <span className="case-card-timeline-dot" aria-hidden="true">
+                            <span className="case-card-timeline-symbol">{step.symbol}</span>
+                          </span>
+                          <span className="case-card-timeline-label">{step.label}</span>
+                          <span className="case-card-timeline-tooltip">
+                            <strong>{step.label}</strong>
+                            <span>{step.description}</span>
+                            <em>{stepStatus}</em>
+                          </span>
+                        </span>
+                      );
+                    })}
+                  </Link>
+                </div>
+
+                <p className="case-card-timeline-current">
+                  Etapa atual:{" "}
+                  <strong>
+                    {currentTimelineIndex >= 0 ? CASE_TIMELINE_STEPS[currentTimelineIndex].label : "Não definida"}
+                  </strong>
+                </p>
 
                 <div className="case-card-simple-sale">
                   <div className="case-card-simple-sale-info">
@@ -1259,18 +1318,18 @@ export function DashboardPage() {
                 )}
               </div>
             )}
-          </div>
 
-          {!canAccessAdmin && (
-            <Link
-              to="/statement"
-              className="dashboard-withdraw-highlight"
-              aria-label={`Valor disponível para resgate: ${clientPendingPayoutLabel}. Abrir extrato.`}
-            >
-              <span>Valor disponível para resgate</span>
-              <strong>{clientPendingPayoutLabel}</strong>
-            </Link>
-          )}
+            {!canAccessAdmin && (
+              <Link
+                to="/statement"
+                className="dashboard-withdraw-highlight"
+                aria-label={`Valor disponível para resgate: ${clientPendingPayoutLabel}. Abrir extrato.`}
+              >
+                <span>Valor disponível para resgate</span>
+                <strong>{clientPendingPayoutLabel}</strong>
+              </Link>
+            )}
+          </div>
         </div>
 
         <ul className="workspace-kpis">
@@ -1642,7 +1701,22 @@ export function DashboardPage() {
           role="status"
           aria-live="polite"
         >
-          <p>{withdrawalBottomBar.message}</p>
+          <p>
+            {withdrawalBottomBar.message}
+            {withdrawalBottomBar.profilePath && (
+              <>
+                {" "}
+                <Link
+                  to={withdrawalBottomBar.profilePath}
+                  className="withdrawal-bottom-bar-link"
+                  onClick={() => setWithdrawalBottomBar(null)}
+                >
+                  Perfil
+                </Link>
+                .
+              </>
+            )}
+          </p>
           <button
             type="button"
             className="secondary-button secondary-button--small"

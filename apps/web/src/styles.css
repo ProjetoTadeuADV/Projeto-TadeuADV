@@ -1325,17 +1325,25 @@ button.sidebar-item {
 }
 
 .private-layout--minimal .primary-link,
-.private-layout--minimal .hero-primary,
-.private-layout--minimal .case-card-sell-button {
+.private-layout--minimal .hero-primary {
   border: 1px solid #0f4f88;
   background: #0f4f88;
 }
 
 .private-layout--minimal .primary-link:hover,
-.private-layout--minimal .hero-primary:hover,
-.private-layout--minimal .case-card-sell-button:hover {
+.private-layout--minimal .hero-primary:hover {
   border-color: #0d4476;
   background: #0d4476;
+}
+
+.private-layout--minimal .case-card-sell-button {
+  border: 1px solid #4f9d72;
+  background: linear-gradient(180deg, #4ead79 0%, #3d9266 100%);
+}
+
+.private-layout--minimal .case-card-sell-button:hover {
+  border-color: #3f8f63;
+  background: linear-gradient(180deg, #54b883 0%, #3e9a6a 100%);
 }
 
 .private-layout--minimal .hero-secondary,
@@ -2454,37 +2462,42 @@ button.sidebar-item {
 }
 
 .dashboard-hero-grid {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 0.8rem;
 }
 
 .dashboard-hero-main {
   min-width: 0;
+  align-self: start;
 }
 
 .dashboard-withdraw-highlight {
-  display: grid;
-  justify-items: end;
-  align-content: center;
+  display: inline-grid;
+  justify-items: start;
+  align-content: start;
   gap: 0.1rem;
   text-decoration: none;
   color: inherit;
-  min-width: min(320px, 100%);
+  min-width: 0;
+  align-self: start;
+  margin-top: 0.65rem;
+  padding-left: 0.9rem;
+  border-left: 1px solid #dce7f4;
 }
 
 .dashboard-withdraw-highlight span {
-  color: #5f7085;
-  font-size: 0.82rem;
+  color: #5f7186;
+  font-size: 0.78rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .dashboard-withdraw-highlight strong {
-  color: var(--primary-color);
-  font-size: clamp(1.45rem, 2.5vw, 2.2rem);
-  line-height: 1;
+  color: #163d63;
+  font-size: clamp(1.12rem, 2.2vw, 1.52rem);
+  line-height: 1.1;
 }
 
 .dashboard-withdraw-highlight:hover strong {
@@ -4122,6 +4135,17 @@ button.sidebar-item {
   color: #234161;
   font-size: 0.88rem;
   font-weight: 600;
+}
+
+.withdrawal-bottom-bar-link {
+  color: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.withdrawal-bottom-bar-link:hover {
+  opacity: 0.9;
 }
 
 .withdrawal-bottom-bar--success {
@@ -6628,10 +6652,6 @@ button.sidebar-item {
 
   .workspace-kpis strong {
     font-size: 1.08rem;
-  }
-
-  .dashboard-withdraw-highlight strong {
-    font-size: 1.42rem;
   }
 
   .withdrawal-bottom-bar {
