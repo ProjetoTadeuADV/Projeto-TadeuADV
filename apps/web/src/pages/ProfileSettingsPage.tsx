@@ -1602,11 +1602,18 @@ export function ProfileSettingsPage() {
           <header className="page-header">
             <div>
               <h2>Ações da conta</h2>
-              <p>Saia da sessão atual ou exclua sua conta, quando necessário.</p>
+              <p>Gerencie sua senha, saia da sessão atual ou exclua sua conta, quando necessário.</p>
             </div>
           </header>
 
           <div className="profile-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => navigate("/settings/profile/password")}
+            >
+              Alterar senha
+            </button>
             <button type="button" className="secondary-button" onClick={() => void handleLogout()} disabled={logoutLoading}>
               {logoutLoading ? "Saindo..." : "Sair"}
             </button>
@@ -1615,18 +1622,6 @@ export function ProfileSettingsPage() {
             </button>
           </div>
         </section>
-      )}
-
-      {!isProfileCompletionMode && (
-        <div className="profile-password-dock">
-          <button
-            type="button"
-            className="danger-button profile-password-trigger"
-            onClick={() => navigate("/settings/profile/password")}
-          >
-            Alterar senha
-          </button>
-        </div>
       )}
 
       <input

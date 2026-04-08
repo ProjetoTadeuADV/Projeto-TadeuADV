@@ -1002,10 +1002,6 @@ export function DashboardPage() {
                     <small>Início do processo</small>
                     {formatDate(item.createdAt)}
                   </span>
-                  <span>
-                    <small>Etapa atual</small>
-                    <strong>{WORKFLOW_LABEL[item.workflowStep]}</strong>
-                  </span>
                 </div>
 
                 <div className="case-card-timeline-wrap">
