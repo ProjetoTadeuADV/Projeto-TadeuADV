@@ -1,16 +1,38 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
-import type { CaseRecord } from "../types";
+import type { AccountProfile, CaseRecord } from "../types";
 
 interface StatementEntry {
   id: string;
   caseId: string;
+  caseCode: string;
   caseTitle: string;
   counterpartyName: string;
   amount: number;
   occurredAt: string;
+  approvalAt: string;
+  approvalBy: string;
   type: "credit_sale" | "withdrawal";
+}
+
+type WithdrawalBottomBarState = {
+  tone: "success" | "error" | "info";
+  message: string;
+  profilePath?: string;
+};
+
+interface AccountProfileResponse {
+  user: AccountProfile;
+}
+
+interface WithdrawalRequestResponse {
+  requestedCases: number;
+  alreadyPendingCases: number;
+  totalEligibleCases: number;
+  requestedAmount: number;
+  message: string;
 }
 
 function formatCurrencyBr(value: number): string {
@@ -47,11 +69,30 @@ function resolveCaseTitle(caseItem: CaseRecord): string {
   return "Caso sem título";
 }
 
+function hasRegisteredBankAccount(profile: AccountProfile | null): boolean {
+  const bankAccount = profile?.bankAccount;
+  if (!bankAccount) {
+    return false;
+  }
+
+  return Boolean(
+    bankAccount.bankName &&
+      bankAccount.agency &&
+      bankAccount.accountNumber &&
+      bankAccount.holderName &&
+      bankAccount.holderDocument
+  );
+}
+
 export function StatementPage() {
   const { getToken } = useAuth();
   const [cases, setCases] = useState<CaseRecord[]>([]);
+  const [accountProfile, setAccountProfile] = useState<AccountProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [requestingWithdrawal, setRequestingWithdrawal] = useState(false);
+  const [withdrawalBottomBar, setWithdrawalBottomBar] = useState<WithdrawalBottomBarState | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<StatementEntry | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -66,8 +107,18 @@ export function StatementPage() {
         if (!active) {
           return;
         }
-
         setCases(result);
+
+        try {
+          const profileResult = await apiRequest<AccountProfileResponse>("/v1/users/me", { token });
+          if (active) {
+            setAccountProfile(profileResult.user);
+          }
+        } catch {
+          if (active) {
+            setAccountProfile(null);
+          }
+        }
       } catch (nextError) {
         if (!active) {
           return;
@@ -102,19 +153,22 @@ export function StatementPage() {
         continue;
       }
 
-      const creditedAt =
+      const approvalAt =
         caseItem.saleRequest.clientDecisionAt ??
         caseItem.saleRequest.proposalSentAt ??
         caseItem.saleRequest.reviewedAt ??
         caseItem.updatedAt;
 
       statementEntries.push({
-        id: `${caseItem.id}-${creditedAt}-credit`,
+        id: `${caseItem.id}-${approvalAt}-credit`,
         caseId: caseItem.id,
+        caseCode: caseItem.caseCode,
         caseTitle: resolveCaseTitle(caseItem),
         counterpartyName: resolveCounterpartyName(caseItem),
         amount: saleAmount,
-        occurredAt: creditedAt,
+        occurredAt: approvalAt,
+        approvalAt,
+        approvalBy: caseItem.saleRequest.clientDecisionByName ?? "Cliente",
         type: "credit_sale"
       });
 
@@ -132,10 +186,16 @@ export function StatementPage() {
         statementEntries.push({
           id: `${caseItem.id}-${withdrawalAt}-withdrawal`,
           caseId: caseItem.id,
+          caseCode: caseItem.caseCode,
           caseTitle: resolveCaseTitle(caseItem),
           counterpartyName: resolveCounterpartyName(caseItem),
           amount: withdrawalAmount,
           occurredAt: withdrawalAt,
+          approvalAt: caseItem.saleRequest.payoutRequestedAt ?? withdrawalAt,
+          approvalBy:
+            caseItem.saleRequest.reviewedByName ??
+            caseItem.saleRequest.clientDecisionByName ??
+            "Equipe financeira",
           type: "withdrawal"
         });
       }
@@ -169,6 +229,56 @@ export function StatementPage() {
     [totalReceivables, totalWithdrawals]
   );
 
+  function showWithdrawalBottomBar(
+    tone: WithdrawalBottomBarState["tone"],
+    message: string,
+    profilePath?: string
+  ) {
+    setWithdrawalBottomBar({
+      tone,
+      message,
+      profilePath
+    });
+  }
+
+  async function handleRequestWithdrawal() {
+    if (requestingWithdrawal) {
+      return;
+    }
+
+    if (netBalance <= 0) {
+      showWithdrawalBottomBar("info", "Não há valor disponível para levantamento no momento.");
+      return;
+    }
+
+    if (!hasRegisteredBankAccount(accountProfile)) {
+      showWithdrawalBottomBar(
+        "error",
+        "Para fazer o levantamento, é necessário cadastrar uma conta bancária na página",
+        "/settings/profile"
+      );
+      return;
+    }
+
+    setRequestingWithdrawal(true);
+    try {
+      const token = await getToken();
+      const result = await apiRequest<WithdrawalRequestResponse>("/v1/users/me/withdrawals/request", {
+        method: "POST",
+        token
+      });
+      showWithdrawalBottomBar("success", result.message.replace(/retirada/gi, "levantamento"));
+    } catch (nextError) {
+      const message =
+        nextError instanceof ApiError
+          ? nextError.message.replace(/retirada/gi, "levantamento")
+          : "Não foi possível solicitar o levantamento.";
+      showWithdrawalBottomBar("error", message);
+    } finally {
+      setRequestingWithdrawal(false);
+    }
+  }
+
   return (
     <section className="page-stack">
       <section className="workspace-hero workspace-hero--simple">
@@ -176,20 +286,27 @@ export function StatementPage() {
           <div>
             <p className="hero-kicker">Financeiro</p>
             <h1>Meu extrato</h1>
-            <p>Acompanhe os lançamentos financeiros das vendas aprovadas e retiradas realizadas.</p>
+            <p>Acompanhe os lançamentos financeiros das vendas aprovadas e levantamentos realizados.</p>
           </div>
           <aside className="statement-hero-total" aria-label="Total disponível para resgate">
             <span>Total disponível para resgate</span>
             <strong>{formatCurrencyBr(netBalance)}</strong>
+            <button
+              type="button"
+              className="hero-primary statement-withdraw-button"
+              onClick={() => void handleRequestWithdrawal()}
+              disabled={requestingWithdrawal}
+            >
+              {requestingWithdrawal ? "Solicitando..." : "Solicitar levantamento"}
+            </button>
           </aside>
         </div>
       </section>
 
-      <section className="workspace-panel">
+      <section className="workspace-panel statement-panel">
         <header className="page-header">
           <div>
             <h2>Lançamentos</h2>
-            <p>Entradas de vendas aprovadas e saídas de retiradas para cálculo do saldo.</p>
           </div>
         </header>
 
@@ -200,39 +317,38 @@ export function StatementPage() {
         {!loading && !error && entries.length === 0 && (
           <div className="info-box">
             <strong>Nenhum lançamento disponível no momento.</strong>
-            <span>Quando houver venda aprovada ou retirada, o extrato será atualizado automaticamente.</span>
+            <span>Quando houver venda aprovada ou levantamento, o extrato será atualizado automaticamente.</span>
           </div>
         )}
 
         {!loading && !error && entries.length > 0 && (
           <div className="statement-table-wrapper">
-            <table className="statement-table" aria-label="Extrato de lançamentos">
+            <table className="statement-table statement-table--compact" aria-label="Extrato de lançamentos">
               <thead>
                 <tr>
-                  <th scope="col">Data</th>
-                  <th scope="col">Tipo</th>
-                  <th scope="col">Título do caso</th>
-                  <th scope="col">Parte contrária</th>
-                  <th scope="col" className="statement-table-value">Valor (R$)</th>
+                  <th scope="col">Caso</th>
+                  <th scope="col" className="statement-table-value">Valor</th>
                 </tr>
               </thead>
               <tbody>
                 {entries.map((entry) => (
                   <tr key={entry.id}>
-                    <td>{formatDateTime(entry.occurredAt)}</td>
-                    <td>{entry.type === "credit_sale" ? "Venda aprovada" : "Retirada"}</td>
                     <td>{entry.caseTitle}</td>
-                    <td>{entry.counterpartyName}</td>
-                    <td
-                      className={
-                        entry.type === "withdrawal"
-                          ? "statement-table-value statement-table-value--negative"
-                          : "statement-table-value"
-                      }
-                    >
-                      {entry.type === "withdrawal"
-                        ? `- ${formatCurrencyBr(entry.amount)}`
-                        : formatCurrencyBr(entry.amount)}
+                    <td className="statement-table-value">
+                      <button
+                        type="button"
+                        className={
+                          entry.type === "withdrawal"
+                            ? "statement-table-value-button statement-table-value-button--negative"
+                            : "statement-table-value-button"
+                        }
+                        onClick={() => setSelectedEntry(entry)}
+                        aria-label={`Ver detalhes do lançamento de ${entry.caseTitle}`}
+                      >
+                        {entry.type === "withdrawal"
+                          ? `- ${formatCurrencyBr(entry.amount)}`
+                          : formatCurrencyBr(entry.amount)}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -250,6 +366,115 @@ export function StatementPage() {
           </section>
         )}
       </section>
+
+      {selectedEntry && (
+        <>
+          <button
+            type="button"
+            className="case-notice-overlay"
+            aria-label="Fechar detalhes do lançamento"
+            onClick={() => setSelectedEntry(null)}
+          />
+          <section
+            className="case-notice-popup case-notice-popup--client statement-entry-popup"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="statement-entry-popup-title"
+          >
+            <div className="case-notice-header">
+              <div>
+                <p className="hero-kicker">Detalhes do lançamento</p>
+                <h3 id="statement-entry-popup-title">Resumo financeiro do caso</h3>
+              </div>
+              <button
+                type="button"
+                className="case-notice-close"
+                aria-label="Fechar detalhes"
+                onClick={() => setSelectedEntry(null)}
+              >
+                {"\u00D7"}
+              </button>
+            </div>
+
+            <div className="detail-list">
+              <div className="detail-item">
+                <span>Título do caso</span>
+                <strong>{selectedEntry.caseTitle}</strong>
+              </div>
+              <div className="detail-item">
+                <span>Tipo de lançamento</span>
+                <strong>{selectedEntry.type === "credit_sale" ? "Venda aprovada" : "Levantamento"}</strong>
+              </div>
+              <div className="detail-item">
+                <span>Valor</span>
+                <strong>
+                  {selectedEntry.type === "withdrawal"
+                    ? `- ${formatCurrencyBr(selectedEntry.amount)}`
+                    : formatCurrencyBr(selectedEntry.amount)}
+                </strong>
+              </div>
+              <div className="detail-item">
+                <span>Data da aprovação</span>
+                <strong>{formatDateTime(selectedEntry.approvalAt)}</strong>
+              </div>
+              <div className="detail-item">
+                <span>Quem aprovou</span>
+                <strong>{selectedEntry.approvalBy}</strong>
+              </div>
+              <div className="detail-item">
+                <span>Parte contrária</span>
+                <strong>{selectedEntry.counterpartyName}</strong>
+              </div>
+              <div className="detail-item">
+                <span>Código do caso</span>
+                <strong>{selectedEntry.caseCode}</strong>
+              </div>
+              <div className="detail-item">
+                <span>Data do lançamento</span>
+                <strong>{formatDateTime(selectedEntry.occurredAt)}</strong>
+              </div>
+            </div>
+
+            <div className="operator-action-buttons">
+              <button type="button" className="hero-secondary" onClick={() => setSelectedEntry(null)}>
+                Fechar
+              </button>
+            </div>
+          </section>
+        </>
+      )}
+
+      {withdrawalBottomBar && (
+        <section
+          className={`withdrawal-bottom-bar withdrawal-bottom-bar--${withdrawalBottomBar.tone}`}
+          role="status"
+          aria-live="polite"
+        >
+          <p>
+            {withdrawalBottomBar.message}
+            {withdrawalBottomBar.profilePath && (
+              <>
+                {" "}
+                <Link
+                  to={withdrawalBottomBar.profilePath}
+                  className="withdrawal-bottom-bar-link"
+                  onClick={() => setWithdrawalBottomBar(null)}
+                >
+                  Perfil
+                </Link>
+                .
+              </>
+            )}
+          </p>
+          <button
+            type="button"
+            className="secondary-button secondary-button--small"
+            onClick={() => setWithdrawalBottomBar(null)}
+          >
+            OK
+          </button>
+        </section>
+      )}
     </section>
   );
 }

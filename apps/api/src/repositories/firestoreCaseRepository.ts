@@ -413,7 +413,7 @@ function normalizeCaseProcedureProgress(
   if (!value) {
     return {
       timeline: {
-        currentStage: "ajuizamento",
+        currentStage: "preparacao-peticao-inicial",
         notes: null,
         updatedAt: null,
         updatedByUserId: null,
@@ -448,7 +448,7 @@ function normalizeCaseProcedureProgress(
 
   return {
     timeline: {
-      currentStage: value.timeline?.currentStage ?? "ajuizamento",
+      currentStage: value.timeline?.currentStage ?? "preparacao-peticao-inicial",
       notes: normalizeOptionalText(value.timeline?.notes),
       updatedAt: value.timeline?.updatedAt ?? null,
       updatedByUserId: value.timeline?.updatedByUserId ?? null,

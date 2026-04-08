@@ -1,5 +1,5 @@
 ﻿import { type ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
 import { formatCpf, isValidCpf, normalizeCpf } from "../lib/cpf";
@@ -28,6 +28,19 @@ const NEW_CASE_DRAFT_STORAGE_PREFIX = "doutoreu_new_case_draft_v1";
 
 interface AccountProfileResponse {
   user: AccountProfile;
+}
+
+interface InlineProfilePatchPayload {
+  cpf?: string | null;
+  address?: {
+    cep: string | null;
+    street: string | null;
+    number: string | null;
+    complement: string | null;
+    neighborhood: string | null;
+    city: string | null;
+    state: string | null;
+  } | null;
 }
 
 interface VaraResolveResult {
@@ -78,15 +91,8 @@ interface PretensionDraft {
   details: string;
 }
 
-interface CaseCreationChecklistItem {
-  id: string;
-  label: string;
-  done: boolean;
-}
-
 interface NewCaseDraftPayload {
   savedAt: string;
-  profileDataConfirmed: boolean;
   resumo: string;
   claimSubjectSelection: string;
   claimSubjectCustom: string;
@@ -104,8 +110,11 @@ interface NewCaseDraftPayload {
   timelineEvents: TimelineEventDraft[];
   pretensionDrafts: PretensionDraft[];
   requestsText: string;
+  urgentRequest: string;
+  claimValueInput: string;
   evidence: string;
   hearingInterest: boolean;
+  finalReviewConfirmed: boolean;
 }
 
 const PRETENSION_OPTIONS: PretensionOptionConfig[] = [
@@ -309,6 +318,11 @@ function parseRequests(value: string): string[] {
     .split(/\r?\n/)
     .map((line) => line.replace(/^[-*]\s*/, "").trim())
     .filter(Boolean);
+}
+
+function normalizeOptionalText(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function parseClaimValue(value: string): number | null {
@@ -528,12 +542,13 @@ export function NewCasePage() {
   const [varas, setVaras] = useState<VaraOption[]>([]);
   const [loadingVaras, setLoadingVaras] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [savingInlineProfile, setSavingInlineProfile] = useState(false);
   const [consultingCpf, setConsultingCpf] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [inlineProfileFeedback, setInlineProfileFeedback] = useState<string | null>(null);
   const [profileReadyForCase, setProfileReadyForCase] = useState(false);
   const [profileReadyMessage, setProfileReadyMessage] = useState<string | null>(null);
   const [profileCheckFinished, setProfileCheckFinished] = useState(false);
-  const [profileDataConfirmed, setProfileDataConfirmed] = useState(false);
   const [resolvingVara, setResolvingVara] = useState(false);
   const [draftHydrated, setDraftHydrated] = useState(false);
   const [restoredDraftSavedAt, setRestoredDraftSavedAt] = useState<string | null>(null);
@@ -570,11 +585,14 @@ export function NewCasePage() {
   ]);
   const [pretensionDrafts, setPretensionDrafts] = useState<PretensionDraft[]>(() => createInitialPretensionDrafts());
   const [requestsText, setRequestsText] = useState("");
+  const [urgentRequest, setUrgentRequest] = useState("");
+  const [claimValueInput, setClaimValueInput] = useState("");
   const [evidence, setEvidence] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
   const [attachmentFeedback, setAttachmentFeedback] = useState<string | null>(null);
   const [hearingInterest, setHearingInterest] = useState(true);
   const [cpfData, setCpfData] = useState<CpfConsultaResult | null>(null);
+  const [finalReviewConfirmed, setFinalReviewConfirmed] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const draftStorageKey = useMemo(() => buildNewCaseDraftStorageKey(user?.uid), [user?.uid]);
 
@@ -618,10 +636,10 @@ export function NewCasePage() {
     const normalized = normalizeZipCode(claimantZipCode);
     if (
       normalized.length !== 8 ||
-      claimantStreet.trim().length < 3 ||
+      claimantStreet.trim().length === 0 ||
       claimantNumber.trim().length === 0 ||
-      claimantNeighborhood.trim().length < 2 ||
-      claimantCity.trim().length < 2 ||
+      claimantNeighborhood.trim().length === 0 ||
+      claimantCity.trim().length === 0 ||
       claimantState.trim().length !== 2
     ) {
       return "Endereço do cadastro incompleto.";
@@ -779,79 +797,6 @@ export function NewCasePage() {
     priorAttemptProposalDetails,
     priorAttemptProtocol
   ]);
-  const caseChecklist = useMemo<CaseCreationChecklistItem[]>(
-    () => [
-      {
-        id: "processo",
-        label: "Dados iniciais (CPF válido, resumo e assunto preenchidos)",
-        done: Boolean(varaId) && isValidCpf(cpf) && resumo.trim().length >= 20 && resolvedClaimSubject.length >= 5
-      },
-      {
-        id: "endereco",
-        label: "Cadastro completo do cliente (CPF e endereço no perfil)",
-        done: profileReadyForCase
-      },
-      {
-        id: "confirmacao",
-        label: "Confirmação dos dados do cadastro antes do envio",
-        done: profileDataConfirmed
-      },
-      {
-        id: "reclamada",
-        label: "Parte contrária identificada (nome mín. 2 e CPF/CNPJ válido)",
-        done: defendantName.trim().length >= 2 && isDefendantDocumentValid
-      },
-      {
-        id: "cronologia",
-        label: "Cronologia preenchida (ao menos 1 evento com data válida e descrição mín. 5)",
-        done:
-          normalizedTimelineEvents.length > 0 &&
-          normalizedTimelineEvents.every((item) => isIsoDate(item.eventDate) && item.description.length >= 5)
-      },
-      {
-        id: "tratativa",
-        label: "Tratativa prévia informada (canal, protocolo quando houver e proposta)",
-        done: isPriorAttemptSectionValid
-      },
-      {
-        id: "pedidos",
-        label: "Pedidos e pretensões (com valores/detalhes quando aplicável)",
-        done: hasValidPretensionSelection && (selectedPretensions.length > 0 || freeRequests.length > 0)
-      },
-      {
-        id: "texto",
-        label: "Fatos do caso (mín. 30 caracteres)",
-        done: facts.trim().length >= 30
-      },
-      {
-        id: "anexos",
-        label: "Anexos inseridos no clipe (opcional)",
-        done: true
-      }
-    ],
-    [
-      cpf,
-      defendantName,
-      facts,
-      freeRequests.length,
-      hasValidPretensionSelection,
-      isPriorAttemptSectionValid,
-      isDefendantDocumentValid,
-      normalizedTimelineEvents,
-      profileDataConfirmed,
-      profileReadyForCase,
-      resolvedClaimSubject,
-      resumo,
-      selectedPretensions.length,
-      varaId
-    ]
-  );
-  const completedChecklistSteps = useMemo(
-    () => caseChecklist.filter((item) => item.done).length,
-    [caseChecklist]
-  );
-  const isChecklistComplete = completedChecklistSteps === caseChecklist.length;
-
   useEffect(() => {
     setDefendantDocument((current) => formatDefendantDocumentInput(current, defendantType));
   }, [defendantType]);
@@ -887,7 +832,6 @@ export function NewCasePage() {
   function buildDraftPayload(): NewCaseDraftPayload {
     return {
       savedAt: new Date().toISOString(),
-      profileDataConfirmed,
       resumo,
       claimSubjectSelection,
       claimSubjectCustom,
@@ -905,8 +849,11 @@ export function NewCasePage() {
       timelineEvents,
       pretensionDrafts,
       requestsText,
+      urgentRequest,
+      claimValueInput,
       evidence,
-      hearingInterest
+      hearingInterest,
+      finalReviewConfirmed
     };
   }
 
@@ -922,7 +869,6 @@ export function NewCasePage() {
     clearCaseDraftLocally();
     setShowDraftRestoreActions(false);
     setRestoredDraftSavedAt(null);
-    setProfileDataConfirmed(false);
     setResumo("");
     setClaimSubjectSelection(CLAIM_SUBJECT_OPTIONS[0]?.value ?? "");
     setClaimSubjectCustom("");
@@ -940,11 +886,14 @@ export function NewCasePage() {
     setTimelineEvents([{ eventDate: "", description: "" }]);
     setPretensionDrafts(createInitialPretensionDrafts());
     setRequestsText("");
+    setUrgentRequest("");
+    setClaimValueInput("");
     setEvidence("");
     setAttachments([]);
     setAttachmentFeedback(null);
     setHearingInterest(true);
     setCpfData(null);
+    setFinalReviewConfirmed(false);
     setError(null);
   }
 
@@ -1210,9 +1159,6 @@ export function NewCasePage() {
         setRestoredDraftSavedAt(parsed.savedAt);
         setShowDraftRestoreActions(true);
       }
-      if (typeof parsed.profileDataConfirmed === "boolean") {
-        setProfileDataConfirmed(parsed.profileDataConfirmed);
-      }
       if (typeof parsed.resumo === "string") {
         setResumo(parsed.resumo.slice(0, PETITION_TEXT_MAX_LENGTH));
       }
@@ -1273,11 +1219,20 @@ export function NewCasePage() {
       if (typeof parsed.requestsText === "string") {
         setRequestsText(parsed.requestsText.slice(0, PETITION_TEXT_MAX_LENGTH));
       }
+      if (typeof parsed.urgentRequest === "string") {
+        setUrgentRequest(parsed.urgentRequest.slice(0, PETITION_TEXT_MAX_LENGTH));
+      }
+      if (typeof parsed.claimValueInput === "string") {
+        setClaimValueInput(parsed.claimValueInput);
+      }
       if (typeof parsed.evidence === "string") {
         setEvidence(parsed.evidence.slice(0, PETITION_TEXT_MAX_LENGTH));
       }
       if (typeof parsed.hearingInterest === "boolean") {
         setHearingInterest(parsed.hearingInterest);
+      }
+      if (typeof parsed.finalReviewConfirmed === "boolean") {
+        setFinalReviewConfirmed(parsed.finalReviewConfirmed);
       }
       if (parsed.timelineEvents !== undefined) {
         setTimelineEvents(restoreTimelineEvents(parsed.timelineEvents));
@@ -1327,11 +1282,13 @@ export function NewCasePage() {
     priorAttemptMade,
     priorAttemptProposalDetails,
     priorAttemptProtocol,
-    profileDataConfirmed,
     requestsText,
+    urgentRequest,
+    claimValueInput,
     resumo,
     submitting,
-    timelineEvents
+    timelineEvents,
+    finalReviewConfirmed
   ]);
 
   useEffect(() => {
@@ -1363,7 +1320,7 @@ export function NewCasePage() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pagehide", persistOnBackground);
     };
-  }, [draftHydrated, draftStorageKey, profileDataConfirmed, submitting, resumo, claimSubjectSelection, claimSubjectCustom, priorAttemptMade, priorAttemptChannel, priorAttemptChannelOther, priorAttemptProtocol, priorAttemptHadProposal, priorAttemptProposalDetails, defendantType, defendantName, defendantDocument, defendantAddress, facts, timelineEvents, pretensionDrafts, requestsText, evidence, hearingInterest]);
+  }, [draftHydrated, draftStorageKey, submitting, resumo, claimSubjectSelection, claimSubjectCustom, priorAttemptMade, priorAttemptChannel, priorAttemptChannelOther, priorAttemptProtocol, priorAttemptHadProposal, priorAttemptProposalDetails, defendantType, defendantName, defendantDocument, defendantAddress, facts, timelineEvents, pretensionDrafts, requestsText, urgentRequest, claimValueInput, evidence, hearingInterest, finalReviewConfirmed]);
 
   useEffect(() => {
     async function loadProfilePrefill() {
@@ -1384,9 +1341,9 @@ export function NewCasePage() {
 
         if (profileAddress && profileZipCode.length === 8) {
           const hasMissingAddressFromCep =
-            (profileAddress.street ?? "").trim().length < 3 ||
-            (profileAddress.neighborhood ?? "").trim().length < 2 ||
-            (profileAddress.city ?? "").trim().length < 2 ||
+            (profileAddress.street ?? "").trim().length === 0 ||
+            (profileAddress.neighborhood ?? "").trim().length === 0 ||
+            (profileAddress.city ?? "").trim().length === 0 ||
             (profileAddress.state ?? "").trim().length !== 2;
 
           if (hasMissingAddressFromCep) {
@@ -1394,14 +1351,14 @@ export function NewCasePage() {
               const viaCepResponse = await fetch(`https://viacep.com.br/ws/${profileZipCode}/json/`);
               if (viaCepResponse.ok) {
                 const viaCepData = (await viaCepResponse.json()) as ViaCepResponse;
-                if (!viaCepData.erro) {
-                  if ((profileAddress.street ?? "").trim().length < 3) {
+                  if (!viaCepData.erro) {
+                  if ((profileAddress.street ?? "").trim().length === 0) {
                     profileAddress.street = viaCepData.logradouro?.trim() ?? profileAddress.street;
                   }
-                  if ((profileAddress.neighborhood ?? "").trim().length < 2) {
+                  if ((profileAddress.neighborhood ?? "").trim().length === 0) {
                     profileAddress.neighborhood = viaCepData.bairro?.trim() ?? profileAddress.neighborhood;
                   }
-                  if ((profileAddress.city ?? "").trim().length < 2) {
+                  if ((profileAddress.city ?? "").trim().length === 0) {
                     profileAddress.city = viaCepData.localidade?.trim() ?? profileAddress.city;
                   }
                   if ((profileAddress.state ?? "").trim().length !== 2) {
@@ -1431,10 +1388,10 @@ export function NewCasePage() {
         const hasCompleteProfileAddress = Boolean(
           profileAddress &&
             normalizeZipCode(profileAddress.cep ?? "").length === 8 &&
-            (profileAddress.street ?? "").trim().length >= 3 &&
+            (profileAddress.street ?? "").trim().length > 0 &&
             (profileAddress.number ?? "").trim().length > 0 &&
-            (profileAddress.neighborhood ?? "").trim().length >= 2 &&
-            (profileAddress.city ?? "").trim().length >= 2 &&
+            (profileAddress.neighborhood ?? "").trim().length > 0 &&
+            (profileAddress.city ?? "").trim().length > 0 &&
             (profileAddress.state ?? "").trim().length === 2
         );
         const hasValidProfileCpf = Boolean(profile.cpf && isValidCpf(profile.cpf));
@@ -1475,7 +1432,7 @@ export function NewCasePage() {
         if (!hasValidProfileCpf || !hasCompleteProfileAddress) {
           setProfileReadyForCase(false);
           setProfileReadyMessage(
-            "Antes de abrir um caso, complete seu cadastro em Minha Conta com CPF e endereço completo."
+            "Preencha CPF e endereço completos para continuar."
           );
           return;
         }
@@ -1485,7 +1442,7 @@ export function NewCasePage() {
       } catch {
         setProfileReadyForCase(false);
         setProfileReadyMessage(
-          "Não foi possível carregar seu cadastro agora. Acesse Minha Conta, confirme seus dados e tente novamente."
+          "Não foi possível carregar seu cadastro agora. Preencha os dados abaixo e salve para continuar."
         );
       } finally {
         setProfileCheckFinished(true);
@@ -1582,6 +1539,74 @@ export function NewCasePage() {
     }
   }
 
+  async function handleInlineProfileSave() {
+    setError(null);
+    setInlineProfileFeedback(null);
+
+    const normalizedCpf = normalizeCpf(cpf);
+    const normalizedZipCode = normalizeZipCode(claimantZipCode);
+    const trimmedStreet = claimantStreet.trim();
+    const trimmedNumber = claimantNumber.trim();
+    const trimmedNeighborhood = claimantNeighborhood.trim();
+    const trimmedCity = claimantCity.trim();
+    const trimmedState = claimantState.trim().toUpperCase();
+    const trimmedComplement = claimantComplement.trim();
+
+    if (!isValidCpf(normalizedCpf)) {
+      setError("Informe um CPF válido para salvar seu cadastro.");
+      return;
+    }
+
+    if (normalizedZipCode.length !== 8) {
+      setError("Informe um CEP válido com 8 dígitos.");
+      return;
+    }
+
+    if (!trimmedStreet || !trimmedNumber || !trimmedNeighborhood || !trimmedCity || trimmedState.length !== 2) {
+      setError("Preencha rua, número, bairro, cidade e UF para concluir seu cadastro.");
+      return;
+    }
+
+    setSavingInlineProfile(true);
+    try {
+      const response = await requestWithAuthRetry<AccountProfileResponse>("/v1/users/me", {
+        method: "PATCH",
+        body: {
+          cpf: normalizedCpf,
+          address: {
+            cep: normalizedZipCode,
+            street: trimmedStreet,
+            number: trimmedNumber,
+            complement: normalizeOptionalText(trimmedComplement),
+            neighborhood: trimmedNeighborhood,
+            city: trimmedCity,
+            state: trimmedState
+          }
+        } satisfies InlineProfilePatchPayload
+      });
+
+      setCpf(formatCpf(response.user.cpf ?? normalizedCpf));
+      setClaimantZipCode(formatZipCode(response.user.address?.cep ?? normalizedZipCode));
+      setClaimantStreet(response.user.address?.street ?? trimmedStreet);
+      setClaimantNumber(response.user.address?.number ?? trimmedNumber);
+      setClaimantComplement(response.user.address?.complement ?? trimmedComplement);
+      setClaimantNeighborhood(response.user.address?.neighborhood ?? trimmedNeighborhood);
+      setClaimantCity(response.user.address?.city ?? trimmedCity);
+      setClaimantState((response.user.address?.state ?? trimmedState).toUpperCase());
+      setProfileReadyForCase(true);
+      setProfileReadyMessage(null);
+      setInlineProfileFeedback("Cadastro salvo com sucesso. Você já pode continuar a criação do caso.");
+    } catch (nextError) {
+      const message =
+        nextError instanceof ApiError
+          ? extractValidationMessage(nextError)
+          : "Não foi possível salvar seus dados agora.";
+      setError(message);
+    } finally {
+      setSavingInlineProfile(false);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -1592,17 +1617,12 @@ export function NewCasePage() {
     }
 
     if (!profileReadyForCase) {
-      setError(profileReadyMessage ?? "Complete seu cadastro em Minha Conta antes de abrir um caso.");
+      setError(profileReadyMessage ?? "Complete seu cadastro para continuar.");
       return;
     }
 
-    if (!profileDataConfirmed) {
-      setError("Confirme os dados do seu cadastro antes de enviar o caso para análise.");
-      return;
-    }
-
-    if (!isChecklistComplete) {
-      setError("Conclua 100% do checklist antes de salvar e enviar para análise.");
+    if (!finalReviewConfirmed) {
+      setError("Revise os dados e confirme o envio na etapa final.");
       return;
     }
 
@@ -1612,13 +1632,13 @@ export function NewCasePage() {
     }
 
     const trimmedResumo = resumo.trim();
-    if (trimmedResumo.length < 20) {
-      setError("Resumo do caso deve ter pelo menos 20 caracteres.");
+    if (!trimmedResumo) {
+      setError("Preencha o resumo do caso.");
       return;
     }
 
     const trimmedClaimSubject = resolvedClaimSubject.trim();
-    if (trimmedClaimSubject.length < 5) {
+    if (!trimmedClaimSubject) {
       setError("Informe o assunto principal da reclamação.");
       return;
     }
@@ -1636,7 +1656,7 @@ export function NewCasePage() {
       return;
     }
 
-    if (trimmedStreet.length < 3) {
+    if (!trimmedStreet) {
       setError("Informe o logradouro do seu cadastro.");
       return;
     }
@@ -1646,12 +1666,12 @@ export function NewCasePage() {
       return;
     }
 
-    if (trimmedNeighborhood.length < 2) {
+    if (!trimmedNeighborhood) {
       setError("Informe o bairro do seu cadastro.");
       return;
     }
 
-    if (trimmedCity.length < 2) {
+    if (!trimmedCity) {
       setError("Informe a cidade do seu cadastro.");
       return;
     }
@@ -1668,7 +1688,7 @@ export function NewCasePage() {
     ].join(", ");
 
     const trimmedDefendantName = defendantName.trim();
-    if (trimmedDefendantName.length < 2) {
+    if (!trimmedDefendantName) {
       setError("Informe o nome da parte contrária.");
       return;
     }
@@ -1714,34 +1734,26 @@ export function NewCasePage() {
       return;
     }
 
-    if (!isPriorAttemptSectionValid) {
-      setError("Preencha corretamente os dados de tratativa prévia antes de enviar para análise.");
-      return;
-    }
-
-    const normalizedTimelineEvents = timelineEvents
+    const typedTimelineEvents = timelineEvents
       .map((item) => ({
         eventDate: item.eventDate.trim(),
         description: item.description.trim()
       }))
-      .filter((item) => item.eventDate.length > 0 || item.description.length > 0);
+      .filter((item) => item.eventDate.length > 0 && item.description.length > 0);
 
-    if (normalizedTimelineEvents.length === 0) {
-      setError("Informe pelo menos um evento na cronologia do caso.");
-      return;
-    }
-
-    for (const [index, item] of normalizedTimelineEvents.entries()) {
+    for (const [index, item] of typedTimelineEvents.entries()) {
       if (!isIsoDate(item.eventDate)) {
         setError(`Data inválida no evento ${index + 1}. Use o formato AAAA-MM-DD.`);
         return;
       }
-
-      if (item.description.length < 5) {
-        setError(`Descrição muito curta no evento ${index + 1}.`);
-        return;
-      }
     }
+
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const fallbackTimelineDescription = facts.trim() || trimmedResumo || "Relato inicial do caso.";
+    const normalizedTimelineEvents =
+      typedTimelineEvents.length > 0
+        ? typedTimelineEvents
+        : [{ eventDate: todayIso, description: fallbackTimelineDescription }];
 
     const normalizedPretensions: Array<{
       type: PetitionPretensionType;
@@ -1763,8 +1775,8 @@ export function NewCasePage() {
         return;
       }
 
-      if (config.requiresDetails && details.length < 3) {
-        setError(`Detalhe melhor "${config.label}".`);
+      if (config.requiresDetails && !details) {
+        setError(`Preencha os detalhes em "${config.label}".`);
         return;
       }
 
@@ -1777,35 +1789,26 @@ export function NewCasePage() {
 
     const structuredRequests = normalizedPretensions.map((item) => formatPretensionAsRequest(item));
     const freeRequests = parseRequests(requestsText);
-    for (const [index, request] of freeRequests.entries()) {
-      if (request.trim().length < 10) {
-        setError(`Pedido complementar ${index + 1} deve ter pelo menos 10 caracteres.`);
-        return;
-      }
-    }
-    const requests = [...structuredRequests, ...freeRequests];
+    const urgentRequestText = urgentRequest.trim();
+    const requests = [
+      ...structuredRequests,
+      ...freeRequests,
+      ...(urgentRequestText ? [`Pedido urgente: ${urgentRequestText}.`] : [])
+    ];
     if (requests.length === 0) {
-      setError("Informe ao menos uma pretensão ou um pedido complementar.");
+      setError("Informe seu pedido para a justiça.");
       return;
     }
 
     const trimmedFacts = facts.trim();
-    if (trimmedFacts.length < 30) {
-      setError("Descreva os fatos com pelo menos 30 caracteres.");
+    if (!trimmedFacts) {
+      setError("Conte seu caso para que possamos seguir com a análise.");
       return;
     }
 
-    const normalizedPriorAttemptChannel: PetitionPriorAttemptChannel | null =
-      priorAttemptMade && priorAttemptChannel ? priorAttemptChannel : null;
-    const normalizedPriorAttemptChannelOther =
-      priorAttemptMade &&
-      (normalizedPriorAttemptChannel === "outro" || normalizedPriorAttemptChannel === "direto_reclamado")
-        ? priorAttemptChannelOther.trim()
-        : null;
-    const normalizedPriorAttemptProtocol = priorAttemptMade ? priorAttemptProtocol.trim() || null : null;
-    const normalizedPriorAttemptHadProposal = priorAttemptMade ? priorAttemptHadProposal : null;
-    const normalizedPriorAttemptProposalDetails =
-      priorAttemptMade && priorAttemptHadProposal ? priorAttemptProposalDetails.trim() : null;
+    const manualClaimValue = parseClaimValue(claimValueInput);
+    const normalizedClaimValue =
+      manualClaimValue !== null ? manualClaimValue : claimValueTotal > 0 ? claimValueTotal : null;
 
     const trimmedLegalGrounds = AUTO_LEGAL_GROUNDS_TEXT;
 
@@ -1831,14 +1834,14 @@ export function NewCasePage() {
             pretensions: normalizedPretensions,
             evidence: evidence.trim() || null,
             attachments: [],
-            claimValue: claimValueTotal,
+            claimValue: normalizedClaimValue,
             hearingInterest,
-            priorAttemptMade,
-            priorAttemptChannel: normalizedPriorAttemptChannel,
-            priorAttemptChannelOther: normalizedPriorAttemptChannelOther || null,
-            priorAttemptProtocol: normalizedPriorAttemptProtocol || null,
-            priorAttemptHadProposal: normalizedPriorAttemptHadProposal,
-            priorAttemptProposalDetails: normalizedPriorAttemptProposalDetails || null
+            priorAttemptMade: false,
+            priorAttemptChannel: null,
+            priorAttemptChannelOther: null,
+            priorAttemptProtocol: null,
+            priorAttemptHadProposal: null,
+            priorAttemptProposalDetails: null
           }
         }
       });
@@ -1882,7 +1885,7 @@ export function NewCasePage() {
       pending.push("CEP válido");
     }
 
-    if (claimantStreet.trim().length < 3) {
+    if (claimantStreet.trim().length === 0) {
       pending.push("logradouro");
     }
 
@@ -1890,11 +1893,11 @@ export function NewCasePage() {
       pending.push("número");
     }
 
-    if (claimantNeighborhood.trim().length < 2) {
+    if (claimantNeighborhood.trim().length === 0) {
       pending.push("bairro");
     }
 
-    if (claimantCity.trim().length < 2) {
+    if (claimantCity.trim().length === 0) {
       pending.push("cidade");
     }
 
@@ -1927,10 +1930,9 @@ export function NewCasePage() {
       ) : shouldBlockCaseForm ? (
         <section className="workspace-panel">
           <div className="info-box">
-            <strong>Antes de abrir um novo caso, complete seu cadastro</strong>
+            <strong>Complete seus dados para continuar</strong>
             <span>
-              {profileReadyMessage ??
-                "Para evitar retrabalho, confirme CPF e endereço completos em Minha Conta antes de começar o formulário."}
+              {profileReadyMessage ?? "Preencha CPF e endereço abaixo para seguir sem sair desta tela."}
             </span>
             {missingProfileRequirements.length > 0 && (
               <>
@@ -1942,22 +1944,95 @@ export function NewCasePage() {
                 </ul>
               </>
             )}
+
+            <div className="address-grid">
+              <label>
+                CPF
+                <input
+                  type="text"
+                  value={cpf}
+                  onChange={(event) => setCpf(formatCpf(event.target.value))}
+                  placeholder="000.000.000-00"
+                  inputMode="numeric"
+                />
+              </label>
+              <label>
+                CEP
+                <input
+                  type="text"
+                  value={claimantZipCode}
+                  onChange={(event) => setClaimantZipCode(formatZipCode(event.target.value))}
+                  placeholder="00000-000"
+                  inputMode="numeric"
+                />
+              </label>
+              <label className="address-grid-span">
+                Rua
+                <input
+                  type="text"
+                  value={claimantStreet}
+                  onChange={(event) => setClaimantStreet(event.target.value)}
+                  placeholder="Rua / Avenida"
+                />
+              </label>
+              <label>
+                Número
+                <input
+                  type="text"
+                  value={claimantNumber}
+                  onChange={(event) => setClaimantNumber(event.target.value)}
+                  placeholder="Número"
+                />
+              </label>
+              <label>
+                Complemento
+                <input
+                  type="text"
+                  value={claimantComplement}
+                  onChange={(event) => setClaimantComplement(event.target.value)}
+                  placeholder="Opcional"
+                />
+              </label>
+              <label>
+                Bairro
+                <input
+                  type="text"
+                  value={claimantNeighborhood}
+                  onChange={(event) => setClaimantNeighborhood(event.target.value)}
+                  placeholder="Bairro"
+                />
+              </label>
+              <label>
+                Cidade
+                <input
+                  type="text"
+                  value={claimantCity}
+                  onChange={(event) => setClaimantCity(event.target.value)}
+                  placeholder="Cidade"
+                />
+              </label>
+              <label>
+                UF
+                <input
+                  type="text"
+                  value={claimantState}
+                  onChange={(event) => setClaimantState(event.target.value.toUpperCase())}
+                  placeholder="UF"
+                  maxLength={2}
+                />
+              </label>
+            </div>
+
             <div className="profile-actions">
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => navigate("/settings/profile?context=novo-caso")}
-              >
-                Ir para Minha Conta
-              </button>
-              <button type="button" className="ghost-button" onClick={() => navigate("/dashboard")}>
-                Voltar ao painel
+              <button type="button" className="secondary-button" onClick={() => void handleInlineProfileSave()} disabled={savingInlineProfile}>
+                {savingInlineProfile ? "Salvando..." : "Salvar dados e continuar"}
               </button>
             </div>
+            {inlineProfileFeedback && <p className="success-text">{inlineProfileFeedback}</p>}
           </div>
         </section>
       ) : (
-        <div className="case-layout">
+        <div className="case-layout case-layout--single">
           <form className="form-grid case-form" onSubmit={handleSubmit}>
             <h2>Dados do processo</h2>
             <p className="field-help">Rascunho salvo automaticamente neste dispositivo (exceto anexos).</p>
@@ -1982,7 +2057,7 @@ export function NewCasePage() {
             )}
 
             <label>
-              Seu CPF (carregado do cadastro)
+              Seu CPF
               <div className="inline-input">
                 <input
                   type="text"
@@ -2015,7 +2090,7 @@ export function NewCasePage() {
             )}
 
             <label>
-              Resumo do caso (mín. 20 caracteres)
+              Resumo do caso
               <textarea
                 value={resumo}
                 onChange={(event) => setResumo(limitPetitionText(event.target.value))}
@@ -2046,7 +2121,7 @@ export function NewCasePage() {
 
             {claimSubjectSelection === CLAIM_SUBJECT_OTHER_VALUE && (
               <label>
-                Descreva o assunto do caso (mín. 5 caracteres)
+                Descreva o assunto do caso
                 <input
                   type="text"
                   value={claimSubjectCustom}
@@ -2059,35 +2134,18 @@ export function NewCasePage() {
 
             <h2>Dados do seu cadastro</h2>
             <div className="info-box">
-              <strong>Endereço do seu cadastro (pré-carregado do perfil)</strong>
+              <strong>Endereço do seu cadastro</strong>
               <span>{claimantAddressSummary}</span>
               <span>
-                Para corrigir endereço ou CPF, acesse <strong>Minha Conta</strong> no menu lateral.
+                Para corrigir endereço ou CPF, acesse{" "}
+                <Link to="/settings/profile?context=novo-caso">Minha Conta</Link> na seção de endereço e CPF.
               </span>
             </div>
-            {!profileDataConfirmed && (
-              <div className="info-box">
-                <strong>Confirmação dos dados do cadastro</strong>
-                <span>Confirme que seu CPF e endereço acima estão atualizados antes de enviar o caso.</span>
-                <div className="profile-actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => setProfileDataConfirmed(true)}
-                  >
-                    Confirmar meus dados
-                  </button>
-                </div>
-              </div>
-            )}
-            {profileDataConfirmed && (
-              <p className="success-text">Dados confirmados. Você pode seguir com o envio para análise.</p>
-            )}
-            <h2>Dados de quem você está processando (parte contrária)</h2>
+            <h2>Contra quem você quer entrar com uma ação?</h2>
             <div className="info-box">
-              <strong>O que é a parte contrária?</strong>
+              <strong>Informe a pessoa ou empresa responsável pelo problema</strong>
               <span>
-                É a empresa ou pessoa que você entende ser responsável pelo problema e contra quem o caso será aberto.
+                Você pode preencher CPF ou CNPJ para facilitar a identificação da parte contrária.
               </span>
             </div>
             <label>
@@ -2103,7 +2161,7 @@ export function NewCasePage() {
             </label>
 
             <label>
-              Nome da parte contrária (mín. 2 caracteres)
+              Nome da parte contrária
               <input
                 type="text"
                 value={defendantName}
@@ -2153,283 +2211,44 @@ export function NewCasePage() {
               />
             </label>
 
-            <h2>Continue nos contando sobre o caso</h2>
-            <div className="petition-section">
-              <div className="petition-section-head">
-                <h3>Tentativa de solução antes da ação</h3>
-                <p>
-                  Informe se você já tentou resolver antes, seja por órgão de defesa do consumidor ou contato direto com
-                  a parte contrária.
-                </p>
-              </div>
-
-              <label>
-                Já houve tentativa para resolver o caso com{" "}
-                {defendantType === "pessoa_fisica" ? "o próprio acusado" : "a própria empresa"} ou órgão de proteção ao
-                consumidor? (Sim/Não)
-                <select
-                  value={priorAttemptMade ? "sim" : "nao"}
-                  onChange={(event) => setPriorAttemptMade(event.target.value === "sim")}
-                >
-                  <option value="nao">Não</option>
-                  <option value="sim">Sim</option>
-                </select>
-              </label>
-
-              {priorAttemptMade && (
-                <>
-                  <label>
-                    Qual foi o canal da tentativa de solução?
-                    <select
-                      value={priorAttemptChannel}
-                      onChange={(event) =>
-                        setPriorAttemptChannel(event.target.value as PetitionPriorAttemptChannel | "")
-                      }
-                      required
-                    >
-                      <option value="">Selecione</option>
-                      {priorAttemptChannelOptions.map((item) => (
-                        <option key={item.value} value={item.value}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  {priorAttemptChannel === "direto_reclamado" && (
-                    <label>
-                      Como foi a tentativa com {defendantType === "pessoa_fisica" ? "o próprio acusado" : "a própria empresa"}?
-                      (mín. 5 caracteres)
-                      <textarea
-                        value={priorAttemptChannelOther}
-                        onChange={(event) => setPriorAttemptChannelOther(limitPetitionText(event.target.value))}
-                        rows={3}
-                        placeholder={`Conte como foi o contato com ${defendantType === "pessoa_fisica" ? "o acusado" : "a empresa"} e qual retorno você recebeu.`}
-                        maxLength={PETITION_TEXT_MAX_LENGTH}
-                        required
-                      />
-                      <span className="field-help">
-                        {priorAttemptChannelOther.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
-                      </span>
-                    </label>
-                  )}
-
-                  {priorAttemptChannel === "outro" && (
-                    <label>
-                      Qual foi o órgão/canal? (mín. 3 caracteres)
-                      <input
-                        type="text"
-                        value={priorAttemptChannelOther}
-                        onChange={(event) => setPriorAttemptChannelOther(event.target.value)}
-                        placeholder="Ex.: plataforma regional, associação de defesa local, outro canal."
-                        required
-                      />
-                    </label>
-                  )}
-
-                  <label>
-                    {priorAttemptChannel === "direto_reclamado"
-                      ? "Número de protocolo (opcional, se houver)"
-                      : "Qual o protocolo de atendimento? (mín. 3 caracteres)"}
-                    <input
-                      type="text"
-                      value={priorAttemptProtocol}
-                      onChange={(event) => setPriorAttemptProtocol(event.target.value)}
-                      placeholder="Ex.: 2026-00012345"
-                      required={priorAttemptChannel !== "direto_reclamado"}
-                    />
-                  </label>
-
-                  <label>
-                    Nessa tratativa houve alguma proposta de acordo da {directAttemptTargetLabel}? (Sim/Não)
-                    <select
-                      value={
-                        priorAttemptHadProposal === null ? "" : priorAttemptHadProposal ? "sim" : "nao"
-                      }
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        if (value === "sim") {
-                          setPriorAttemptHadProposal(true);
-                          return;
-                        }
-
-                        if (value === "nao") {
-                          setPriorAttemptHadProposal(false);
-                          return;
-                        }
-
-                        setPriorAttemptHadProposal(null);
-                      }}
-                      required
-                    >
-                      <option value="">Selecione</option>
-                      <option value="sim">Sim</option>
-                      <option value="nao">Não</option>
-                    </select>
-                  </label>
-
-                  {priorAttemptHadProposal && (
-                    <label>
-                      Se sim, qual foi? (mín. 5 caracteres)
-                      <textarea
-                        value={priorAttemptProposalDetails}
-                        onChange={(event) =>
-                          setPriorAttemptProposalDetails(limitPetitionText(event.target.value))
-                        }
-                        rows={3}
-                        placeholder="Descreva objetivamente a proposta de acordo apresentada."
-                        maxLength={PETITION_TEXT_MAX_LENGTH}
-                        required
-                      />
-                      <span className="field-help">
-                        {priorAttemptProposalDetails.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
-                      </span>
-                    </label>
-                  )}
-                </>
-              )}
-            </div>
-
-            <div className="petition-section">
-              <div className="petition-section-head">
-                <h3>Cronologia dos eventos</h3>
-                <p>Registre os fatos em ordem de data para facilitar análise e geração da petição.</p>
-              </div>
-              <div className="timeline-event-list">
-                {timelineEvents.map((eventItem, index) => {
-                  const feedback = getTimelineEventFeedback(eventItem);
-                  return (
-                    <div key={`timeline-event-${index}`} className="timeline-event-row">
-                      <label>
-                        Evento {index + 1} - Data
-                        <input
-                          type="date"
-                          value={eventItem.eventDate}
-                          onChange={(event) => handleTimelineEventChange(index, "eventDate", event.target.value)}
-                        />
-                      </label>
-                      <label>
-                        Descrição do evento (mín. 5 caracteres)
-                        <textarea
-                          value={eventItem.description}
-                          onChange={(event) =>
-                            handleTimelineEventChange(index, "description", event.target.value)
-                          }
-                          rows={2}
-                          placeholder="Descreva o que aconteceu nessa data."
-                          maxLength={PETITION_TEXT_MAX_LENGTH}
-                        />
-                        <span className="field-help">
-                          {eventItem.description.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
-                        </span>
-                        <span
-                          className={
-                            feedback.tone === "success"
-                              ? "success-text"
-                              : feedback.tone === "error"
-                                ? "error-text"
-                                : "field-help"
-                          }
-                        >
-                          {feedback.message}
-                        </span>
-                      </label>
-                      <div className="timeline-event-actions">
-                        <button
-                          type="button"
-                          className="ghost-button"
-                          onClick={() => handleRemoveTimelineEvent(index)}
-                        >
-                          Remover
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <button type="button" className="secondary-button timeline-add-button" onClick={handleAddTimelineEvent}>
-                Adicionar evento
-              </button>
-              <p className="field-help">
-                Os eventos preenchidos são mantidos no rascunho automaticamente. O último evento também é enviado na análise.
-              </p>
-            </div>
-
-            <div className="petition-section">
-              <div className="petition-section-head">
-                <h3>Pretensão do cliente</h3>
-                <p>Selecione os pedidos desejados e detalhe valor ou condições quando necessário.</p>
-              </div>
-
-              <div className="pretension-grid">
-                {pretensionDrafts.map((draft) => {
-                  const option = getPretensionOption(draft.type);
-
-                  return (
-                    <div key={draft.type} className="pretension-card">
-                      <label className="pretension-check">
-                        <input
-                          type="checkbox"
-                          checked={draft.selected}
-                          onChange={(event) => handlePretensionSelection(draft.type, event.target.checked)}
-                        />
-                        <span>{option.label}</span>
-                      </label>
-
-                      {draft.selected && (
-                        <div className="pretension-fields">
-                          {option.requiresAmount && (
-                            <label>
-                              {option.amountLabel ?? "Valor"}
-                              <input
-                                type="text"
-                                value={draft.amountInput}
-                                onChange={(event) =>
-                                  handlePretensionFieldChange(draft.type, "amountInput", event.target.value)
-                                }
-                                onBlur={(event) =>
-                                  handlePretensionFieldChange(
-                                    draft.type,
-                                    "amountInput",
-                                    formatCurrencyInputOnBlur(event.target.value)
-                                  )
-                                }
-                                inputMode="decimal"
-                                placeholder="Ex: 1.500,00"
-                              />
-                            </label>
-                          )}
-
-                          <label>
-                            {option.detailsLabel ?? "Detalhes"}
-                            <textarea
-                              value={draft.details}
-                              onChange={(event) =>
-                                handlePretensionFieldChange(draft.type, "details", event.target.value)
-                              }
-                              rows={2}
-                              placeholder={option.detailsPlaceholder ?? "Descreva objetivamente o pedido."}
-                              maxLength={PETITION_TEXT_MAX_LENGTH}
-                            />
-                            <span className="field-help">
-                              {draft.details.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
-                            </span>
-                          </label>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <h2>O que você gostaria de conseguir com sua ação?</h2>
+            <label>
+              Qual é o seu pedido para a justiça?
+              <textarea
+                value={requestsText}
+                onChange={(event) => setRequestsText(limitPetitionText(event.target.value))}
+                rows={4}
+                placeholder="Ex.: Quero receber o valor pago de volta e cancelar a cobrança indevida."
+                maxLength={PETITION_TEXT_MAX_LENGTH}
+                required
+              />
+              <span className="field-help">
+                {requestsText.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
+              </span>
+            </label>
 
             <label>
-              Fatos (mín. 30 caracteres)
+              Existe algum pedido urgente para análise imediata do juiz? (opcional)
+              <textarea
+                value={urgentRequest}
+                onChange={(event) => setUrgentRequest(limitPetitionText(event.target.value))}
+                rows={3}
+                placeholder="Ex.: Nome negativado, bloqueio de conta, interrupção de serviço essencial."
+                maxLength={PETITION_TEXT_MAX_LENGTH}
+              />
+              <span className="field-help">
+                {urgentRequest.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
+              </span>
+            </label>
+
+            <h2>Conte para a gente o seu caso, com o máximo de detalhes possível</h2>
+            <label>
+              Relato do caso
               <textarea
                 value={facts}
                 onChange={(event) => setFacts(limitPetitionText(event.target.value))}
                 rows={7}
-                placeholder="Narrativa cronológica do que ocorreu, com datas e detalhes relevantes."
+                placeholder="Explique o que aconteceu, quando começou o problema, tentativas de solução e impactos no seu dia a dia."
                 maxLength={PETITION_TEXT_MAX_LENGTH}
                 required
               />
@@ -2438,23 +2257,9 @@ export function NewCasePage() {
               </span>
             </label>
 
-            <label>
-              Pedidos complementares (opcional, um por linha)
-              <textarea
-                value={requestsText}
-                onChange={(event) => setRequestsText(limitPetitionText(event.target.value))}
-                rows={6}
-                placeholder={"- Restituição em dobro dos valores cobrados indevidamente.\n- Indenização por danos morais.\n- Inversão do ônus da prova."}
-                maxLength={PETITION_TEXT_MAX_LENGTH}
-              />
-              <span className="field-help">
-                {requestsText.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
-              </span>
-            </label>
-
             <div className="evidence-field">
               <div className="evidence-field-header">
-                <span className="evidence-field-title">Provas e documentos</span>
+                <span className="evidence-field-title">Apresente para a gente os documentos do caso</span>
                 <button
                   type="button"
                   className="attachment-trigger"
@@ -2470,11 +2275,21 @@ export function NewCasePage() {
                 value={evidence}
                 onChange={(event) => setEvidence(limitPetitionText(event.target.value))}
                 rows={4}
-                placeholder="Contratos, conversas, notas fiscais, protocolos e demais evidências."
+                placeholder="Descreva os documentos e provas que está enviando."
                 maxLength={PETITION_TEXT_MAX_LENGTH}
               />
               <p className="field-help">
                 {evidence.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
+              </p>
+              <ul className="tips-checklist">
+                <li>Comprovante de endereço atual: conta de consumo (obrigatório)</li>
+                <li>Documento de identidade: RG, CPF ou CNH (obrigatório)</li>
+                <li>Contrato (quando houver)</li>
+                <li>Outros documentos relevantes do caso</li>
+              </ul>
+              <p className="field-help">
+                Precisa de ajuda para escolher os documentos? Consulte as orientações na{" "}
+                <Link to="/settings/profile">Minha Conta</Link>.
               </p>
               <input
                 ref={attachmentInputRef}
@@ -2506,60 +2321,66 @@ export function NewCasePage() {
               )}
             </div>
 
+            <h2>Qual o valor da sua causa?</h2>
             <label>
-              Valor total estimado da causa
+              Informe um valor estimado para a causa
               <input
                 type="text"
-                value={formatCurrencyBr(claimValueTotal)}
-                readOnly
+                value={claimValueInput}
+                onChange={(event) => setClaimValueInput(event.target.value)}
+                onBlur={(event) => setClaimValueInput(formatCurrencyInputOnBlur(event.target.value))}
+                inputMode="decimal"
+                placeholder="Ex.: R$ 5.000,00"
               />
               <span className="field-help">
-                Soma automática dos valores informados nas pretensões financeiras.
+                Valor estimado pelo cliente. A equipe irá conferir durante a análise.
               </span>
             </label>
 
-            <label>
-              Interesse em audiência de conciliação
-              <select
-                value={hearingInterest ? "sim" : "nao"}
-                onChange={(event) => setHearingInterest(event.target.value === "sim")}
-              >
-                <option value="sim">Sim</option>
-                <option value="nao">Não</option>
-              </select>
-            </label>
+            <div className="petition-section">
+              <div className="petition-section-head">
+                <h3>Revisão final antes do envio</h3>
+                <p>Confira os principais dados abaixo. Se precisar, edite os campos acima antes de finalizar.</p>
+              </div>
+              <ul className="tips-checklist" aria-label="Resumo da petição">
+                <li>
+                  <strong>Parte contrária:</strong>{" "}
+                  {defendantName.trim() || "Não informado"}
+                </li>
+                <li>
+                  <strong>Pedido para a justiça:</strong>{" "}
+                  {requestsText.trim() || "Não informado"}
+                </li>
+                <li>
+                  <strong>Pedido urgente:</strong>{" "}
+                  {urgentRequest.trim() || "Não informado"}
+                </li>
+                <li>
+                  <strong>Valor estimado:</strong>{" "}
+                  {parseClaimValue(claimValueInput) !== null
+                    ? formatCurrencyBr(parseClaimValue(claimValueInput) ?? 0)
+                    : "Não informado"}
+                </li>
+              </ul>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={finalReviewConfirmed}
+                  onChange={(event) => setFinalReviewConfirmed(event.target.checked)}
+                />{" "}
+                Li e confirmo que revisei os dados antes do envio.
+              </label>
+            </div>
 
             {error && <p className="error-text">{error}</p>}
 
             <button
               type="submit"
-              disabled={submitting || !profileReadyForCase || !hasVaras || !varaId || !isChecklistComplete}
+              disabled={submitting || !profileReadyForCase || !hasVaras || !varaId || !finalReviewConfirmed}
             >
               {submitting ? "Salvando..." : "Salvar e enviar para análise"}
             </button>
-            {!isChecklistComplete && (
-              <p className="field-help">
-                Checklist incompleto: {completedChecklistSteps}/{caseChecklist.length} etapas concluídas.
-              </p>
-            )}
           </form>
-
-          <aside className="workspace-panel tips-card tips-card--compact">
-            <h2>Checklist</h2>
-            <p className="tips-checklist-progress">
-              {completedChecklistSteps}/{caseChecklist.length} concluído
-            </p>
-            <ul className="tips-checklist" aria-label="Checklist da petição">
-              {caseChecklist.map((item) => (
-                <li key={item.id} className={item.done ? "is-done" : "is-pending"}>
-                  {item.label}
-                </li>
-              ))}
-            </ul>
-            <div className="tips-footer">
-              <p>Somente com checklist completo o sistema libera o envio para análise.</p>
-            </div>
-          </aside>
         </div>
       )}
     </section>

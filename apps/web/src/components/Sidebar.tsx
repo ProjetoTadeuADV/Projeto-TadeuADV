@@ -48,70 +48,6 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
           />
         </svg>
       );
-    case "newCase":
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path
-            d="M12 5v14M5 12h14"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-        </svg>
-      );
-    case "messages":
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path
-            d="M6.5 7.2h11a2.3 2.3 0 0 1 2.3 2.3v6.2a2.3 2.3 0 0 1-2.3 2.3h-7l-4.3 3v-3h-.7a2.3 2.3 0 0 1-2.3-2.3V9.5a2.3 2.3 0 0 1 2.3-2.3z"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-    case "intake":
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path
-            d="M7 4.8h10M7 9.8h10M7 14.8h7M5.5 3.8h13a1.7 1.7 0 0 1 1.7 1.7v13a1.7 1.7 0 0 1-1.7 1.7h-13a1.7 1.7 0 0 1-1.7-1.7v-13a1.7 1.7 0 0 1 1.7-1.7z"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-    case "workflow":
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path
-            d="M4 7.2h8.2M14.6 7.2h5.4M9.8 4.8l2.4 2.4-2.4 2.4M20 16.8h-8.2M9.4 16.8H4M14.2 14.4l-2.4 2.4 2.4 2.4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-    case "reports":
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path
-            d="M5 19.2V12M11.2 19.2V8.5M17.4 19.2V5M3.8 20h16.4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.9"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
     default:
       return null;
   }
@@ -119,7 +55,7 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
 
 export function Sidebar() {
   const { isMasterUser, canCreateCases } = useAuth();
-  const { isExpanded, handleMouseEnter, handleMouseLeave } = useSidebar();
+  const { isExpanded, isMobile, closeSidebar, handleMouseEnter, handleMouseLeave } = useSidebar();
   const location = useLocation();
   const [hoveredParentId, setHoveredParentId] = useState<string | null>(null);
   const [openedParentId, setOpenedParentId] = useState<string | null>(null);
@@ -158,10 +94,7 @@ export function Sidebar() {
       aria-label="Menu lateral"
     >
       <div className="sidebar-brand">
-        <span className="sidebar-brand-emblem" aria-hidden="true">
-          {"\u2696"}
-        </span>
-        <span className="sidebar-brand-label">DoutorEu</span>
+        <span className="sidebar-brand-label">{isExpanded ? "DoutorEu" : "Dr"}</span>
       </div>
       <p className="sidebar-caption">Navegação</p>
 
@@ -177,6 +110,11 @@ export function Sidebar() {
                 className={({ isActive }) =>
                   isActive ? "sidebar-item sidebar-item--active" : "sidebar-item"
                 }
+                onClick={() => {
+                  if (isMobile) {
+                    closeSidebar();
+                  }
+                }}
               >
                 <span className="sidebar-icon">
                   <SidebarIcon name={item.icon} />
@@ -225,6 +163,11 @@ export function Sidebar() {
                         ? "sidebar-submenu-item sidebar-submenu-item--active"
                         : "sidebar-submenu-item"
                     }
+                    onClick={() => {
+                      if (isMobile) {
+                        closeSidebar();
+                      }
+                    }}
                   >
                     {child.label}
                   </NavLink>

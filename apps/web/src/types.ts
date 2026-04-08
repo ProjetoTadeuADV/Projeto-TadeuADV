@@ -82,12 +82,18 @@ export type CaseWorkflowStep =
   | "closed";
 
 export type CaseTimelineStage =
-  | "ajuizamento"
+  | "preparacao-peticao-inicial"
+  | "ajuizamento-acao"
+  | "contestacao"
+  | "replica"
   | "audiencia-conciliacao"
   | "sentenca"
-  | "acordo"
+  | "recurso-inominado"
   | "transito-julgado"
-  | "receber-acao";
+  | "inicio-cumprimento-sentenca"
+  | "intimacao-devedor-pagamento"
+  | "pagamento-divida"
+  | "levantamento-valor";
 
 export type CaseMessageSenderRole = "client" | "operator" | "master" | "system";
 

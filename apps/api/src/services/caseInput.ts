@@ -28,7 +28,7 @@ const petitionTimelineEventSchema = z.object({
     .refine((value) => !Number.isNaN(new Date(`${value}T00:00:00.000Z`).getTime()), {
       message: "Data do evento inválida."
     }),
-  description: z.string().trim().min(5).max(PETITION_TEXT_MAX_LENGTH)
+  description: z.string().trim().min(1).max(PETITION_TEXT_MAX_LENGTH)
 });
 
 const petitionPretensionSchema = z
@@ -52,19 +52,19 @@ const petitionPretensionSchema = z
 const petitionInitialSchema = z
   .object({
     claimantAddress: z.string().trim().min(8).max(300),
-    claimSubject: z.string().trim().min(5).max(160),
+    claimSubject: z.string().trim().min(1).max(160),
     defendantType: z.enum(["pessoa_fisica", "pessoa_juridica", "nao_informado"]),
-    defendantName: z.string().trim().min(2).max(200),
+    defendantName: z.string().trim().min(1).max(200),
     defendantDocument: z.string().trim().min(11).max(32),
     defendantAddress: z.string().trim().max(300).nullable().optional(),
-    facts: z.string().trim().min(30).max(PETITION_TEXT_MAX_LENGTH),
-    legalGrounds: z.string().trim().min(30).max(PETITION_TEXT_MAX_LENGTH),
+    facts: z.string().trim().min(1).max(PETITION_TEXT_MAX_LENGTH),
+    legalGrounds: z.string().trim().min(1).max(PETITION_TEXT_MAX_LENGTH),
     requests: z
       .array(
         z
           .string()
           .trim()
-          .min(10, "Cada pedido deve ter no mínimo 10 caracteres.")
+          .min(1, "Cada pedido deve ter ao menos 1 caractere.")
           .max(PETITION_TEXT_MAX_LENGTH)
       )
       .min(1, "Informe ao menos um pedido.")
@@ -149,7 +149,7 @@ const petitionInitialSchema = z
 const createCaseSchema = z.object({
   varaId: z.string().trim().min(1),
   cpf: z.string().trim().min(11),
-  resumo: z.string().trim().min(10).max(PETITION_TEXT_MAX_LENGTH),
+  resumo: z.string().trim().min(1).max(PETITION_TEXT_MAX_LENGTH),
   petitionInitial: petitionInitialSchema.optional()
 });
 
@@ -251,12 +251,18 @@ const casePetitionProgressSchema = z.object({
 
 const caseTimelineStageSchema = z.object({
   stage: z.enum([
-    "ajuizamento",
+    "preparacao-peticao-inicial",
+    "ajuizamento-acao",
+    "contestacao",
+    "replica",
     "audiencia-conciliacao",
     "sentenca",
-    "acordo",
+    "recurso-inominado",
     "transito-julgado",
-    "receber-acao"
+    "inicio-cumprimento-sentenca",
+    "intimacao-devedor-pagamento",
+    "pagamento-divida",
+    "levantamento-valor"
   ]),
   details: z.string().trim().max(5000).nullable().optional(),
   checklist: z

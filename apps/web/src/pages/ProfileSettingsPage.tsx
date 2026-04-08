@@ -1419,8 +1419,8 @@ export function ProfileSettingsPage() {
               </div>
 
               <div className="resumo-box">
-                <strong>Conta bancária para retirada</strong>
-                <p>Informe a conta que deve receber os valores quando solicitar uma retirada.</p>
+                <strong>Conta bancária para levantamento</strong>
+                <p>Informe a conta que deve receber os valores quando solicitar um levantamento.</p>
               </div>
 
               <div className="address-grid">

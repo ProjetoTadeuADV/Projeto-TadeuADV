@@ -71,21 +71,33 @@ const caseAttachmentUpload = multer({
 });
 
 const CASE_TIMELINE_STAGE_LABELS: Record<CaseTimelineStage, string> = {
-  ajuizamento: "Ajuizamento",
+  "preparacao-peticao-inicial": "Preparação da Petição Inicial",
+  "ajuizamento-acao": "Ajuizamento da Ação",
+  contestacao: "Contestação",
+  replica: "Réplica",
   "audiencia-conciliacao": "Audiência de conciliação",
   sentenca: "Sentença",
-  acordo: "Acordo",
+  "recurso-inominado": "Recurso Inominado",
   "transito-julgado": "Trânsito em julgado",
-  "receber-acao": "Receber a ação"
+  "inicio-cumprimento-sentenca": "Início do Cumprimento da Sentença",
+  "intimacao-devedor-pagamento": "Intimação do Devedor para Pagamento",
+  "pagamento-divida": "Pagamento da Dívida",
+  "levantamento-valor": "Levantamento do Valor"
 };
 
 const TIMELINE_STAGE_TO_MOVEMENT_STAGE: Record<CaseTimelineStage, CaseMovementRecord["stage"]> = {
-  ajuizamento: "triagem",
+  "preparacao-peticao-inicial": "triagem",
+  "ajuizamento-acao": "protocolo",
+  contestacao: "peticao",
+  replica: "peticao",
   "audiencia-conciliacao": "conciliacao",
   sentenca: "peticao",
-  acordo: "solucao",
+  "recurso-inominado": "andamento",
   "transito-julgado": "andamento",
-  "receber-acao": "solucao"
+  "inicio-cumprimento-sentenca": "andamento",
+  "intimacao-devedor-pagamento": "andamento",
+  "pagamento-divida": "solucao",
+  "levantamento-valor": "solucao"
 };
 
 function runCaseAttachmentUpload(req: Request, res: Response): Promise<Express.Multer.File[]> {
@@ -388,7 +400,7 @@ function normalizeConciliationAttempts(
 function defaultProcedureProgress(): NonNullable<CaseRecord["procedureProgress"]> {
   return {
     timeline: {
-      currentStage: "ajuizamento",
+      currentStage: "preparacao-peticao-inicial",
       notes: null,
       updatedAt: null,
       updatedByUserId: null,
@@ -430,7 +442,7 @@ function resolveProcedureProgress(caseItem: CaseRecord): NonNullable<CaseRecord[
 
   return {
     timeline: {
-      currentStage: base.timeline?.currentStage ?? "ajuizamento",
+      currentStage: base.timeline?.currentStage ?? "preparacao-peticao-inicial",
       notes: base.timeline?.notes ?? null,
       updatedAt: base.timeline?.updatedAt ?? null,
       updatedByUserId: base.timeline?.updatedByUserId ?? null,
@@ -3401,7 +3413,7 @@ export function createV1Router(deps: AppDependencies) {
         const nextWorkflow =
           currentCase.reviewDecision === "accepted" &&
           currentCase.workflowStep === "triage" &&
-          payload.stage !== "ajuizamento"
+          payload.stage !== "preparacao-peticao-inicial"
             ? "in_progress"
             : currentCase.workflowStep;
 

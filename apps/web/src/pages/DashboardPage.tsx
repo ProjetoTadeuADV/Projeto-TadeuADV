@@ -41,7 +41,6 @@ const WORKFLOW_LABEL: Record<CaseRecord["workflowStep"], string> = {
 };
 
 type StatusFilter = "todos" | CaseRecord["status"];
-type SortOption = "updated_desc" | "updated_asc" | "created_desc" | "created_asc";
 type SaleProposalPopupNotice = {
   caseId: string;
   caseTitle: string;
@@ -68,40 +67,76 @@ interface WithdrawalRequestResponse {
 
 const CASE_TIMELINE_STEPS = [
   {
-    key: "ajuizamento",
-    label: "Ajuizamento",
+    key: "preparacao-peticao-inicial",
+    label: "Preparação da Petição Inicial",
+    symbol: "PP",
+    description: "Organização das informações e documentos para montar a petição."
+  },
+  {
+    key: "ajuizamento-acao",
+    label: "Ajuizamento da Ação",
     symbol: "AJ",
-    description: "Protocolo inicial da ação para abertura formal do processo."
+    description: "Protocolo da ação no sistema do tribunal."
+  },
+  {
+    key: "contestacao",
+    label: "Contestação",
+    symbol: "CT",
+    description: "Apresentação da defesa da parte contrária."
+  },
+  {
+    key: "replica",
+    label: "Réplica",
+    symbol: "RP",
+    description: "Manifestação de resposta à contestação."
   },
   {
     key: "audiencia-conciliacao",
     label: "Audiência de conciliação",
     symbol: "AC",
-    description: "Tentativa de acordo entre as partes para solução amigável."
+    description: "Tentativa de acordo entre as partes."
   },
   {
     key: "sentenca",
     label: "Sentença",
     symbol: "ST",
-    description: "Decisão judicial proferida sobre o mérito do caso."
+    description: "Decisão judicial sobre o caso."
   },
   {
-    key: "acordo",
-    label: "Acordo",
-    symbol: "AO",
-    description: "Composição firmada entre as partes para encerramento da disputa."
+    key: "recurso-inominado",
+    label: "Recurso Inominado",
+    symbol: "RI",
+    description: "Apresentação de recurso contra a sentença."
   },
   {
     key: "transito-julgado",
     label: "Trânsito em julgado",
     symbol: "TJ",
-    description: "Momento em que não cabem mais recursos contra a decisão."
+    description: "Momento em que não cabem mais recursos."
   },
   {
-    key: "receber-acao",
-    label: "Receber a ação",
-    symbol: "RX",
-    description: "Fase de liquidação/recebimento do resultado financeiro da ação."
+    key: "inicio-cumprimento-sentenca",
+    label: "Início do Cumprimento da Sentença",
+    symbol: "CS",
+    description: "Abertura da fase de cumprimento da sentença."
+  },
+  {
+    key: "intimacao-devedor-pagamento",
+    label: "Intimação do Devedor para Pagamento",
+    symbol: "ID",
+    description: "Intimação para que o devedor realize o pagamento."
+  },
+  {
+    key: "pagamento-divida",
+    label: "Pagamento da Dívida",
+    symbol: "PG",
+    description: "Registro do pagamento devido no processo."
+  },
+  {
+    key: "levantamento-valor",
+    label: "Levantamento do Valor",
+    symbol: "LV",
+    description: "Liberação e levantamento do valor disponível."
   }
 ] as const;
 
@@ -288,43 +323,51 @@ function getTimelineStepIndex(stage: string | null | undefined): number {
 }
 
 function resolveTimelineStage(item: CaseRecord): CaseTimelineStageKey {
-  const manualStage = item.procedureProgress?.timeline?.currentStage;
-  if (manualStage && getTimelineStepIndex(manualStage) >= 0) {
-    return manualStage as CaseTimelineStageKey;
+  const manualStage = item.procedureProgress?.timeline?.currentStage as string | undefined;
+  if (manualStage) {
+    const legacyStageMap: Record<string, CaseTimelineStageKey> = {
+      ajuizamento: "ajuizamento-acao",
+      acordo: "audiencia-conciliacao",
+      "receber-acao": "levantamento-valor"
+    };
+    const mappedStage = legacyStageMap[manualStage] ?? (manualStage as CaseTimelineStageKey);
+    if (getTimelineStepIndex(mappedStage) >= 0) {
+      return mappedStage;
+    }
   }
 
-  let progress = 0;
+  let progress = 1;
 
   if (item.reviewDecision === "accepted" || item.workflowStep !== "triage") {
-    progress = Math.max(progress, 1);
+    progress = Math.max(progress, 2);
   }
 
   const conciliationAttempts = item.procedureProgress?.conciliation?.attempts ?? [];
   if (item.procedureProgress?.conciliation?.contactedDefendant || conciliationAttempts.length > 0) {
-    progress = Math.max(progress, 2);
+    progress = Math.max(progress, 5);
   }
 
   const hasSentenceChecklist = Boolean(
     item.procedureProgress?.petition?.checklist?.some((check) => check.id === "sentenca" && check.done)
   );
   if (hasSentenceChecklist) {
-    progress = Math.max(progress, 3);
-  }
-
-  if (item.procedureProgress?.conciliation?.agreementReached) {
-    progress = Math.max(progress, 4);
+    progress = Math.max(progress, 6);
   }
 
   const isClosed = item.workflowStep === "closed" || item.status === "encerrado";
   if (isClosed) {
-    progress = Math.max(progress, 5);
+    progress = Math.max(progress, 8);
   }
 
   const hasPaymentReceived =
     item.serviceFee?.status === "paid" ||
     (item.charges ?? []).some((charge) => charge.status === "received" || charge.status === "confirmed");
   if (isClosed && hasPaymentReceived) {
-    progress = Math.max(progress, 6);
+    progress = Math.max(progress, 11);
+  }
+
+  if (item.saleRequest?.payoutStatus === "transfer_sent") {
+    progress = Math.max(progress, 12);
   }
 
   const normalizedProgress = Math.min(Math.max(progress, 1), CASE_TIMELINE_STEPS.length);
@@ -382,7 +425,6 @@ export function DashboardPage() {
   const [responsibleDraftByCaseId, setResponsibleDraftByCaseId] = useState<Record<string, string[]>>({});
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos");
-  const [sortBy, setSortBy] = useState<SortOption>("updated_desc");
   const [expandedCaseId, setExpandedCaseId] = useState<string | null>(null);
   const [saleProposalNotice, setSaleProposalNotice] = useState<SaleProposalPopupNotice | null>(null);
   const [saleRequestPopupCaseId, setSaleRequestPopupCaseId] = useState<string | null>(null);
@@ -555,22 +597,8 @@ export function DashboardPage() {
             return content.includes(normalizedSearch);
           });
 
-    return [...bySearch].sort((a, b) => {
-      if (sortBy === "updated_desc") {
-        return a.updatedAt < b.updatedAt ? 1 : -1;
-      }
-
-      if (sortBy === "updated_asc") {
-        return a.updatedAt > b.updatedAt ? 1 : -1;
-      }
-
-      if (sortBy === "created_desc") {
-        return a.createdAt < b.createdAt ? 1 : -1;
-      }
-
-      return a.createdAt > b.createdAt ? 1 : -1;
-    });
-  }, [normalizedSearch, sortBy, statusFilter, visibleCases]);
+    return bySearch;
+  }, [normalizedSearch, statusFilter, visibleCases]);
 
   const operatorOptions = useMemo(() => operators, [operators]);
   const saleRequestPopupCase = useMemo(
@@ -648,12 +676,11 @@ export function DashboardPage() {
   const displayedCasesCount = canAccessAdmin
     ? myAssignedCases.length + openOtherCases.length + closedCases.length
     : clientOpenCases.length + clientClosedCases.length;
-  const hasActiveFilters = normalizedSearch.length > 0 || statusFilter !== "todos" || sortBy !== "updated_desc";
+  const hasActiveFilters = normalizedSearch.length > 0 || statusFilter !== "todos";
 
   function resetFilters() {
     setSearch("");
     setStatusFilter("todos");
-    setSortBy("updated_desc");
   }
 
   function markSaleProposalNoticeAsSeen(notice: SaleProposalPopupNotice | null) {
@@ -775,14 +802,14 @@ export function DashboardPage() {
     }
 
     if (clientPendingPayoutBalance <= 0) {
-      showWithdrawalBottomBar("info", "Não há valor disponível para retirada no momento.");
+      showWithdrawalBottomBar("info", "Não há valor disponível para levantamento no momento.");
       return;
     }
 
     if (!hasRegisteredBankAccount(accountProfile)) {
       showWithdrawalBottomBar(
         "error",
-        "Para retirar o valor, é necessário cadastrar uma conta bancária na página",
+        "Para fazer o levantamento, é necessário cadastrar uma conta bancária na página",
         "/settings/profile"
       );
       return;
@@ -795,9 +822,12 @@ export function DashboardPage() {
         method: "POST",
         token
       });
-      showWithdrawalBottomBar("success", result.message);
+      showWithdrawalBottomBar("success", result.message.replace(/retirada/gi, "levantamento"));
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Não foi possível solicitar a retirada agora.";
+      const message =
+        err instanceof ApiError
+          ? err.message.replace(/retirada/gi, "levantamento")
+          : "Não foi possível solicitar o levantamento agora.";
       showWithdrawalBottomBar("error", message);
     } finally {
       setRequestingWithdrawal(false);
@@ -973,7 +1003,7 @@ export function DashboardPage() {
                     {formatDate(item.createdAt)}
                   </span>
                   <span>
-                    <small>Em que pé está</small>
+                    <small>Etapa atual</small>
                     <strong>{WORKFLOW_LABEL[item.workflowStep]}</strong>
                   </span>
                 </div>
@@ -1288,9 +1318,6 @@ export function DashboardPage() {
       <section className="workspace-hero workspace-hero--simple">
         <div className={canAccessAdmin ? "workspace-hero-grid" : "workspace-hero-grid dashboard-hero-grid"}>
           <div className="dashboard-hero-main">
-            <p className="hero-kicker">
-              {canAccessAdmin ? (isMasterUser ? "Painel administrativo" : "Painel do operador") : "Área do cliente"}
-            </p>
             <h1>{canAccessAdmin ? (isMasterUser ? "Todos os casos" : "Meus casos designados") : "Meus casos"}</h1>
             <p>
               {canAccessAdmin
@@ -1298,24 +1325,19 @@ export function DashboardPage() {
                   ? "Visualize todos os casos cadastrados, faça alocações e acompanhe as movimentações."
                   : "Acompanhe os casos designados para você e registre as movimentações operacionais."
                 : canCreateCases
-                  ? "Acompanhe as atualizações do caso, respostas da conciliação e próximos passos."
+                  ? "Acompanhe as atualizações do seu caso em tempo real."
                   : "Visualize os atendimentos em modo somente leitura."}
             </p>
-            {canCreateCases && (
+            {!canAccessAdmin && (
               <div className="hero-cta">
-                <Link to="/cases/new" className="hero-primary">
-                  Abrir novo caso
-                </Link>
-                {!canAccessAdmin && (
-                  <button
-                    type="button"
-                    className="hero-secondary"
-                    onClick={() => void handleRequestWithdrawal()}
-                    disabled={requestingWithdrawal}
-                  >
-                    {requestingWithdrawal ? "Solicitando..." : "Retirada"}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="hero-secondary"
+                  onClick={() => void handleRequestWithdrawal()}
+                  disabled={requestingWithdrawal}
+                >
+                  {requestingWithdrawal ? "Solicitando..." : "Levantamento"}
+                </button>
               </div>
             )}
 
@@ -1332,7 +1354,7 @@ export function DashboardPage() {
           </div>
         </div>
 
-        <ul className="workspace-kpis">
+        <ul className="workspace-kpis dashboard-kpis">
           <li>
             <strong>{totalCases}</strong>
             <span>Total de casos</span>
@@ -1391,16 +1413,6 @@ export function DashboardPage() {
             </select>
           </label>
 
-          <label>
-            <span>Ordenar</span>
-            <select value={sortBy} onChange={(event) => setSortBy(event.target.value as SortOption)}>
-              <option value="updated_desc">Atualização mais recente</option>
-              <option value="updated_asc">Atualização mais antiga</option>
-              <option value="created_desc">Abertura mais recente</option>
-              <option value="created_asc">Abertura mais antiga</option>
-            </select>
-          </label>
-
           {hasActiveFilters && (
             <button type="button" className="ghost-button case-filters-clear" onClick={resetFilters}>
               Limpar filtros
@@ -1428,11 +1440,6 @@ export function DashboardPage() {
                 ? "Crie seu primeiro caso para iniciar o acompanhamento."
                 : "Este perfil está em modo somente leitura."}
             </p>
-            {canCreateCases && (
-              <Link to="/cases/new" className="primary-link">
-                Criar caso
-              </Link>
-            )}
           </div>
         )}
 

@@ -41,22 +41,58 @@ const WORKFLOW_LABEL: Record<CaseRecord["workflowStep"], string> = {
 
 const CASE_TIMELINE_STEPS = [
   {
-    key: "ajuizamento",
-    label: "Ajuizamento",
-    symbol: "AJ",
-    description: "Protocolo inicial da ação no processo.",
+    key: "preparacao-peticao-inicial",
+    label: "Preparação da Petição Inicial",
+    symbol: "PP",
+    description: "Organização dos dados e documentos para montar a petição.",
     connectionLabel: "Petição",
     checklistTemplate: [
-      { id: "peticao-criada", label: "Petição criada" },
-      { id: "peticao-enviada", label: "Petição enviada/protocolada" },
-      { id: "caso-aceito", label: "Aceite formal do caso" }
+      { id: "dados-iniciais-conferidos", label: "Dados iniciais conferidos" },
+      { id: "documentos-organizados", label: "Documentos organizados" },
+      { id: "peticao-revisada", label: "Petição revisada" }
+    ]
+  },
+  {
+    key: "ajuizamento-acao",
+    label: "Ajuizamento da Ação",
+    symbol: "AJ",
+    description: "Protocolo da ação no tribunal.",
+    connectionLabel: "Petição",
+    checklistTemplate: [
+      { id: "peticao-protocolada", label: "Petição protocolada" },
+      { id: "comprovante-protocolo", label: "Comprovante de protocolo registrado" },
+      { id: "numero-processo", label: "Número do processo confirmado" }
+    ]
+  },
+  {
+    key: "contestacao",
+    label: "Contestação",
+    symbol: "CT",
+    description: "Defesa apresentada pela parte contrária.",
+    connectionLabel: "Petição",
+    checklistTemplate: [
+      { id: "contestacao-juntada", label: "Contestação juntada aos autos" },
+      { id: "prazo-resposta", label: "Prazo de resposta validado" },
+      { id: "pontos-principais", label: "Pontos principais da defesa registrados" }
+    ]
+  },
+  {
+    key: "replica",
+    label: "Réplica",
+    symbol: "RP",
+    description: "Resposta à contestação.",
+    connectionLabel: "Petição",
+    checklistTemplate: [
+      { id: "replica-elaborada", label: "Réplica elaborada" },
+      { id: "replica-protocolada", label: "Réplica protocolada" },
+      { id: "comprovante-replica", label: "Comprovante da réplica registrado" }
     ]
   },
   {
     key: "audiencia-conciliacao",
     label: "Audiência de conciliação",
     symbol: "AC",
-    description: "Tentativa formal de conciliação entre as partes.",
+    description: "Tentativa de acordo entre as partes.",
     connectionLabel: "Conciliação",
     checklistTemplate: [
       { id: "audiencia-confirmada", label: "Audiência confirmada" },
@@ -68,48 +104,84 @@ const CASE_TIMELINE_STEPS = [
     key: "sentenca",
     label: "Sentença",
     symbol: "ST",
-    description: "Decisão judicial sobre o mérito da causa.",
+    description: "Decisão judicial sobre o caso.",
     connectionLabel: "Petição",
     checklistTemplate: [
-      { id: "provas-juntadas", label: "Provas e peças complementares juntadas" },
-      { id: "manifestacao-final", label: "Manifestação final registrada" },
+      { id: "alegacoes-finais", label: "Alegações finais registradas" },
+      { id: "sentenca-disponivel", label: "Sentença disponibilizada nos autos" },
       { id: "sentenca-publicada", label: "Sentença publicada" }
     ]
   },
   {
-    key: "acordo",
-    label: "Acordo",
-    symbol: "AO",
-    description: "Composição amigável registrada pelas partes.",
-    connectionLabel: "Conciliação",
+    key: "recurso-inominado",
+    label: "Recurso Inominado",
+    symbol: "RI",
+    description: "Recurso apresentado contra a sentença.",
+    connectionLabel: "Petição",
     checklistTemplate: [
-      { id: "proposta-enviada", label: "Proposta de acordo enviada" },
-      { id: "termos-validados", label: "Termos validados pelas partes" },
-      { id: "acordo-assinado", label: "Acordo assinado" }
+      { id: "recurso-avaliado", label: "Necessidade de recurso avaliada" },
+      { id: "recurso-protocolado", label: "Recurso protocolado" },
+      { id: "contrarrazoes-acompanhadas", label: "Contrarrazões acompanhadas" }
     ]
   },
   {
     key: "transito-julgado",
     label: "Trânsito em julgado",
     symbol: "TJ",
-    description: "Fim do prazo recursal, decisão definitiva.",
+    description: "Fim dos recursos e decisão definitiva.",
     connectionLabel: "Petição",
     checklistTemplate: [
       { id: "prazo-recursal", label: "Prazo recursal encerrado" },
       { id: "certidao-transito", label: "Certidão de trânsito registrada" },
-      { id: "cumprimento-iniciado", label: "Cumprimento de sentença iniciado" }
+      { id: "decisao-definitiva", label: "Decisão definitiva confirmada" }
     ]
   },
   {
-    key: "receber-acao",
-    label: "Receber a ação",
-    symbol: "RX",
-    description: "Etapa financeira para efetivo recebimento do resultado.",
+    key: "inicio-cumprimento-sentenca",
+    label: "Início do Cumprimento da Sentença",
+    symbol: "CS",
+    description: "Início da fase de cumprimento da sentença.",
     connectionLabel: "Pagamentos",
     checklistTemplate: [
-      { id: "cobranca-gerada", label: "Cobrança/execução financeira registrada" },
-      { id: "recebimento-confirmado", label: "Recebimento confirmado" },
-      { id: "caso-finalizado", label: "Caso finalizado com quitação" }
+      { id: "cumprimento-iniciado", label: "Cumprimento de sentença iniciado" },
+      { id: "memoria-calculo", label: "Memória de cálculo registrada" },
+      { id: "pedido-intimacao", label: "Pedido de intimação do devedor protocolado" }
+    ]
+  },
+  {
+    key: "intimacao-devedor-pagamento",
+    label: "Intimação do Devedor para Pagamento",
+    symbol: "ID",
+    description: "Intimação para o devedor realizar o pagamento.",
+    connectionLabel: "Pagamentos",
+    checklistTemplate: [
+      { id: "intimacao-expedida", label: "Intimação expedida" },
+      { id: "prazo-pagamento", label: "Prazo de pagamento acompanhado" },
+      { id: "resposta-devedor", label: "Resposta do devedor registrada" }
+    ]
+  },
+  {
+    key: "pagamento-divida",
+    label: "Pagamento da Dívida",
+    symbol: "PG",
+    description: "Confirmação do pagamento da dívida.",
+    connectionLabel: "Pagamentos",
+    checklistTemplate: [
+      { id: "pagamento-identificado", label: "Pagamento identificado" },
+      { id: "valor-conferido", label: "Valor conferido" },
+      { id: "deposito-judicial", label: "Depósito judicial confirmado" }
+    ]
+  },
+  {
+    key: "levantamento-valor",
+    label: "Levantamento do Valor",
+    symbol: "LV",
+    description: "Liberação e levantamento do valor devido.",
+    connectionLabel: "Pagamentos",
+    checklistTemplate: [
+      { id: "pedido-levantamento", label: "Pedido de levantamento protocolado" },
+      { id: "alvara-expedido", label: "Alvará expedido" },
+      { id: "valor-levantado", label: "Valor levantado" }
     ]
   }
 ] as const;
@@ -121,18 +193,60 @@ const CASE_TIMELINE_STAGE_MODULES: Record<
   CaseTimelineStageKey,
   Array<{ id: string; title: string; description: string; target: TimelineConnectionTarget }>
 > = {
-  ajuizamento: [
+  "preparacao-peticao-inicial": [
     {
-      id: "ajuizamento-peticao",
+      id: "preparacao-peticao",
       title: "Preparar petição",
-      description: "Conferir conteúdo inicial, gerar e revisar a petição.",
+      description: "Conferir dados, estratégia e estrutura da petição.",
       target: "petition"
     },
     {
-      id: "ajuizamento-anexos",
+      id: "preparacao-anexos",
       title: "Conferir anexos",
-      description: "Validar documentos enviados antes do protocolo.",
+      description: "Validar documentos obrigatórios e evidências.",
       target: "attachments"
+    }
+  ],
+  "ajuizamento-acao": [
+    {
+      id: "ajuizamento-protocolo",
+      title: "Protocolar ação",
+      description: "Executar o protocolo da ação no tribunal.",
+      target: "petition"
+    },
+    {
+      id: "ajuizamento-evolucao",
+      title: "Registrar protocolo",
+      description: "Salvar número do processo e comprovantes.",
+      target: "evolution"
+    }
+  ],
+  contestacao: [
+    {
+      id: "contestacao-analise",
+      title: "Analisar contestação",
+      description: "Identificar os principais argumentos da defesa.",
+      target: "petition"
+    },
+    {
+      id: "contestacao-registro",
+      title: "Registrar resumo",
+      description: "Atualizar o histórico com resumo da defesa.",
+      target: "evolution"
+    }
+  ],
+  replica: [
+    {
+      id: "replica-preparo",
+      title: "Preparar réplica",
+      description: "Estruturar resposta aos pontos da contestação.",
+      target: "petition"
+    },
+    {
+      id: "replica-protocolo",
+      title: "Protocolar réplica",
+      description: "Registrar protocolo e andamento da réplica.",
+      target: "evolution"
     }
   ],
   "audiencia-conciliacao": [
@@ -152,8 +266,8 @@ const CASE_TIMELINE_STAGE_MODULES: Record<
   sentenca: [
     {
       id: "sentenca-peticao",
-      title: "Atualizar petição",
-      description: "Consolidar protocolo, peças e documentos para sentença.",
+      title: "Consolidar sentença",
+      description: "Registrar decisão e próximos impactos processuais.",
       target: "petition"
     },
     {
@@ -163,18 +277,18 @@ const CASE_TIMELINE_STAGE_MODULES: Record<
       target: "evolution"
     }
   ],
-  acordo: [
+  "recurso-inominado": [
     {
-      id: "acordo-conciliacao",
-      title: "Formalizar acordo",
-      description: "Salvar termos e status de acordo com as partes.",
-      target: "conciliation"
+      id: "recurso-analise",
+      title: "Avaliar recurso",
+      description: "Definir estratégia recursal com base na sentença.",
+      target: "petition"
     },
     {
-      id: "acordo-pagamentos",
-      title: "Conferir pagamentos",
-      description: "Acompanhar cobranças vinculadas ao acordo.",
-      target: "payments"
+      id: "recurso-andamento",
+      title: "Acompanhar recurso",
+      description: "Monitorar protocolo e julgamento do recurso.",
+      target: "evolution"
     }
   ],
   "transito-julgado": [
@@ -191,17 +305,59 @@ const CASE_TIMELINE_STAGE_MODULES: Record<
       target: "evolution"
     }
   ],
-  "receber-acao": [
+  "inicio-cumprimento-sentenca": [
     {
-      id: "receber-pagamento",
-      title: "Recebimento da ação",
-      description: "Conferir liquidação, baixa e confirmação financeira.",
+      id: "cumprimento-pedido",
+      title: "Iniciar cumprimento",
+      description: "Abrir fase de cumprimento e registrar cálculos.",
       target: "payments"
     },
     {
-      id: "receber-evolucao",
-      title: "Fechamento do caso",
-      description: "Concluir a trilha de movimentações finais.",
+      id: "cumprimento-evolucao",
+      title: "Atualizar andamento",
+      description: "Registrar andamentos do cumprimento de sentença.",
+      target: "evolution"
+    }
+  ],
+  "intimacao-devedor-pagamento": [
+    {
+      id: "intimacao-acompanhamento",
+      title: "Acompanhar intimação",
+      description: "Controlar prazo e retorno do devedor.",
+      target: "payments"
+    },
+    {
+      id: "intimacao-registro",
+      title: "Registrar marcos",
+      description: "Salvar atos de intimação no histórico do caso.",
+      target: "evolution"
+    }
+  ],
+  "pagamento-divida": [
+    {
+      id: "pagamento-validacao",
+      title: "Validar pagamento",
+      description: "Conferir valores e comprovantes de pagamento.",
+      target: "payments"
+    },
+    {
+      id: "pagamento-registro",
+      title: "Registrar pagamento",
+      description: "Atualizar histórico com confirmação de quitação.",
+      target: "evolution"
+    }
+  ],
+  "levantamento-valor": [
+    {
+      id: "levantamento-alvara",
+      title: "Conferir alvará",
+      description: "Confirmar emissão de alvará para levantamento.",
+      target: "payments"
+    },
+    {
+      id: "levantamento-final",
+      title: "Concluir caso",
+      description: "Registrar levantamento e encerramento financeiro.",
       target: "evolution"
     }
   ]
@@ -593,7 +749,7 @@ function getDefaultProcedureChecklist(): NonNullable<CaseProcedureProgress["peti
 function getDefaultProcedureProgress(): CaseProcedureProgress {
   return {
     timeline: {
-      currentStage: "ajuizamento",
+      currentStage: "preparacao-peticao-inicial",
       notes: null,
       updatedAt: null,
       updatedByUserId: null,
@@ -635,12 +791,18 @@ function getTimelineStepIndex(stage: string | null | undefined): number {
 }
 
 function normalizeTimelineStage(stage: CaseTimelineStage | null | undefined): CaseTimelineStageKey {
-  const index = getTimelineStepIndex(stage);
+  const legacyMap: Record<string, CaseTimelineStageKey> = {
+    ajuizamento: "ajuizamento-acao",
+    acordo: "audiencia-conciliacao",
+    "receber-acao": "levantamento-valor"
+  };
+  const normalizedStage = stage ? legacyMap[stage] ?? stage : stage;
+  const index = getTimelineStepIndex(normalizedStage);
   if (index >= 0) {
     return CASE_TIMELINE_STEPS[index].key;
   }
 
-  return "ajuizamento";
+  return "preparacao-peticao-inicial";
 }
 
 type TimelineChecklistItemDraft = {
@@ -690,7 +852,7 @@ function resolveProcedureProgress(progress: CaseRecord["procedureProgress"] | un
 
   return {
     timeline: {
-      currentStage: progress.timeline?.currentStage ?? "ajuizamento",
+      currentStage: normalizeTimelineStage(progress.timeline?.currentStage),
       notes: progress.timeline?.notes ?? null,
       updatedAt: progress.timeline?.updatedAt ?? null,
       updatedByUserId: progress.timeline?.updatedByUserId ?? null,
@@ -812,7 +974,7 @@ export function CaseDetailPage() {
   const [savingPetitionProgress, setSavingPetitionProgress] = useState(false);
   const [petitionProgressFeedback, setPetitionProgressFeedback] = useState<string | null>(null);
   const [petitionProgressError, setPetitionProgressError] = useState<string | null>(null);
-  const [timelineStagePreview, setTimelineStagePreview] = useState<CaseTimelineStageKey>("ajuizamento");
+  const [timelineStagePreview, setTimelineStagePreview] = useState<CaseTimelineStageKey>("preparacao-peticao-inicial");
   const [timelineStageNotesInput, setTimelineStageNotesInput] = useState("");
   const [timelineChecklistByStage, setTimelineChecklistByStage] = useState<Record<
     CaseTimelineStageKey,
@@ -2930,7 +3092,11 @@ export function CaseDetailPage() {
                     <div className="progress-timeline-actions">
                       <label>
                         Fase ativa para atualização
-                        <input type="text" value={CASE_TIMELINE_STEPS[currentTimelineIndex]?.label ?? "Ajuizamento"} readOnly />
+                        <input
+                          type="text"
+                          value={CASE_TIMELINE_STEPS[currentTimelineIndex]?.label ?? "Preparação da Petição Inicial"}
+                          readOnly
+                        />
                       </label>
                       <label>
                         Observações da fase ativa (opcional)
