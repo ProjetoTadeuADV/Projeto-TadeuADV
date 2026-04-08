@@ -32,9 +32,6 @@ export function PublicLayout() {
               <a href="#como-funciona" className="public-link">
                 Como funciona
               </a>
-              <a href="#experiencia" className="public-link">
-                Avaliações
-              </a>
               <a href="#planos" className="public-link">
                 Investimento
               </a>

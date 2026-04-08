@@ -1,52 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
-interface ReviewItem {
-  id: string;
-  autor: string;
-  perfil: string;
-  texto: string;
-  resultado: string;
-}
-
-const REVIEWS: ReviewItem[] = [
-  {
-    id: "r1",
-    autor: "Camila Rocha",
-    perfil: "Consumidora",
-    texto: "Consegui abrir meu caso em poucos minutos e sem travar no preenchimento.",
-    resultado: "Cadastro concluído em 7 minutos"
-  },
-  {
-    id: "r2",
-    autor: "Rafael Mendes",
-    perfil: "Empreendedor",
-    texto: "O painel deixou claro o andamento. Não precisei trocar várias mensagens para entender o status.",
-    resultado: "Acompanhamento centralizado no dashboard"
-  },
-  {
-    id: "r3",
-    autor: "Juliana Prado",
-    perfil: "Usuária recorrente",
-    texto: "A plataforma ficou simples para explicar ao cliente final e isso reduziu retrabalho no atendimento.",
-    resultado: "Triagem inicial mais organizada"
-  }
-];
-
 export function LandingPage() {
   const { user } = useAuth();
-  const [activeReview, setActiveReview] = useState(0);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setActiveReview((current) => (current + 1) % REVIEWS.length);
-    }, 4200);
-
-    return () => window.clearInterval(interval);
-  }, []);
-
-  const currentReview = useMemo(() => REVIEWS[activeReview], [activeReview]);
 
   return (
     <div className="landing-pro landing-pro--light">
@@ -67,9 +23,7 @@ export function LandingPage() {
               Entre na justiça com causas menos complexas e com valor de até 20 salários-mínimos, sem a necessidade de
               contratar advogado e sem sair de casa.
             </p>
-            <p>
-              Não quer esperar até o fim do processo judicial, ceda seus direitos e ganhe dinheiro rápido*.
-            </p>
+            <p>Não quer esperar até o fim do processo judicial, ceda seus direitos e ganhe dinheiro rápido*.</p>
             <p className="section-footnote section-footnote--hero">*Sujeito à análise.</p>
 
             <div className="hero-cta">
@@ -174,22 +128,18 @@ export function LandingPage() {
 
           <div className="feature-grid feature-grid-large">
             <article className="feature-card feature-card-elevated">
-              <span className="feature-mark">CA</span>
               <h3>Cadastro e acesso</h3>
               <p>Conta por e-mail e senha com validação de identidade e sessão protegida.</p>
             </article>
             <article className="feature-card feature-card-elevated">
-              <span className="feature-mark">AA</span>
               <h3>Abertura da ação</h3>
               <p>Formulário guiado com CPF, descrição do pedido e organização das provas em linguagem simples.</p>
             </article>
             <article className="feature-card feature-card-elevated">
-              <span className="feature-mark">AC</span>
               <h3>Acompanhamento do caso</h3>
               <p>Status e histórico atualizados no painel com visualização rápida dos detalhes.</p>
             </article>
             <article className="feature-card feature-card-elevated">
-              <span className="feature-mark">VD</span>
               <h3>Venda dos seus direitos</h3>
               <p>
                 Caso não queira aguardar o longo trâmite de um processo judicial, ceda seus direitos* e receba dinheiro
@@ -201,39 +151,6 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section id="experiencia" className="landing-block">
-        <div className="landing-container">
-          <div className="landing-section-head">
-            <p className="hero-kicker">Avaliações</p>
-            <h2>Depoimentos reais de quem já validou a jornada</h2>
-          </div>
-
-          <div className="landing-tab-panel">
-            <section className="review-carousel" aria-live="polite">
-              <article key={currentReview.id} className="review-card review-card--animated">
-                <p className="review-quote">"{currentReview.texto}"</p>
-                <div className="review-meta">
-                  <strong>{currentReview.autor}</strong>
-                  <span>{currentReview.perfil}</span>
-                  <small>{currentReview.resultado}</small>
-                </div>
-              </article>
-              <div className="review-dots">
-                {REVIEWS.map((review, index) => (
-                  <button
-                    key={review.id}
-                    type="button"
-                    className={index === activeReview ? "review-dot review-dot--active" : "review-dot"}
-                    aria-label={`Mostrar avaliação ${index + 1}`}
-                    onClick={() => setActiveReview(index)}
-                  />
-                ))}
-              </div>
-            </section>
-          </div>
-        </div>
-      </section>
-
       <section id="planos" className="landing-block">
         <div className="landing-container">
           <div className="landing-section-head">
@@ -241,27 +158,23 @@ export function LandingPage() {
             <h2>Acesso único com assinatura mensal e negociação de causa a partir de R$ 1.000,00</h2>
           </div>
 
-          <div className="landing-tab-panel">
-            <section className="pricing-grid pricing-grid--single">
-              <article className="pricing-card pricing-card--featured">
-                <p className="hero-kicker">Assinatura mensal</p>
-                <h3>Acesso completo à plataforma</h3>
-                <p className="pricing-price">
-                  R$ 97,00<span>/mês</span>
-                </p>
-                <ul className="pricing-list">
-                  <li>Acesso à jornada de criação, envio e acompanhamento de casos em um só painel</li>
-                  <li>Organização de documentos, atualizações e comunicação centralizada</li>
-                  <li>Fluxo pensado para causas menos complexas, com autonomia do usuário</li>
-                  <li>Negociação de causa disponível para valores a partir de R$ 1.000,00*</li>
-                </ul>
-                <Link to={user ? "/dashboard" : "/register"} className="hero-primary">
-                  {user ? "Acessar plataforma" : "Assinar por R$ 97,00/mês"}
-                </Link>
-                <p className="section-footnote">*Sujeito à análise.</p>
-              </article>
-            </section>
-          </div>
+          <article className="pricing-card pricing-card--featured pricing-card--standalone">
+            <p className="hero-kicker">Assinatura mensal</p>
+            <h3>Acesso completo à plataforma</h3>
+            <p className="pricing-price">
+              R$ 97,00<span>/mês</span>
+            </p>
+            <ul className="pricing-list">
+              <li>Acesso à jornada de criação, envio e acompanhamento de casos em um só painel</li>
+              <li>Organização de documentos, atualizações e comunicação centralizada</li>
+              <li>Fluxo pensado para causas menos complexas, com autonomia do usuário</li>
+              <li>Negociação de causa disponível para valores a partir de R$ 1.000,00*</li>
+            </ul>
+            <Link to={user ? "/dashboard" : "/register"} className="hero-primary">
+              {user ? "Acessar plataforma" : "Assinar por R$ 97,00/mês"}
+            </Link>
+            <p className="section-footnote">*Sujeito à análise.</p>
+          </article>
         </div>
       </section>
 
