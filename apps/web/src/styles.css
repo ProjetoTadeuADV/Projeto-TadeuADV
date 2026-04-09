@@ -3848,6 +3848,11 @@ button.sidebar-item {
   gap: 0.5rem;
 }
 
+.case-info-content {
+  display: grid;
+  gap: 0.75rem;
+}
+
 .detail-item {
   display: flex;
   align-items: center;
@@ -4286,6 +4291,18 @@ button.sidebar-item {
   padding: 0;
   display: grid;
   gap: 0.7rem;
+}
+
+.case-evolution-close-action {
+  position: sticky;
+  top: 0.6rem;
+  z-index: 6;
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.7rem;
+  border: 1px solid #f1d7d7;
+  border-radius: 12px;
+  background: #fff;
 }
 
 .movement-list li {
@@ -6221,6 +6238,10 @@ button.sidebar-item {
   .operator-close-trigger {
     width: 100%;
     text-align: center;
+  }
+
+  .case-info-content--client-mobile .case-info-mobile-hide {
+    display: none;
   }
 
   .case-detail-kicker-row {

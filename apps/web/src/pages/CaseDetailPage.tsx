@@ -2567,7 +2567,8 @@ export function CaseDetailPage() {
           {activeDetailTab === "info" && (
             <>
               <h2>Informações principais</h2>
-              <div className="detail-list">
+              <div className={canAccessAdmin ? "case-info-content" : "case-info-content case-info-content--client-mobile"}>
+                <div className="detail-list case-info-mobile-hide">
                 <div className="detail-item">
                   <span>Código</span>
                   <strong>{caseItem.caseCode}</strong>
@@ -2616,10 +2617,10 @@ export function CaseDetailPage() {
                     <strong>{caseItem.responsavelNome ?? caseItem.responsavelEmail}</strong>
                   </div>
                 )}
-              </div>
+                </div>
 
               {(closeRequest.reason || closeRequest.decisionReason) && (
-                <div className="info-box">
+                  <div className="info-box case-info-mobile-hide">
                   <strong>Histórico da solicitação de encerramento</strong>
                   {closeRequest.reason && (
                     <span>Pedido do cliente: {closeRequest.reason}</span>
@@ -2631,7 +2632,7 @@ export function CaseDetailPage() {
               )}
 
               {(caseItem.reviewReason || caseItem.clientDataRequest) && (
-                <div className="info-box">
+                  <div className="info-box case-info-mobile-hide">
                   <strong>Parecer do operador</strong>
                   {caseItem.reviewReason && <span>Resumo: {caseItem.reviewReason}</span>}
                   {caseItem.clientDataRequest && (
@@ -2641,7 +2642,7 @@ export function CaseDetailPage() {
               )}
 
               {caseItem.serviceFee && (
-                <div className="info-box">
+                  <div className="info-box case-info-mobile-hide">
                   <strong>Taxa inicial de serviço</strong>
                   <span>Valor: {formatCurrencyBr(caseItem.serviceFee.amount)}</span>
                   <span>Vencimento: {formatIsoDateToBr(caseItem.serviceFee.dueDate)}</span>
@@ -2651,7 +2652,7 @@ export function CaseDetailPage() {
               )}
 
               {caseItem.cpfConsulta && (
-                <div className="info-box">
+                  <div className="info-box case-info-mobile-hide">
                   <strong>Consulta de CPF</strong>
                   <span>Nome: {caseItem.cpfConsulta.nome}</span>
                   <span>Situação: {caseItem.cpfConsulta.situacao}</span>
@@ -2660,13 +2661,13 @@ export function CaseDetailPage() {
               )}
 
               <div className="resumo-box">
-                <strong>Resumo</strong>
+                  <strong>Resumo do caso</strong>
                 <p>{caseItem.resumo}</p>
               </div>
 
               {caseItem.petitionInitial && (
                 <>
-                  <div className="info-box">
+                    <div className="info-box case-info-mobile-hide">
                     <strong>Dados estruturados da petição</strong>
                     <span>Assunto: {caseItem.petitionInitial.claimSubject}</span>
                     <span>Endereço do cliente: {caseItem.petitionInitial.claimantAddress}</span>
@@ -2678,7 +2679,7 @@ export function CaseDetailPage() {
                     <span>Interesse em audiência: {caseItem.petitionInitial.hearingInterest ? "Sim" : "Não"}</span>
                   </div>
 
-                  <div className="info-box">
+                    <div className="info-box case-info-mobile-hide">
                     <strong>Tratativa prévia do caso</strong>
                     <span>
                       Houve tratativa prévia: {caseItem.petitionInitial.priorAttemptMade ? "Sim" : "Não"}
@@ -2727,7 +2728,7 @@ export function CaseDetailPage() {
                     </div>
                   )}
 
-                  <div className="resumo-box">
+                  <div className="resumo-box case-info-mobile-hide">
                     <strong>Fundamentos</strong>
                     <p>{caseItem.petitionInitial.legalGrounds}</p>
                   </div>
@@ -2742,7 +2743,7 @@ export function CaseDetailPage() {
                   </div>
 
                   {(caseItem.petitionInitial.pretensions ?? []).length > 0 && (
-                    <div className="resumo-box">
+                      <div className="resumo-box case-info-mobile-hide">
                       <strong>Pretensões declaradas</strong>
                       <ul className="timeline-list">
                         {(caseItem.petitionInitial.pretensions ?? []).map((item, index) => (
@@ -2760,6 +2761,7 @@ export function CaseDetailPage() {
                   )}
                 </>
               )}
+              </div>
             </>
           )}
 
@@ -3453,6 +3455,20 @@ export function CaseDetailPage() {
           {activeDetailTab === "evolution" && (
             <>
               <h2>Evolução do caso</h2>
+              {canAccessClientCloseSidebar && (
+                <div className="case-evolution-close-action">
+                  <button
+                    type="button"
+                    className="danger-button operator-close-trigger"
+                    onClick={openClientCloseSidebar}
+                  >
+                    {canClientRequestClose ? "Encerrar Caso" : "Encerramento solicitado"}
+                  </button>
+                  {!canClientRequestClose && (
+                    <span className="field-help">Seu pedido de encerramento está em análise pela equipe responsável.</span>
+                  )}
+                </div>
+              )}
               <div className="resumo-box">
                 {sortedMovements.length === 0 ? (
                   <p>Nenhuma movimentação registrada até o momento.</p>
@@ -3889,14 +3905,6 @@ export function CaseDetailPage() {
 
       {canAccessClientCloseSidebar && (
         <>
-          {!isClientCloseSidebarOpen && (
-            <div className="operator-action-dock">
-              <button type="button" className="danger-button operator-close-trigger" onClick={openClientCloseSidebar}>
-                {canClientRequestClose ? "Solicitar encerramento" : "Encerramento solicitado"}
-              </button>
-            </div>
-          )}
-
           {isClientCloseSidebarOpen && (
             <button
               type="button"
@@ -3927,7 +3935,7 @@ export function CaseDetailPage() {
 
             <div className="operator-sidebar-content">
               <div className="operator-action-box">
-                <h3>Solicitar encerramento</h3>
+                <h3>Encerrar caso</h3>
                 {canClientRequestClose ? (
                   <>
                     <p>Envie uma justificativa. O operador responsável analisará e retornará a decisão.</p>
@@ -3947,7 +3955,7 @@ export function CaseDetailPage() {
                       onClick={() => void handleRequestCloseCase()}
                       disabled={requestingClose}
                     >
-                      {requestingClose ? "Enviando..." : "Solicitar encerramento"}
+                      {requestingClose ? "Enviando..." : "Encerrar Caso"}
                     </button>
                   </>
                 ) : (

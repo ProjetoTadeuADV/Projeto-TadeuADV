@@ -20,8 +20,7 @@ export function LandingPage() {
               Nós descomplicamos tudo para você com uma plataforma rápida, intuitiva, segura e 100% on-line.
             </p>
             <p>
-              Entre na justiça com causas menos complexas e com valor de até 20 salários-mínimos, sem a necessidade de
-              contratar advogado e sem sair de casa.
+              Entre na justiça com causas de até R$ 32.000, sem a necessidade de contratar advogado e sem sair de casa.
             </p>
             <p>Não quer esperar até o fim do processo judicial, ceda seus direitos e ganhe dinheiro rápido*.</p>
             <p className="section-footnote section-footnote--hero">*Sujeito à análise.</p>

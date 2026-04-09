@@ -59,6 +59,21 @@ interface ViaCepResponse {
   erro?: boolean;
 }
 
+interface BrasilApiCepResponse {
+  cep?: string;
+  state?: string;
+  city?: string;
+  neighborhood?: string;
+  street?: string;
+}
+
+interface CepLookupAddress {
+  street: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+}
+
 interface TimelineEventDraft {
   eventDate: string;
   description: string;
@@ -364,6 +379,71 @@ function formatDateTimeBr(value: string | null | undefined): string {
   return parsed.toLocaleString("pt-BR");
 }
 
+function extractCepAddressFromBrasilApi(data: BrasilApiCepResponse): CepLookupAddress | null {
+  const street = data.street?.trim() ?? "";
+  const neighborhood = data.neighborhood?.trim() ?? "";
+  const city = data.city?.trim() ?? "";
+  const state = data.state?.trim().toUpperCase() ?? "";
+  if (!street || !neighborhood || !city || state.length !== 2) {
+    return null;
+  }
+
+  return {
+    street,
+    neighborhood,
+    city,
+    state
+  };
+}
+
+function extractCepAddressFromViaCep(data: ViaCepResponse): CepLookupAddress | null {
+  if (data.erro) {
+    return null;
+  }
+
+  const street = data.logradouro?.trim() ?? "";
+  const neighborhood = data.bairro?.trim() ?? "";
+  const city = data.localidade?.trim() ?? "";
+  const state = data.uf?.trim().toUpperCase() ?? "";
+  if (!street || !neighborhood || !city || state.length !== 2) {
+    return null;
+  }
+
+  return {
+    street,
+    neighborhood,
+    city,
+    state
+  };
+}
+
+async function lookupAddressByCep(cepDigits: string): Promise<CepLookupAddress> {
+  try {
+    const brasilApiResponse = await fetch(`https://brasilapi.com.br/api/cep/v2/${cepDigits}`);
+    if (brasilApiResponse.ok) {
+      const brasilApiData = (await brasilApiResponse.json()) as BrasilApiCepResponse;
+      const parsedBrasilApi = extractCepAddressFromBrasilApi(brasilApiData);
+      if (parsedBrasilApi) {
+        return parsedBrasilApi;
+      }
+    }
+  } catch {
+    // Mantém fallback para ViaCEP quando a consulta principal falhar.
+  }
+
+  const viaCepResponse = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`);
+  if (!viaCepResponse.ok) {
+    throw new Error("Falha ao consultar CEP.");
+  }
+  const viaCepData = (await viaCepResponse.json()) as ViaCepResponse;
+  const parsedViaCep = extractCepAddressFromViaCep(viaCepData);
+  if (!parsedViaCep) {
+    throw new Error("CEP não encontrado.");
+  }
+
+  return parsedViaCep;
+}
+
 function formatCurrencyInputOnBlur(value: string): string {
   const parsed = parseClaimValue(value);
   if (parsed === null) {
@@ -543,6 +623,7 @@ export function NewCasePage() {
   const [loadingVaras, setLoadingVaras] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [savingInlineProfile, setSavingInlineProfile] = useState(false);
+  const [cepLookupLoading, setCepLookupLoading] = useState(false);
   const [consultingCpf, setConsultingCpf] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inlineProfileFeedback, setInlineProfileFeedback] = useState<string | null>(null);
@@ -594,6 +675,7 @@ export function NewCasePage() {
   const [cpfData, setCpfData] = useState<CpfConsultaResult | null>(null);
   const [finalReviewConfirmed, setFinalReviewConfirmed] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const lastCepLookupRef = useRef("");
   const draftStorageKey = useMemo(() => buildNewCaseDraftStorageKey(user?.uid), [user?.uid]);
 
   const hasVaras = varas.length > 0;
@@ -622,7 +704,7 @@ export function NewCasePage() {
   }, [claimSubjectCustom, claimSubjectSelection]);
   const directAttemptLabel = useMemo(() => resolveDirectAttemptLabel(defendantType), [defendantType]);
   const directAttemptTargetLabel = useMemo(
-    () => (defendantType === "pessoa_fisica" ? "acusado" : "empresa"),
+    () => (defendantType === "pessoa_fisica" ? "a pessoa reclamada" : "a empresa reclamada"),
     [defendantType]
   );
   const priorAttemptChannelOptions = useMemo(
@@ -660,6 +742,15 @@ export function NewCasePage() {
     claimantStreet,
     claimantZipCode
   ]);
+  const isAddressAutoFilledFromCep = useMemo(
+    () =>
+      normalizeZipCode(claimantZipCode).length === 8 &&
+      claimantStreet.trim().length > 0 &&
+      claimantNeighborhood.trim().length > 0 &&
+      claimantCity.trim().length > 0 &&
+      claimantState.trim().length === 2,
+    [claimantCity, claimantNeighborhood, claimantState, claimantStreet, claimantZipCode]
+  );
   const normalizedDefendantDocument = useMemo(() => normalizeDigits(defendantDocument), [defendantDocument]);
   const normalizedTimelineEvents = useMemo(
     () =>
@@ -919,6 +1010,41 @@ export function NewCasePage() {
 
       const refreshedToken = await getToken(true);
       return apiRequest<T>(path, { ...options, token: refreshedToken });
+    }
+  }
+
+  async function handleLookupClaimantCep(
+    cepOverride?: string,
+    options?: {
+      silentInvalid?: boolean;
+    }
+  ) {
+    const cepDigits = normalizeZipCode(cepOverride ?? claimantZipCode);
+    if (!cepDigits || cepDigits.length !== 8) {
+      if (!options?.silentInvalid) {
+        setError("Informe um CEP válido com 8 dígitos para consulta.");
+      }
+      return;
+    }
+
+    setCepLookupLoading(true);
+    setError(null);
+    setInlineProfileFeedback(null);
+
+    try {
+      const address = await lookupAddressByCep(cepDigits);
+      setClaimantZipCode(formatZipCode(cepDigits));
+      setClaimantStreet(address.street);
+      setClaimantNeighborhood(address.neighborhood);
+      setClaimantCity(address.city);
+      setClaimantState(address.state);
+      setInlineProfileFeedback("CEP encontrado. Complete número e complemento.");
+      lastCepLookupRef.current = cepDigits;
+    } catch (nextError) {
+      const message = nextError instanceof Error ? nextError.message : "Não foi possível consultar este CEP agora.";
+      setError(message);
+    } finally {
+      setCepLookupLoading(false);
     }
   }
 
@@ -1348,27 +1474,21 @@ export function NewCasePage() {
 
           if (hasMissingAddressFromCep) {
             try {
-              const viaCepResponse = await fetch(`https://viacep.com.br/ws/${profileZipCode}/json/`);
-              if (viaCepResponse.ok) {
-                const viaCepData = (await viaCepResponse.json()) as ViaCepResponse;
-                  if (!viaCepData.erro) {
-                  if ((profileAddress.street ?? "").trim().length === 0) {
-                    profileAddress.street = viaCepData.logradouro?.trim() ?? profileAddress.street;
-                  }
-                  if ((profileAddress.neighborhood ?? "").trim().length === 0) {
-                    profileAddress.neighborhood = viaCepData.bairro?.trim() ?? profileAddress.neighborhood;
-                  }
-                  if ((profileAddress.city ?? "").trim().length === 0) {
-                    profileAddress.city = viaCepData.localidade?.trim() ?? profileAddress.city;
-                  }
-                  if ((profileAddress.state ?? "").trim().length !== 2) {
-                    profileAddress.state =
-                      viaCepData.uf?.trim().toUpperCase() ?? profileAddress.state;
-                  }
-                }
+              const addressFromCep = await lookupAddressByCep(profileZipCode);
+              if ((profileAddress.street ?? "").trim().length === 0) {
+                profileAddress.street = addressFromCep.street;
+              }
+              if ((profileAddress.neighborhood ?? "").trim().length === 0) {
+                profileAddress.neighborhood = addressFromCep.neighborhood;
+              }
+              if ((profileAddress.city ?? "").trim().length === 0) {
+                profileAddress.city = addressFromCep.city;
+              }
+              if ((profileAddress.state ?? "").trim().length !== 2) {
+                profileAddress.state = addressFromCep.state;
               }
             } catch {
-              // Mantém o fluxo sem bloquear o usuário caso ViaCEP esteja indisponível.
+              // Mantém o fluxo sem bloquear o usuário caso a consulta de CEP esteja indisponível.
             }
           }
         }
@@ -1451,6 +1571,24 @@ export function NewCasePage() {
 
     void loadProfilePrefill();
   }, []);
+
+  useEffect(() => {
+    if (cepLookupLoading) {
+      return;
+    }
+
+    const cepDigits = normalizeZipCode(claimantZipCode);
+    if (!cepDigits || cepDigits.length !== 8) {
+      lastCepLookupRef.current = "";
+      return;
+    }
+
+    if (lastCepLookupRef.current === cepDigits) {
+      return;
+    }
+
+    void handleLookupClaimantCep(cepDigits, { silentInvalid: true });
+  }, [cepLookupLoading, claimantZipCode]);
 
   useEffect(() => {
     if (!varas.length) {
@@ -1806,6 +1944,28 @@ export function NewCasePage() {
       return;
     }
 
+    if (!isPriorAttemptSectionValid) {
+      setError("Preencha os dados da tentativa de solução antes de continuar.");
+      return;
+    }
+
+    const normalizedPriorAttemptMade = priorAttemptMade;
+    const normalizedPriorAttemptChannel: PetitionPriorAttemptChannel | null =
+      normalizedPriorAttemptMade && priorAttemptChannel ? priorAttemptChannel : null;
+    const normalizedPriorAttemptChannelOther =
+      normalizedPriorAttemptMade &&
+      (priorAttemptChannel === "direto_reclamado" || priorAttemptChannel === "outro")
+        ? normalizeOptionalText(priorAttemptChannelOther)
+        : null;
+    const normalizedPriorAttemptProtocol = normalizedPriorAttemptMade
+      ? normalizeOptionalText(priorAttemptProtocol)
+      : null;
+    const normalizedPriorAttemptHadProposal = normalizedPriorAttemptMade ? priorAttemptHadProposal : null;
+    const normalizedPriorAttemptProposalDetails =
+      normalizedPriorAttemptMade && priorAttemptHadProposal
+        ? normalizeOptionalText(priorAttemptProposalDetails)
+        : null;
+
     const manualClaimValue = parseClaimValue(claimValueInput);
     const normalizedClaimValue =
       manualClaimValue !== null ? manualClaimValue : claimValueTotal > 0 ? claimValueTotal : null;
@@ -1836,12 +1996,12 @@ export function NewCasePage() {
             attachments: [],
             claimValue: normalizedClaimValue,
             hearingInterest,
-            priorAttemptMade: false,
-            priorAttemptChannel: null,
-            priorAttemptChannelOther: null,
-            priorAttemptProtocol: null,
-            priorAttemptHadProposal: null,
-            priorAttemptProposalDetails: null
+            priorAttemptMade: normalizedPriorAttemptMade,
+            priorAttemptChannel: normalizedPriorAttemptChannel,
+            priorAttemptChannelOther: normalizedPriorAttemptChannelOther,
+            priorAttemptProtocol: normalizedPriorAttemptProtocol,
+            priorAttemptHadProposal: normalizedPriorAttemptHadProposal,
+            priorAttemptProposalDetails: normalizedPriorAttemptProposalDetails
           }
         }
       });
@@ -1944,6 +2104,10 @@ export function NewCasePage() {
                 </ul>
               </>
             )}
+            <p className="field-help">
+              Informe o CEP para preencher rua, bairro, cidade e UF automaticamente com base dos Correios. Você só
+              precisa completar número e complemento.
+            </p>
 
             <div className="address-grid">
               <label>
@@ -1965,6 +2129,7 @@ export function NewCasePage() {
                   placeholder="00000-000"
                   inputMode="numeric"
                 />
+                {cepLookupLoading && <span className="field-help">Buscando CEP...</span>}
               </label>
               <label className="address-grid-span">
                 Rua
@@ -1973,6 +2138,7 @@ export function NewCasePage() {
                   value={claimantStreet}
                   onChange={(event) => setClaimantStreet(event.target.value)}
                   placeholder="Rua / Avenida"
+                  readOnly={isAddressAutoFilledFromCep}
                 />
               </label>
               <label>
@@ -2000,6 +2166,7 @@ export function NewCasePage() {
                   value={claimantNeighborhood}
                   onChange={(event) => setClaimantNeighborhood(event.target.value)}
                   placeholder="Bairro"
+                  readOnly={isAddressAutoFilledFromCep}
                 />
               </label>
               <label>
@@ -2009,6 +2176,7 @@ export function NewCasePage() {
                   value={claimantCity}
                   onChange={(event) => setClaimantCity(event.target.value)}
                   placeholder="Cidade"
+                  readOnly={isAddressAutoFilledFromCep}
                 />
               </label>
               <label>
@@ -2019,9 +2187,15 @@ export function NewCasePage() {
                   onChange={(event) => setClaimantState(event.target.value.toUpperCase())}
                   placeholder="UF"
                   maxLength={2}
+                  readOnly={isAddressAutoFilledFromCep}
                 />
               </label>
             </div>
+            {isAddressAutoFilledFromCep && (
+              <p className="field-help">
+                Endereço principal preenchido automaticamente pelo CEP. Informe apenas número e complemento.
+              </p>
+            )}
 
             <div className="profile-actions">
               <button type="button" className="secondary-button" onClick={() => void handleInlineProfileSave()} disabled={savingInlineProfile}>
@@ -2130,6 +2304,127 @@ export function NewCasePage() {
                   required
                 />
               </label>
+            )}
+
+            <h2>Tentativa de solução antes da ação</h2>
+            <label>
+              Você tentou resolver com a parte contrária ou com algum órgão de proteção ao consumidor?
+              <select
+                value={priorAttemptMade ? "sim" : "nao"}
+                onChange={(event) => setPriorAttemptMade(event.target.value === "sim")}
+              >
+                <option value="nao">Não</option>
+                <option value="sim">Sim</option>
+              </select>
+            </label>
+
+            {priorAttemptMade && (
+              <>
+                <label>
+                  Onde você tentou resolver?
+                  <select
+                    value={priorAttemptChannel}
+                    onChange={(event) => setPriorAttemptChannel(event.target.value as PetitionPriorAttemptChannel | "")}
+                    required={priorAttemptMade}
+                  >
+                    <option value="">Selecione</option>
+                    {priorAttemptChannelOptions.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {priorAttemptChannel === "direto_reclamado" && (
+                  <label>
+                    Detalhe a tratativa com {directAttemptTargetLabel}
+                    <textarea
+                      value={priorAttemptChannelOther}
+                      onChange={(event) => setPriorAttemptChannelOther(limitPetitionText(event.target.value))}
+                      rows={4}
+                      placeholder={`Descreva como foi a tentativa direta com ${directAttemptTargetLabel}, incluindo datas e respostas.`}
+                      maxLength={PETITION_TEXT_MAX_LENGTH}
+                      required
+                    />
+                    <span className="field-help">
+                      {priorAttemptChannelOther.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
+                    </span>
+                  </label>
+                )}
+
+                {priorAttemptChannel === "outro" && (
+                  <label>
+                    Qual foi o canal utilizado?
+                    <input
+                      type="text"
+                      value={priorAttemptChannelOther}
+                      onChange={(event) => setPriorAttemptChannelOther(limitPetitionText(event.target.value))}
+                      placeholder="Ex.: SAC da empresa, ouvidoria, plataforma externa, etc."
+                      required
+                    />
+                  </label>
+                )}
+
+                <label>
+                  Protocolo, número de atendimento ou referência da tratativa
+                  <input
+                    type="text"
+                    value={priorAttemptProtocol}
+                    onChange={(event) => setPriorAttemptProtocol(event.target.value)}
+                    placeholder="Informe o número de protocolo (quando houver)"
+                    required={priorAttemptChannel !== "direto_reclamado"}
+                  />
+                </label>
+
+                <label>
+                  Houve proposta de acordo da parte contrária?
+                  <select
+                    value={
+                      priorAttemptHadProposal === null
+                        ? ""
+                        : priorAttemptHadProposal
+                          ? "sim"
+                          : "nao"
+                    }
+                    onChange={(event) => {
+                      if (event.target.value === "sim") {
+                        setPriorAttemptHadProposal(true);
+                        return;
+                      }
+
+                      if (event.target.value === "nao") {
+                        setPriorAttemptHadProposal(false);
+                        return;
+                      }
+
+                      setPriorAttemptHadProposal(null);
+                    }}
+                    required
+                  >
+                    <option value="">Selecione</option>
+                    <option value="sim">Sim</option>
+                    <option value="nao">Não</option>
+                  </select>
+                </label>
+
+                {priorAttemptHadProposal && (
+                  <label>
+                    Detalhe a proposta recebida e por que não resolveu o problema
+                    <textarea
+                      value={priorAttemptProposalDetails}
+                      onChange={(event) => setPriorAttemptProposalDetails(limitPetitionText(event.target.value))}
+                      rows={4}
+                      placeholder="Descreva a proposta apresentada e o motivo de não ter aceitado."
+                      maxLength={PETITION_TEXT_MAX_LENGTH}
+                      required
+                    />
+                    <span className="field-help">
+                      {priorAttemptProposalDetails.length}/{PETITION_TEXT_MAX_LENGTH} caracteres
+                    </span>
+                  </label>
+                )}
+              </>
             )}
 
             <h2>Dados do seu cadastro</h2>
@@ -2248,7 +2543,7 @@ export function NewCasePage() {
                 value={facts}
                 onChange={(event) => setFacts(limitPetitionText(event.target.value))}
                 rows={7}
-                placeholder="Explique o que aconteceu, quando começou o problema, tentativas de solução e impactos no seu dia a dia."
+                placeholder="Descreva em detalhes tudo o que aconteceu, incluindo as tentativas de resolver com a empresa, com datas e protocolos."
                 maxLength={PETITION_TEXT_MAX_LENGTH}
                 required
               />
