@@ -15,14 +15,12 @@ export function LandingPage() {
               A plataforma digital que coloca a <span className="hero-highlight">justiça nas suas mãos</span> com
               segurança e praticidade.
             </h1>
-            <p>Você tem um problema jurídico e não sabe por onde começar?</p>
-            <p>
-              Nós descomplicamos tudo para você com uma plataforma rápida, intuitiva, segura e 100% on-line.
-            </p>
-            <p>
-              Entre na justiça com causas de até R$ 32.000, sem a necessidade de contratar advogado e sem sair de casa.
-            </p>
-            <p>Não quer esperar até o fim do processo judicial, ceda seus direitos e ganhe dinheiro rápido*.</p>
+            <div className="landing-hero-message-lines">
+              <p>Você tem um problema jurídico e não sabe por onde começar?</p>
+              <p>Nós descomplicamos tudo para você com uma plataforma rápida, intuitiva, segura e 100% on-line.</p>
+              <p>Entre na justiça com causas de até R$ 32.000, sem a necessidade de contratar advogado e sem sair de casa.</p>
+              <p>Não quer esperar até o fim do processo judicial, ceda seus direitos e ganhe dinheiro rápido*.</p>
+            </div>
             <p className="section-footnote section-footnote--hero">*Sujeito à análise.</p>
 
             <div className="hero-cta">

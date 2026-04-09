@@ -4723,7 +4723,7 @@ button.sidebar-item {
 
 .public-nav {
   display: flex;
-  gap: 1.85rem;
+  gap: 1.3rem;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -4757,18 +4757,22 @@ button.sidebar-item {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.56rem 0.9rem;
+  padding: 0.72rem 1.35rem;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.28);
   background: #25d366;
   color: #fff;
   text-decoration: none;
   font-family: "Montserrat", "Inter", sans-serif;
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: 1.02rem;
+  font-weight: 500;
   line-height: 1;
   box-shadow: 0 10px 20px rgba(11, 57, 30, 0.26);
   transition: transform 160ms ease, background-color 160ms ease;
+}
+
+.public-whatsapp--nav {
+  margin-right: 0.2rem;
 }
 
 .public-whatsapp:hover {
@@ -4778,8 +4782,8 @@ button.sidebar-item {
 }
 
 .public-whatsapp-icon {
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   flex: none;
 }
 
@@ -5030,17 +5034,23 @@ button.sidebar-item {
 .public-topbar .hero-primary {
   font-family: "Montserrat", "Inter", sans-serif;
   font-weight: 500;
+  font-size: 1.02rem;
+  line-height: 1;
 }
 
 .public-topbar .hero-secondary {
   background: transparent;
-  border: 0;
-  padding: 0.2rem 0;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  padding: 0.72rem 1.05rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: rgba(255, 255, 255, 0.92);
 }
 
 .public-topbar .hero-secondary:hover {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
   box-shadow: none;
   transform: none;
@@ -5113,7 +5123,7 @@ button.sidebar-item {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(420px, 1.18fr) minmax(320px, 0.92fr);
+  grid-template-columns: minmax(760px, 1.85fr) minmax(220px, 0.65fr);
   gap: 1.35rem;
   align-items: center;
   padding: 2.6rem 0 2rem;
@@ -5152,6 +5162,16 @@ button.sidebar-item {
   margin: 0;
   color: rgba(244, 248, 255, 0.92);
   max-width: 72ch;
+}
+
+.landing-hero-message-lines {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.landing-hero-message-lines p {
+  margin: 0;
+  white-space: nowrap;
 }
 
 .landing-hero .hero-kicker {
@@ -6561,6 +6581,10 @@ button.sidebar-item {
     max-width: 100%;
   }
 
+  .landing-hero-message-lines p {
+    white-space: normal;
+  }
+
   .landing-hero-media {
     justify-self: stretch;
     width: 100%;
@@ -7104,6 +7128,10 @@ button.sidebar-item {
 
   .landing-hero-copy > p {
     font-size: 0.94rem;
+  }
+
+  .landing-hero-message-lines p {
+    white-space: normal;
   }
 
   .landing-tab-panel {

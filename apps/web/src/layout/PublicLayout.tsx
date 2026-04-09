@@ -26,6 +26,10 @@ export function PublicLayout() {
 
           <div className="public-topbar-actions">
             <nav className="public-nav" aria-label="Navegação da landing">
+              <a href={WHATSAPP_URL} className="public-whatsapp public-whatsapp--nav" target="_blank" rel="noreferrer">
+                <WhatsAppIcon className="public-whatsapp-icon" />
+                <span>Atendimento</span>
+              </a>
               <a href="#sobre-nos" className="public-link">
                 Sobre nós
               </a>
@@ -38,10 +42,6 @@ export function PublicLayout() {
             </nav>
 
             <div className="public-actions">
-              <a href={WHATSAPP_URL} className="public-whatsapp" target="_blank" rel="noreferrer">
-                <WhatsAppIcon className="public-whatsapp-icon" />
-                <span>Atendimento</span>
-              </a>
               <NavLink to="/login" className="hero-secondary">
                 Entrar
               </NavLink>
