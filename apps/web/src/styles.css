@@ -5186,6 +5186,10 @@ button.sidebar-item {
   border: 0;
   border-radius: 999px;
   padding: 0.72rem 1.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22);
 }
 
@@ -6734,6 +6738,10 @@ button.sidebar-item {
     box-sizing: border-box;
   }
 
+  .landing-hero .landing-container {
+    padding-inline: 1.15rem;
+  }
+
   .landing-hero {
     border-radius: 0 0 18px 18px;
   }
@@ -6750,10 +6758,18 @@ button.sidebar-item {
 
   .landing-hero-copy {
     padding-left: 0;
+    align-items: flex-start;
+    text-align: left;
   }
 
   .landing-hero-copy h1 {
     max-width: 100%;
+    line-height: 1.14;
+  }
+
+  .landing-hero-copy h1 .hero-highlight {
+    font-family: inherit;
+    font-weight: 800;
   }
 
   .landing-hero-message-lines p {
@@ -7345,6 +7361,10 @@ button.sidebar-item {
 
   .landing-container {
     padding-inline: 0.8rem;
+  }
+
+  .landing-hero .landing-container {
+    padding-inline: 1rem;
   }
 }
 
