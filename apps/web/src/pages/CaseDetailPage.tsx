@@ -3455,20 +3455,22 @@ export function CaseDetailPage() {
 
           {activeDetailTab === "evolution" && (
             <>
-              <h2>Evolução do caso</h2>
-              {canAccessClientCloseSidebar && (
-                <div className="case-evolution-close-action">
+              <div className="case-evolution-header">
+                <h2>Evolução do caso</h2>
+                {canAccessClientCloseSidebar && (
                   <button
                     type="button"
-                    className="danger-button operator-close-trigger"
+                    className="danger-button operator-close-trigger case-evolution-close-button"
                     onClick={openClientCloseSidebar}
                   >
                     {canClientRequestClose ? "Encerrar Caso" : "Encerramento solicitado"}
                   </button>
-                  {!canClientRequestClose && (
-                    <span className="field-help">Seu pedido de encerramento está em análise pela equipe responsável.</span>
-                  )}
-                </div>
+                )}
+              </div>
+              {canAccessClientCloseSidebar && !canClientRequestClose && (
+                <p className="field-help case-evolution-close-help">
+                  Seu pedido de encerramento está em análise pela equipe responsável.
+                </p>
               )}
               <div className="resumo-box">
                 {sortedMovements.length === 0 ? (

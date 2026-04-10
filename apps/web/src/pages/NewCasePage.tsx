@@ -2433,7 +2433,8 @@ export function NewCasePage() {
               <span>{claimantAddressSummary}</span>
               <span>
                 Para corrigir endereço ou CPF, acesse{" "}
-                <Link to="/settings/profile?context=novo-caso">Minha Conta</Link> na seção de endereço e CPF.
+                <Link to="/settings/profile?context=novo-caso&focus=address-cep">Minha Conta</Link> na seção de
+                endereço e CPF.
               </span>
             </div>
             <h2>Contra quem você quer entrar com uma ação?</h2>
@@ -2657,13 +2658,14 @@ export function NewCasePage() {
                     : "Não informado"}
                 </li>
               </ul>
-              <label>
+              <label className="final-review-check">
                 <input
+                  className="final-review-check-input"
                   type="checkbox"
                   checked={finalReviewConfirmed}
                   onChange={(event) => setFinalReviewConfirmed(event.target.checked)}
-                />{" "}
-                Li e confirmo que revisei os dados antes do envio.
+                />
+                <span>Li e confirmo que revisei os dados antes do envio.</span>
               </label>
             </div>
 

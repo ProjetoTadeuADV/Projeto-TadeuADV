@@ -727,8 +727,10 @@ export function ProfileSettingsPage() {
   const [searchParams] = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastCepLookupRef = useRef<string>("");
+  const cepInputRef = useRef<HTMLInputElement | null>(null);
   const bankAccountSectionRef = useRef<HTMLDivElement | null>(null);
   const hasAutoScrolledToBankAccountRef = useRef(false);
+  const hasAutoScrolledToAddressCepRef = useRef(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -755,11 +757,14 @@ export function ProfileSettingsPage() {
   );
   const hasChanges = !snapshotsMatch(initialSnapshot, currentSnapshot);
   const isProfileCompletionMode = searchParams.get("context") === "novo-caso";
-  const shouldFocusBankAccount = searchParams.get("focus") === "bank-account";
+  const focusTarget = searchParams.get("focus");
+  const shouldFocusBankAccount = focusTarget === "bank-account";
+  const shouldFocusAddressCep = focusTarget === "address-cep";
 
   useEffect(() => {
     hasAutoScrolledToBankAccountRef.current = false;
-  }, [shouldFocusBankAccount]);
+    hasAutoScrolledToAddressCepRef.current = false;
+  }, [focusTarget]);
 
   useEffect(() => {
     if (!shouldFocusBankAccount || loading || !profile || hasAutoScrolledToBankAccountRef.current) {
@@ -776,6 +781,25 @@ export function ProfileSettingsPage() {
       section.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }, [loading, profile, shouldFocusBankAccount]);
+
+  useEffect(() => {
+    if (!shouldFocusAddressCep || loading || !profile || hasAutoScrolledToAddressCepRef.current) {
+      return;
+    }
+
+    const cepInput = cepInputRef.current;
+    if (!cepInput) {
+      return;
+    }
+
+    hasAutoScrolledToAddressCepRef.current = true;
+    window.requestAnimationFrame(() => {
+      cepInput.scrollIntoView({ behavior: "smooth", block: "center" });
+      window.setTimeout(() => {
+        cepInput.focus({ preventScroll: true });
+      }, 220);
+    });
+  }, [loading, profile, shouldFocusAddressCep]);
 
   useEffect(() => {
     if (!toast) {
@@ -1374,6 +1398,7 @@ export function ProfileSettingsPage() {
                 <label className="address-grid-span">
                   CEP
                   <input
+                    ref={cepInputRef}
                     type="text"
                     inputMode="numeric"
                     placeholder="00000-000"

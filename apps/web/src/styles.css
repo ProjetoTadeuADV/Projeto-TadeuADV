@@ -2069,6 +2069,27 @@ button.sidebar-item {
   font-size: 0.87rem;
 }
 
+.final-review-check {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #1f3550;
+  font-weight: 600;
+}
+
+.final-review-check-input {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 0;
+  padding: 0;
+  border-radius: 4px;
+  flex: 0 0 16px;
+  accent-color: var(--primary-color);
+}
+
 .timeline-event-list {
   display: grid;
   gap: 0.55rem;
@@ -4385,16 +4406,27 @@ button.sidebar-item {
   gap: 0.7rem;
 }
 
-.case-evolution-close-action {
-  position: sticky;
-  top: 0.6rem;
-  z-index: 6;
-  display: grid;
-  gap: 0.45rem;
-  padding: 0.7rem;
-  border: 1px solid #f1d7d7;
-  border-radius: 12px;
-  background: #fff;
+.case-evolution-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.case-evolution-header h2 {
+  margin: 0;
+}
+
+.case-evolution-close-button {
+  width: auto;
+  min-height: 38px;
+  padding: 0.5rem 0.85rem;
+  white-space: nowrap;
+}
+
+.case-evolution-close-help {
+  margin: -0.2rem 0 0;
 }
 
 .movement-list li {
