@@ -63,7 +63,11 @@ function LayoutContent() {
               aria-expanded={isExpanded}
               onClick={toggleSidebar}
             >
-              <span aria-hidden="true">&#8942;</span>
+              <span className="topbar-menu-toggle-icon" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
             </button>
 
             <div className="topbar-user">

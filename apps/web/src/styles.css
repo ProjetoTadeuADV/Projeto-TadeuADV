@@ -652,26 +652,34 @@ textarea {
   display: none;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  min-width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.12);
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
   color: #ffffff;
   padding: 0;
   box-shadow: none;
   transform: none;
 }
 
-.topbar-menu-toggle span {
-  font-size: 1.35rem;
-  line-height: 1;
+.topbar-menu-toggle-icon {
+  display: grid;
+  gap: 3px;
+  width: 16px;
+}
+
+.topbar-menu-toggle-icon span {
+  width: 100%;
+  height: 2px;
+  border-radius: 999px;
+  background: #ffffff;
 }
 
 .topbar-menu-toggle:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.5);
+  background: transparent;
+  opacity: 0.85;
   box-shadow: none;
   transform: none;
 }
@@ -1292,6 +1300,21 @@ button.sidebar-item {
 .private-layout--minimal .workspace-kpis strong {
   color: #153d63;
   font-size: 1.03rem;
+}
+
+.private-layout--minimal .dashboard-kpis li {
+  padding: 0.68rem 0.72rem;
+}
+
+.private-layout--minimal .dashboard-kpis span {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #4f6378;
+}
+
+.private-layout--minimal .dashboard-kpis strong {
+  font-size: 1.42rem;
+  color: #153d63;
 }
 
 .private-layout--minimal input,
@@ -2487,6 +2510,14 @@ button.sidebar-item {
   align-self: start;
 }
 
+.dashboard-withdraw-row {
+  margin-top: 0.55rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+}
+
 .dashboard-withdraw-highlight {
   display: inline-grid;
   justify-items: start;
@@ -2499,6 +2530,15 @@ button.sidebar-item {
   margin-top: 0.65rem;
   padding-left: 0.9rem;
   border-left: 1px solid #dce7f4;
+}
+
+.dashboard-withdraw-row .dashboard-withdraw-highlight {
+  margin-top: 0;
+}
+
+.dashboard-withdraw-action {
+  display: inline-flex;
+  align-items: flex-end;
 }
 
 .dashboard-withdraw-highlight span {
@@ -2518,6 +2558,17 @@ button.sidebar-item {
 .dashboard-withdraw-highlight:hover strong {
   text-decoration: underline;
   text-underline-offset: 0.12em;
+}
+
+.dashboard-case-section {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.dashboard-case-section-title {
+  margin: 0;
+  font-size: 1.08rem;
+  color: #17395d;
 }
 
 .statement-table-wrapper {
@@ -2578,6 +2629,14 @@ button.sidebar-item {
 .statement-table--compact th,
 .statement-table--compact td {
   padding-block: 0.62rem;
+}
+
+.statement-table--compact tbody tr {
+  height: 3.35rem;
+}
+
+.statement-table--compact tbody td {
+  vertical-align: middle;
 }
 
 .statement-table--compact th:first-child,
@@ -2682,6 +2741,8 @@ button.sidebar-item {
 
 .statement-totals--compact {
   gap: 0;
+  margin-top: 0;
+  padding-top: 0.62rem;
 }
 
 .empty-state {
@@ -2781,6 +2842,25 @@ button.sidebar-item {
 .workspace-kpis span {
   font-size: 0.84rem;
   color: #5d6b79;
+}
+
+.dashboard-kpis li {
+  align-content: start;
+  gap: 0.3rem;
+}
+
+.dashboard-kpis li span {
+  order: 1;
+  font-size: 0.94rem;
+  font-weight: 600;
+  color: #4e6279;
+}
+
+.dashboard-kpis li strong {
+  order: 2;
+  font-size: 1.45rem;
+  line-height: 1.08;
+  color: #153d63;
 }
 
 .workspace-kpis--wide {
@@ -3082,6 +3162,18 @@ button.sidebar-item {
 .profile-form-grid {
   display: grid;
   gap: 0.75rem;
+}
+
+.profile-section-box {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.profile-section-title {
+  color: #163d63;
+  font-size: 1.08rem;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .profile-form-grid label {
@@ -6192,6 +6284,28 @@ button.sidebar-item {
   .dashboard-withdraw-highlight {
     justify-items: start;
     min-width: 0;
+  }
+
+  .dashboard-withdraw-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 0.45rem;
+  }
+
+  .dashboard-withdraw-action {
+    width: auto;
+    margin-left: 0;
+  }
+
+  .dashboard-withdraw-action .hero-secondary {
+    width: auto;
+    min-height: 34px;
+    padding: 0.46rem 0.66rem;
+    white-space: nowrap;
+  }
+
+  .dashboard-withdraw-highlight strong {
+    font-size: clamp(1rem, 5vw, 1.18rem);
   }
 
   .statement-hero-grid {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, apiRequest } from "../lib/api";
 import type { AccountProfile, CaseRecord } from "../types";
@@ -85,7 +85,7 @@ function hasRegisteredBankAccount(profile: AccountProfile | null): boolean {
 }
 
 export function StatementPage() {
-  const { getToken } = useAuth();
+  const { getToken, canAccessAdmin, isMasterUser } = useAuth();
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [accountProfile, setAccountProfile] = useState<AccountProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,6 +100,15 @@ export function StatementPage() {
     async function loadStatement() {
       setLoading(true);
       setError(null);
+
+      if (canAccessAdmin) {
+        if (active) {
+          setCases([]);
+          setAccountProfile(null);
+          setLoading(false);
+        }
+        return;
+      }
 
       try {
         const token = await getToken();
@@ -138,7 +147,7 @@ export function StatementPage() {
     return () => {
       active = false;
     };
-  }, [getToken]);
+  }, [canAccessAdmin, getToken]);
 
   const entries = useMemo<StatementEntry[]>(() => {
     const statementEntries: StatementEntry[] = [];
@@ -242,6 +251,11 @@ export function StatementPage() {
   }
 
   async function handleRequestWithdrawal() {
+    if (canAccessAdmin) {
+      showWithdrawalBottomBar("error", "Solicitação de levantamento disponível apenas para contas de cliente.");
+      return;
+    }
+
     if (requestingWithdrawal) {
       return;
     }
@@ -255,7 +269,7 @@ export function StatementPage() {
       showWithdrawalBottomBar(
         "error",
         "Para fazer o levantamento, é necessário cadastrar uma conta bancária na página",
-        "/settings/profile"
+        "/settings/profile?focus=bank-account"
       );
       return;
     }
@@ -277,6 +291,10 @@ export function StatementPage() {
     } finally {
       setRequestingWithdrawal(false);
     }
+  }
+
+  if (canAccessAdmin) {
+    return <Navigate to={isMasterUser ? "/master/dashboard" : "/dashboard"} replace />;
   }
 
   return (

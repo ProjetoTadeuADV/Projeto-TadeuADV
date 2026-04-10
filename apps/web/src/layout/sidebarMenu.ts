@@ -17,7 +17,7 @@ export interface SidebarMenuItem {
   children?: SidebarMenuChild[];
 }
 
-const baseSidebarMenu: SidebarMenuItem[] = [
+const clientSidebarMenu: SidebarMenuItem[] = [
   {
     id: "dashboard",
     path: "/dashboard",
@@ -38,6 +38,21 @@ const baseSidebarMenu: SidebarMenuItem[] = [
   }
 ];
 
-export function getSidebarMenu(_isMasterUser: boolean, _canCreateCases: boolean): SidebarMenuItem[] {
-  return baseSidebarMenu;
+const adminSidebarMenu: SidebarMenuItem[] = [
+  {
+    id: "dashboard",
+    path: "/dashboard",
+    label: "Meus Casos",
+    icon: "dashboard"
+  },
+  {
+    id: "minha-conta",
+    path: "/settings/profile",
+    label: "Minha Conta",
+    icon: "account"
+  }
+];
+
+export function getSidebarMenu(canAccessAdmin: boolean): SidebarMenuItem[] {
+  return canAccessAdmin ? adminSidebarMenu : clientSidebarMenu;
 }

@@ -626,16 +626,31 @@ export function DashboardPage() {
     return filteredCases.filter((item) => isUserAssignedToCase(item, user.uid) && !isClosedCase(item));
   }, [canAccessAdmin, filteredCases, user?.uid]);
 
+  const unassignedOpenCases = useMemo(() => {
+    if (!canAccessAdmin || !isMasterUser) {
+      return [];
+    }
+
+    return filteredCases.filter((item) => !isClosedCase(item) && resolveAssignedOperatorIds(item).length === 0);
+  }, [canAccessAdmin, filteredCases, isMasterUser]);
+
   const openOtherCases = useMemo(() => {
     if (!canAccessAdmin || !isMasterUser) {
       return [];
     }
 
     if (!user?.uid) {
-      return filteredCases.filter((item) => !isClosedCase(item));
+      return filteredCases.filter(
+        (item) => !isClosedCase(item) && resolveAssignedOperatorIds(item).length > 0
+      );
     }
 
-    return filteredCases.filter((item) => !isUserAssignedToCase(item, user.uid) && !isClosedCase(item));
+    return filteredCases.filter(
+      (item) =>
+        !isUserAssignedToCase(item, user.uid) &&
+        !isClosedCase(item) &&
+        resolveAssignedOperatorIds(item).length > 0
+    );
   }, [canAccessAdmin, filteredCases, isMasterUser, user?.uid]);
 
   const closedCases = useMemo(() => {
@@ -671,10 +686,13 @@ export function DashboardPage() {
   }, [canAccessAdmin, filteredCases]);
 
   const hasFilteredCases = canAccessAdmin
-    ? myAssignedCases.length > 0 || openOtherCases.length > 0 || closedCases.length > 0
+    ? myAssignedCases.length > 0 ||
+      unassignedOpenCases.length > 0 ||
+      openOtherCases.length > 0 ||
+      closedCases.length > 0
     : clientOpenCases.length > 0 || clientClosedCases.length > 0;
   const displayedCasesCount = canAccessAdmin
-    ? myAssignedCases.length + openOtherCases.length + closedCases.length
+    ? myAssignedCases.length + unassignedOpenCases.length + openOtherCases.length + closedCases.length
     : clientOpenCases.length + clientClosedCases.length;
   const hasActiveFilters = normalizedSearch.length > 0 || statusFilter !== "todos";
 
@@ -810,7 +828,7 @@ export function DashboardPage() {
       showWithdrawalBottomBar(
         "error",
         "Para fazer o levantamento, é necessário cadastrar uma conta bancária na página",
-        "/settings/profile"
+        "/settings/profile?focus=bank-account"
       );
       return;
     }
@@ -991,7 +1009,6 @@ export function DashboardPage() {
             return (
               <article key={item.id} className="case-card case-card--client-simple">
                 <div className="case-card-simple-head">
-                  <small>Nome</small>
                   <Link to={`/cases/${item.id}`} className="case-card-title-link">
                     {resolveCounterpartyName(item)}
                   </Link>
@@ -1325,27 +1342,26 @@ export function DashboardPage() {
                   : "Visualize os atendimentos em modo somente leitura."}
             </p>
             {!canAccessAdmin && (
-              <div className="hero-cta">
-                <button
-                  type="button"
-                  className="hero-secondary"
-                  onClick={() => void handleRequestWithdrawal()}
-                  disabled={requestingWithdrawal}
+              <div className="dashboard-withdraw-row">
+                <Link
+                  to="/statement"
+                  className="dashboard-withdraw-highlight"
+                  aria-label={`Valor disponível para resgate: ${clientPendingPayoutLabel}. Abrir extrato.`}
                 >
-                  {requestingWithdrawal ? "Solicitando..." : "Levantamento"}
-                </button>
+                  <span>Valor disponível para resgate</span>
+                  <strong>{clientPendingPayoutLabel}</strong>
+                </Link>
+                <div className="dashboard-withdraw-action">
+                  <button
+                    type="button"
+                    className="hero-secondary"
+                    onClick={() => void handleRequestWithdrawal()}
+                    disabled={requestingWithdrawal}
+                  >
+                    {requestingWithdrawal ? "Solicitando..." : "Levantamento"}
+                  </button>
+                </div>
               </div>
-            )}
-
-            {!canAccessAdmin && (
-              <Link
-                to="/statement"
-                className="dashboard-withdraw-highlight"
-                aria-label={`Valor disponível para resgate: ${clientPendingPayoutLabel}. Abrir extrato.`}
-              >
-                <span>Valor disponível para resgate</span>
-                <strong>{clientPendingPayoutLabel}</strong>
-              </Link>
             )}
           </div>
         </div>
@@ -1454,6 +1470,22 @@ export function DashboardPage() {
         {hasFilteredCases &&
           (canAccessAdmin ? (
             <div className="page-stack page-stack--tight">
+              {isMasterUser && (
+                <section className="workspace-panel workspace-panel--muted">
+                  <header className="page-header">
+                    <div>
+                      <h2>Casos sem operador</h2>
+                      <p>Casos em aberto aguardando alocação para colaboradores.</p>
+                    </div>
+                  </header>
+                  {unassignedOpenCases.length === 0 ? (
+                    <p className="helper-text">Não há casos em aberto sem operador para os filtros atuais.</p>
+                  ) : (
+                    renderCaseCards(unassignedOpenCases, "list")
+                  )}
+                </section>
+              )}
+
               <section className="workspace-panel workspace-panel--muted">
                 <header className="page-header">
                   <div>
@@ -1504,33 +1536,23 @@ export function DashboardPage() {
             </div>
           ) : (
             <div className="page-stack page-stack--tight">
-              <section className="workspace-panel workspace-panel--muted">
-                <header className="page-header">
-                  <div>
-                    <h2>Casos em andamento</h2>
-                    <p>Casos ativos relacionados ao seu cadastro.</p>
-                  </div>
-                </header>
+              <div className="dashboard-case-section">
+                <h2 className="dashboard-case-section-title">Casos em andamento</h2>
                 {clientOpenCases.length === 0 ? (
                   <p className="helper-text">Não há casos em andamento para os filtros atuais.</p>
                 ) : (
                   renderCaseCards(clientOpenCases, "list")
                 )}
-              </section>
+              </div>
 
-              <section className="workspace-panel workspace-panel--muted">
-                <header className="page-header">
-                  <div>
-                    <h2>Casos Encerrados</h2>
-                    <p>Casos concluídos ou encerrados no seu histórico.</p>
-                  </div>
-                </header>
+              <div className="dashboard-case-section">
+                <h2 className="dashboard-case-section-title">Casos Encerrados</h2>
                 {clientClosedCases.length === 0 ? (
                   <p className="helper-text">Não há casos encerrados para os filtros atuais.</p>
                 ) : (
                   renderCaseCards(clientClosedCases, "list")
                 )}
-              </section>
+              </div>
             </div>
           ))}
       </section>

@@ -15,8 +15,25 @@ import type { AccountProfile } from "../types";
 
 const MAX_AVATAR_FILE_BYTES = 5 * 1024 * 1024;
 const AVATAR_VIEWPORT_SIZE = 320;
-const AVATAR_OUTPUT_SIZE = 512;
+const AVATAR_OUTPUT_SIZE = 320;
 const AUTH_ONLY_PROFILE_STORAGE_KEY = "lf_profile_auth_only";
+const BANK_SUGGESTIONS = [
+  "001 - Banco do Brasil",
+  "033 - Banco Santander",
+  "041 - Banrisul",
+  "077 - Banco Inter",
+  "085 - Ailos",
+  "104 - Caixa Econômica Federal",
+  "212 - Banco Original",
+  "237 - Banco Bradesco",
+  "260 - Nu Pagamentos (Nubank)",
+  "290 - PagSeguro",
+  "336 - Banco C6",
+  "341 - Itaú Unibanco",
+  "422 - Banco Safra",
+  "748 - Sicredi",
+  "756 - Sicoob"
+] as const;
 
 interface AccountProfileResponse {
   user: AccountProfile;
@@ -167,6 +184,27 @@ function normalizeCepDigits(value: string): string | null {
 function normalizeDocumentDigits(value: string): string | null {
   const digits = value.replace(/\D/g, "").slice(0, 14);
   return digits.length > 0 ? digits : null;
+}
+
+function formatAccountAndDigit(accountNumber: string, accountDigit: string): string {
+  const number = accountNumber.trim();
+  const digit = accountDigit.trim();
+  if (!number) {
+    return "";
+  }
+  return digit ? `${number}-${digit}` : number;
+}
+
+function parseAccountAndDigitInput(value: string): { accountNumber: string; accountDigit: string } {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { accountNumber: "", accountDigit: "" };
+  }
+
+  const [rawNumberPart, rawDigitPart] = trimmed.split("-", 2);
+  const accountNumber = (rawNumberPart ?? "").replace(/[^\d]/g, "");
+  const accountDigit = (rawDigitPart ?? "").replace(/[^\d]/g, "");
+  return { accountNumber, accountDigit };
 }
 
 function formatCpfInput(value: string): string {
@@ -689,6 +727,8 @@ export function ProfileSettingsPage() {
   const [searchParams] = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastCepLookupRef = useRef<string>("");
+  const bankAccountSectionRef = useRef<HTMLDivElement | null>(null);
+  const hasAutoScrolledToBankAccountRef = useRef(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -715,6 +755,27 @@ export function ProfileSettingsPage() {
   );
   const hasChanges = !snapshotsMatch(initialSnapshot, currentSnapshot);
   const isProfileCompletionMode = searchParams.get("context") === "novo-caso";
+  const shouldFocusBankAccount = searchParams.get("focus") === "bank-account";
+
+  useEffect(() => {
+    hasAutoScrolledToBankAccountRef.current = false;
+  }, [shouldFocusBankAccount]);
+
+  useEffect(() => {
+    if (!shouldFocusBankAccount || loading || !profile || hasAutoScrolledToBankAccountRef.current) {
+      return;
+    }
+
+    const section = bankAccountSectionRef.current;
+    if (!section) {
+      return;
+    }
+
+    hasAutoScrolledToBankAccountRef.current = true;
+    window.requestAnimationFrame(() => {
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [loading, profile, shouldFocusBankAccount]);
 
   useEffect(() => {
     if (!toast) {
@@ -745,11 +806,13 @@ export function ProfileSettingsPage() {
         }
 
         const nextExtra = buildProfileExtraInput(response.user);
+        const resolvedName = response.user.name ?? accessProfile?.name ?? user?.displayName ?? "";
+        const resolvedAvatarUrl = response.user.avatarUrl ?? accessProfile?.avatarUrl ?? user?.photoURL ?? null;
         setProfile(response.user);
-        setNameInput(response.user.name ?? "");
-        setAvatarUrl(response.user.avatarUrl ?? null);
+        setNameInput(resolvedName);
+        setAvatarUrl(resolvedAvatarUrl);
         setExtraInput(nextExtra);
-        setInitialSnapshot(buildProfileSnapshot(response.user.name ?? "", response.user.avatarUrl ?? null, nextExtra));
+        setInitialSnapshot(buildProfileSnapshot(resolvedName, resolvedAvatarUrl, nextExtra));
       } catch (nextError) {
         if (!mounted) {
           return;
@@ -804,7 +867,7 @@ export function ProfileSettingsPage() {
     return () => {
       mounted = false;
     };
-  }, [accessProfile?.avatarUrl, accessProfile?.name, getToken, user?.displayName, user?.email, user?.uid]);
+  }, [accessProfile?.avatarUrl, accessProfile?.name, getToken, user?.displayName, user?.email, user?.photoURL, user?.uid]);
 
   const handleChoosePhoto = useCallback(() => {
     fileInputRef.current?.click();
@@ -906,17 +969,24 @@ export function ProfileSettingsPage() {
 
   const handleApplyCroppedAvatar = useCallback(
     (nextAvatarUrl: string) => {
+      const previousAvatarUrl = avatarUrl;
       setAvatarUrl(nextAvatarUrl);
       setCropOpen(false);
       setCropImageSrc(null);
-      void applyProfilePatch(
-        {
-          avatarUrl: normalizeOptionalText(nextAvatarUrl)
-        },
-        "Foto de perfil salva com sucesso."
-      );
+      void (async () => {
+        const saved = await applyProfilePatch(
+          {
+            avatarUrl: normalizeOptionalText(nextAvatarUrl)
+          },
+          "Foto de perfil salva com sucesso."
+        );
+
+        if (!saved) {
+          setAvatarUrl(previousAvatarUrl);
+        }
+      })();
     },
-    [applyProfilePatch]
+    [applyProfilePatch, avatarUrl]
   );
 
   const handleRemoveAvatar = useCallback(() => {
@@ -924,13 +994,20 @@ export function ProfileSettingsPage() {
       return;
     }
 
+    const previousAvatarUrl = avatarUrl;
     setAvatarUrl(null);
-    void applyProfilePatch(
-      {
-        avatarUrl: null
-      },
-      "Foto de perfil removida."
-    );
+    void (async () => {
+      const saved = await applyProfilePatch(
+        {
+          avatarUrl: null
+        },
+        "Foto de perfil removida."
+      );
+
+      if (!saved) {
+        setAvatarUrl(previousAvatarUrl);
+      }
+    })();
   }, [applyProfilePatch, avatarUrl]);
 
   const handleCloseCrop = useCallback(() => {
@@ -1186,8 +1263,8 @@ export function ProfileSettingsPage() {
                 <input type="text" value={profile.email ?? ""} readOnly />
               </label>
 
-              <div className="resumo-box">
-                <strong>Dados complementares (opcional)</strong>
+              <div className="resumo-box profile-section-box">
+                <strong className="profile-section-title">Dados complementares (opcional)</strong>
                 <p>Complete seu cadastro para agilizar a preparação da petição e o protocolo.</p>
               </div>
 
@@ -1288,8 +1365,8 @@ export function ProfileSettingsPage() {
                 </label>
               </div>
 
-              <div className="resumo-box">
-                <strong>Endereço completo</strong>
+              <div className="resumo-box profile-section-box">
+                <strong className="profile-section-title">Endereço completo</strong>
                 <p>Informe o CEP para preencher rua/bairro/cidade/UF automaticamente.</p>
               </div>
 
@@ -1418,8 +1495,8 @@ export function ProfileSettingsPage() {
                 </label>
               </div>
 
-              <div className="resumo-box">
-                <strong>Conta bancária para levantamento</strong>
+              <div ref={bankAccountSectionRef} className="resumo-box profile-section-box">
+                <strong className="profile-section-title">Conta bancária para Levantamento</strong>
                 <p>Informe a conta que deve receber os valores quando solicitar um levantamento.</p>
               </div>
 
@@ -1428,7 +1505,8 @@ export function ProfileSettingsPage() {
                   Banco
                   <input
                     type="text"
-                    placeholder="Ex.: Banco do Brasil"
+                    list="profile-bank-suggestions"
+                    placeholder="Ex.: 001 - Banco do Brasil"
                     value={extraInput.bankAccount.bankName}
                     onChange={(event) =>
                       setExtraInput((current) => ({
@@ -1440,6 +1518,11 @@ export function ProfileSettingsPage() {
                       }))
                     }
                   />
+                  <datalist id="profile-bank-suggestions">
+                    {BANK_SUGGESTIONS.map((bank) => (
+                      <option key={bank} value={bank} />
+                    ))}
+                  </datalist>
                 </label>
 
                 <label>
@@ -1467,6 +1550,7 @@ export function ProfileSettingsPage() {
                   Agência
                   <input
                     type="text"
+                    placeholder="Ex.: 1234 ou 1234-5"
                     value={extraInput.bankAccount.agency}
                     onChange={(event) =>
                       setExtraInput((current) => ({
@@ -1481,33 +1565,20 @@ export function ProfileSettingsPage() {
                 </label>
 
                 <label>
-                  Conta
+                  Conta e Dígito
                   <input
                     type="text"
-                    value={extraInput.bankAccount.accountNumber}
+                    placeholder="Ex.: 123456-7"
+                    value={formatAccountAndDigit(
+                      extraInput.bankAccount.accountNumber,
+                      extraInput.bankAccount.accountDigit
+                    )}
                     onChange={(event) =>
                       setExtraInput((current) => ({
                         ...current,
                         bankAccount: {
                           ...current.bankAccount,
-                          accountNumber: event.target.value
-                        }
-                      }))
-                    }
-                  />
-                </label>
-
-                <label>
-                  Dígito
-                  <input
-                    type="text"
-                    value={extraInput.bankAccount.accountDigit}
-                    onChange={(event) =>
-                      setExtraInput((current) => ({
-                        ...current,
-                        bankAccount: {
-                          ...current.bankAccount,
-                          accountDigit: event.target.value
+                          ...parseAccountAndDigitInput(event.target.value)
                         }
                       }))
                     }
@@ -1536,7 +1607,7 @@ export function ProfileSettingsPage() {
                   <input
                     type="text"
                     inputMode="numeric"
-                    placeholder="Somente números"
+                    placeholder="Ex.: 000.000.000-00 ou 00.000.000/0000-00"
                     value={extraInput.bankAccount.holderDocument}
                     onChange={(event) =>
                       setExtraInput((current) => ({

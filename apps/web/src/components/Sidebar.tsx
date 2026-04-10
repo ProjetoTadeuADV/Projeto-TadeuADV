@@ -54,15 +54,12 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
 }
 
 export function Sidebar() {
-  const { isMasterUser, canCreateCases } = useAuth();
+  const { canAccessAdmin } = useAuth();
   const { isExpanded, isMobile, closeSidebar, handleMouseEnter, handleMouseLeave } = useSidebar();
   const location = useLocation();
   const [hoveredParentId, setHoveredParentId] = useState<string | null>(null);
   const [openedParentId, setOpenedParentId] = useState<string | null>(null);
-  const menuItems = useMemo(
-    () => getSidebarMenu(isMasterUser, canCreateCases),
-    [canCreateCases, isMasterUser]
-  );
+  const menuItems = useMemo(() => getSidebarMenu(canAccessAdmin), [canAccessAdmin]);
 
   const expandedClass = isExpanded ? "sidebar sidebar--expanded" : "sidebar";
 

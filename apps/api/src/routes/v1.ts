@@ -705,8 +705,16 @@ function buildCurrentUserProfile(
 ) {
   const resolvedId = userRecord?.id ?? fallback.uid;
   const resolvedEmail = userRecord?.email ?? fallback.email;
-  const resolvedName = userRecord ? userRecord.name ?? null : fallback.name;
-  const resolvedAvatarUrl = userRecord ? userRecord.avatarUrl ?? null : fallback.avatarUrl;
+  const resolvedName = userRecord
+    ? (userRecord.nameCustomized ?? false)
+      ? userRecord.name ?? null
+      : userRecord.name ?? fallback.name
+    : fallback.name;
+  const resolvedAvatarUrl = userRecord
+    ? (userRecord.avatarUrlCustomized ?? false)
+      ? userRecord.avatarUrl ?? null
+      : userRecord.avatarUrl ?? fallback.avatarUrl
+    : fallback.avatarUrl;
 
   return {
     id: resolvedId,

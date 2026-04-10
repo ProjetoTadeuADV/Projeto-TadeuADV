@@ -1065,6 +1065,7 @@ export function CaseDetailPage() {
   const hasCaseSaleProposalPending = saleRequest.status === "proposal_sent";
   const canClientDecideSaleProposal = Boolean(!canAccessAdmin && hasCaseSaleProposalPending);
   const canManageSaleProposal = Boolean(canManageOperatorActions);
+  const shouldShowNoSaleNotice = Boolean(isRejectedOrClosedCase && !hasActiveSaleRequest);
   const shouldHideOperatorDockForSale = Boolean(canManageSaleProposal && hasActiveSaleRequest);
   const canSendSaleProposal = Boolean(canManageSaleProposal && saleRequest.status === "requested");
   const isSaleProposalAwaitingClient = Boolean(canManageSaleProposal && saleRequest.status === "proposal_sent");
@@ -3503,6 +3504,13 @@ export function CaseDetailPage() {
               {caseSaleFeedback && <p className="success-text">{caseSaleFeedback}</p>}
 
               <div className="sale-case-shell">
+                {shouldShowNoSaleNotice && (
+                  <div className="info-box">
+                    <strong>Venda não realizada</strong>
+                    <span>Não foi realizada a venda do caso.</span>
+                  </div>
+                )}
+
                 {!canAccessAdmin && canClientRequestSale && (
                   <div className="sale-case-card">
                     <strong>Solicitar venda do caso</strong>
@@ -3743,7 +3751,7 @@ export function CaseDetailPage() {
                   </div>
                 )}
 
-                {canAccessAdmin && !canManageSaleProposal && (
+                {canAccessAdmin && !canManageSaleProposal && !shouldShowNoSaleNotice && (
                   <div className="info-box">
                     <strong>Acesso restrito</strong>
                     <span>Somente os responsáveis alocados neste caso podem enviar proposta de venda.</span>

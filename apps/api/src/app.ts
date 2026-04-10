@@ -99,7 +99,7 @@ export function createApp(dependencies?: AppDependencies) {
 
   app.use(cors(corsOptions));
   app.options("*", cors(corsOptions));
-  app.use(express.json());
+  app.use(express.json({ limit: "2mb" }));
 
   app.use("/v1", createV1Router(deps));
   app.use(errorHandler);
