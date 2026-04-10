@@ -24,22 +24,50 @@ interface ApiRequestOptions {
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    method: options.method ?? "GET",
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {})
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}${path}`, {
+      method: options.method ?? "GET",
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.token ? { Authorization: `Bearer ${options.token}` } : {})
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined
+    });
+  } catch {
+    throw new ApiError(
+      0,
+      "Não foi possível conectar ao servidor. Verifique a conexão e se a API está ativa."
+    );
+  }
 
-  const data = (await response.json()) as ApiSuccessResponse<T> | ApiErrorResponse;
+  const rawBody = await response.text();
+  let data: ApiSuccessResponse<T> | ApiErrorResponse | null = null;
+  if (rawBody.trim().length > 0) {
+    try {
+      data = JSON.parse(rawBody) as ApiSuccessResponse<T> | ApiErrorResponse;
+    } catch {
+      data = null;
+    }
+  }
 
-  if (!response.ok || data.status !== "ok") {
-    const message = "message" in data ? data.message : "Erro desconhecido na API.";
-    throw new ApiError(response.status, message, "details" in data ? data.details : undefined);
+  if (!response.ok) {
+    const message =
+      data && typeof data === "object" && "message" in data
+        ? data.message
+        : `Erro HTTP ${response.status} ao comunicar com o servidor.`;
+    const details = data && typeof data === "object" && "details" in data ? data.details : undefined;
+    throw new ApiError(response.status, message, details);
+  }
+
+  if (!data || data.status !== "ok") {
+    const message =
+      data && typeof data === "object" && "message" in data
+        ? data.message
+        : "Resposta inválida da API.";
+    const details = data && typeof data === "object" && "details" in data ? data.details : undefined;
+    throw new ApiError(response.status, message, details);
   }
 
   return data.result;
 }
-

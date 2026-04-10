@@ -459,14 +459,21 @@ export function DashboardPage() {
         }
 
         if (canAccessAdmin && isMasterUser) {
-          const availableOperators = await apiRequest<AdminOperatorOption[]>("/v1/admin/operators", { token });
-          setOperators(availableOperators);
+          try {
+            const availableOperators = await apiRequest<AdminOperatorOption[]>("/v1/admin/operators", { token });
+            setOperators(availableOperators);
+          } catch {
+            setOperators([]);
+          }
         } else {
           setOperators([]);
         }
       } catch (err) {
         const message = err instanceof ApiError ? err.message : "Erro ao carregar casos.";
         setError(message);
+        setCases([]);
+        setOperators([]);
+        setAccountProfile(null);
       } finally {
         setLoading(false);
       }

@@ -118,7 +118,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="auth-flow-shell">
+    <div className="auth-flow-shell auth-flow-shell--login">
       <header className="public-topbar auth-flow-topbar">
         <div className="public-topbar-inner auth-flow-topbar-inner">
           <NavLink to="/" className="brand-link brand-link--public" aria-label="DoutorEu">

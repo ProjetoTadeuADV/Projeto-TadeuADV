@@ -4834,8 +4834,20 @@ button.sidebar-item {
   margin: 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 1.4rem;
+}
+
+.public-topbar-inner > .brand-link--public {
+  order: 0;
+  margin-right: auto;
+  flex: 0 0 auto;
+}
+
+.public-topbar-inner > .public-topbar-actions {
+  order: 1;
+  margin-left: 0;
+  flex: 0 0 auto;
 }
 
 .public-topbar-actions {
@@ -6926,6 +6938,14 @@ button.sidebar-item {
 
   .auth-flow-grid {
     grid-template-columns: 1fr;
+  }
+
+  .auth-flow-shell--login .auth-flow-grid {
+    gap: 0;
+  }
+
+  .auth-flow-shell--login .auth-flow-cta-card {
+    display: none;
   }
 
   .auth-flow-cta-card {
